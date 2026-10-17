@@ -52,9 +52,9 @@ static void home(uint32_t now) {
            names[unsigned(app.settings.avatar)], (unsigned long)(1 + app.settings.xp / 25),
            (unsigned long)app.wifiSeen, (unsigned long)app.bleSeen);
   text(status, 10, 26, Muted);
-  int bob = int(sin(now / 500.0) * 2);
-  drawBuddy(canvas, unsigned(app.settings.avatar), 160, 95, int(app.mood),
-            int(sin(now / 1800.0) * 3), (now % 4100) < 130, bob);
+  int bob = int(sin(now / (app.energy < 30 ? 1500.0 : 1000.0)) * 2);
+  drawBuddy(canvas, unsigned(app.settings.avatar), 160, 95, int(app.mood), int(round(app.gaze)),
+            (now % 4100) < 130, bob);
   text("BOND", 12, 62, Muted);
   canvas.fillRoundRect(12, 76, 48, 5, 2, Panel);
   canvas.fillRoundRect(12, 76, std::max(2, int(app.bond) * 48 / 100), 5, 2, Blush);
@@ -83,7 +83,9 @@ static void home(uint32_t now) {
     if (thumbReady) {
       thumb.fillSprite(app.demo ? 0x62b0 : 0x6247);
       drawBuddy(thumb, unsigned(app.settings.avatar), 80, 61, 4, int(sin(now / 100.0) * 5), false);
-      thumb.pushRotateZoom(&canvas, 56, 101, 0, 0.58, 0.58);
+      float shake = app.settings.spicy ? sin(now / 70.0) : 0;
+      thumb.pushRotateZoom(&canvas, 56 + int(shake * 3), 101 + int(cos(now / 90.0) * 2), shake * 7,
+                           0.58, 0.58);
     }
     text(familyName(app.active.match.family), 103, 65, White);
     char detail[80];

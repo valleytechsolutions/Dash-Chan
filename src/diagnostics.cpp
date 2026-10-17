@@ -8,7 +8,7 @@ void printStatus() {
       "\"radio\":%s,\"sd\":%s,\"recording\":%s,\"gps_chars\":%lu,\"gps_fix\":%s,\"sats\":%u,"
       "\"wifi\":%lu,\"ble\":%lu,\"rows\":%lu,\"drops\":%lu,\"motion\":%s,"
       "\"fuel\":%u,\"food_progress\":%u,\"discoveries\":%lu,\"uptime\":%lu,"
-      "\"gps_good\":%lu,\"gps_bad\":%lu,\"sd_bytes\":%llu}\n",
+      "\"gps_good\":%lu,\"gps_bad\":%lu,\"sd_bytes\":%llu,\"storage_error\":\"%s\"}\n",
       Version, unsigned(M5.getBoard()), M5.Display.width(), M5.Display.height(),
       (unsigned long)ESP.getPsramSize(), (unsigned long)ESP.getFreeHeap(),
       app.radioReady ? "true" : "false", app.sdReady ? "true" : "false",
@@ -17,7 +17,7 @@ void printStatus() {
       (unsigned long)app.bleSeen, (unsigned long)app.rows, (unsigned long)app.drops,
       app.settings.motion ? "true" : "false", app.energy, app.food.progress(),
       (unsigned long)app.food.discoveries(), (unsigned long)millis(), (unsigned long)app.gpsGood,
-      (unsigned long)app.gpsBad, (unsigned long long)storageCardSize());
+      (unsigned long)app.gpsBad, (unsigned long long)storageCardSize(), app.storageError);
 }
 void serialTick() {
   static char line[64];
@@ -41,7 +41,22 @@ void serialTick() {
           startDrive();
         else if (!strcmp(line, "CHECK LOG"))
           storageCheckLog();
-        else {
+        else if (!strcmp(line, "SOUND TEST") || !strcmp(line, "SOUND STATUS")) {
+          auto config = M5.Speaker.config();
+          bool test = !strcmp(line, "SOUND TEST");
+          bool started = test ? M5.Speaker.begin() : M5.Speaker.isRunning();
+          bool queued = test && M5.Speaker.tone(880, 1200);
+          Serial.printf("AUDIO enabled=%u running=%u begin=%u queued=%u volume=%u bck=%d ws=%d "
+                        "data=%d rate=%lu\n",
+                        M5.Speaker.isEnabled(), M5.Speaker.isRunning(), started, queued,
+                        M5.Speaker.getVolume(), config.pin_bck, config.pin_ws, config.pin_data_out,
+                        (unsigned long)config.sample_rate);
+          for (uint8_t reg : {0x00, 0x01, 0x04, 0x05, 0x06, 0x0c}) {
+            uint8_t value[2]{};
+            bool ok = M5.In_I2C.readRegister(0x36, reg, value, 2, 400000);
+            Serial.printf("AMP %02x=%02x%02x read=%u\n", reg, value[0], value[1], ok);
+          }
+        } else {
           int x, y;
           unsigned long long expectedBytes;
           if (sscanf(line, "TAP %d %d", &x, &y) == 2)

@@ -531,7 +531,7 @@ DSTATUS ff_sd_initialize(uint8_t pdrv) {
   }
   if (sdCommand(pdrv, GO_IDLE_STATE, 0, NULL) != 1) {
     sdDeselectCard(pdrv);
-    log_w("GO_IDLE_STATE failed");
+    log_e("GO_IDLE_STATE failed");
     goto unknown_card;
   }
   sdDeselectCard(pdrv);
@@ -549,7 +549,7 @@ DSTATUS ff_sd_initialize(uint8_t pdrv) {
     // Old card that doesn't support CRC - disable CRC checking
     card->supports_crc = false;
   } else if (token != 1) {
-    log_w("CRC_ON_OFF failed: %u", token);
+    log_e("CRC_ON_OFF failed: %u", token);
     goto unknown_card;
   }
 
@@ -558,13 +558,13 @@ DSTATUS ff_sd_initialize(uint8_t pdrv) {
   if (sdTransaction(pdrv, SEND_IF_COND, 0x1AA, &resp) == 1) {
     // Card responded to SEND_IF_COND - likely SDHC/SDXC
     if ((resp & 0xFFF) != 0x1AA) {
-      log_w("SEND_IF_COND failed: %03" PRIX32, (uint32_t)(resp & 0xFFF));
+      log_e("SEND_IF_COND failed: %03" PRIX32, (uint32_t)(resp & 0xFFF));
       goto unknown_card;
     }
 
     // Read Operating Conditions Register to check card capabilities
     if (sdTransaction(pdrv, READ_OCR, 0, &resp) != 1 || !(resp & (1 << 20))) {
-      log_w("READ_OCR failed: %X", resp);
+      log_e("READ_OCR failed: %X", resp);
       goto unknown_card;
     }
 
@@ -577,7 +577,7 @@ DSTATUS ff_sd_initialize(uint8_t pdrv) {
     } while (token == 1 && (millis() - start) < sd_op_cond_timeout_ms);
 
     if (token) {
-      log_w("APP_OP_COND failed: %u", token);
+      log_e("APP_OP_COND failed: %u", token);
       goto unknown_card;
     }
 
@@ -589,13 +589,13 @@ DSTATUS ff_sd_initialize(uint8_t pdrv) {
         card->type = CARD_SD;  // Standard capacity card
       }
     } else {
-      log_w("READ_OCR failed: %X", resp);
+      log_e("READ_OCR failed: %X", resp);
       goto unknown_card;
     }
   } else {
     // Card didn't respond to SEND_IF_COND - try SD or MMC initialization
     if (sdTransaction(pdrv, READ_OCR, 0, &resp) != 1 || !(resp & (1 << 20))) {
-      log_w("READ_OCR failed: %X", resp);
+      log_e("READ_OCR failed: %X", resp);
       goto unknown_card;
     }
 
@@ -617,7 +617,7 @@ DSTATUS ff_sd_initialize(uint8_t pdrv) {
       if (token == 0x00) {
         card->type = CARD_MMC;  // MMC card
       } else {
-        log_w("SEND_OP_COND failed: %u", token);
+        log_e("SEND_OP_COND failed: %u", token);
         goto unknown_card;
       }
     }
@@ -626,7 +626,7 @@ DSTATUS ff_sd_initialize(uint8_t pdrv) {
   // Step 5: Clear card detection for SD cards (not needed for MMC)
   if (card->type != CARD_MMC) {
     if (sdTransaction(pdrv, APP_CLR_CARD_DETECT, 0, NULL)) {
-      log_w("APP_CLR_CARD_DETECT failed");
+      log_e("APP_CLR_CARD_DETECT failed");
       goto unknown_card;
     }
   }
@@ -635,7 +635,7 @@ DSTATUS ff_sd_initialize(uint8_t pdrv) {
   // SDHC cards have fixed 512-byte blocks, others need explicit block length setting
   if (card->type != CARD_SDHC) {
     if (sdTransaction(pdrv, SET_BLOCKLEN, 512, NULL) != 0x00) {
-      log_w("SET_BLOCKLEN failed");
+      log_e("SET_BLOCKLEN failed");
       goto unknown_card;
     }
   }
@@ -866,6 +866,16 @@ uint32_t sdcard_num_sectors(uint8_t pdrv) {
   if (pdrv >= FF_VOLUMES || card == NULL) {
     return 0;
   }
+  return card->sectors;
+}
+
+// Query capacity at the configured transaction speed, as sdcard_mount does.
+// This also supports explicit formatting before a valid FAT volume exists.
+uint32_t sdcard_refresh_sectors(uint8_t pdrv) {
+  if (pdrv >= FF_VOLUMES || s_cards[pdrv] == NULL) return 0;
+  ardu_sdcard_t *card = s_cards[pdrv];
+  AcquireSPI lock(card);
+  card->sectors = sdGetSectorsCount(pdrv);
   return card->sectors;
 }
 

@@ -8,6 +8,8 @@ Recording has a monotonic session generation copied into each received packet. T
 
 Servo work uses the official BSP's asynchronous motion task and a narrow application travel range. UI, pet needs, randomized chatter, siren timing, and scan windows use elapsed milliseconds. No cloud AI or credentials are involved.
 
+Idle motion is a nonblocking gesture sequencer with two or three eased poses and variable rests depending on activity, gesture, and fuel. Relaxed travel stays within ±20° yaw and 14.5–31° pitch; alert travel uses the wider limits described in the README. Eye gaze eases toward each intended turn. Alert dismissal cancels the previous idle sequence and returns toward center. Host checks exercise every avatar across randomized gestures, verify idle and panic travel/speed bounds and return-to-center, and cross the millisecond-counter wrap.
+
 Nutrition is credited only after a Wi-Fi row passes the session/fix checks and is successfully written. The per-drive BSSID filter is independent of the expiring contact cache. Every five new discoveries add 12 fuel; duplicate sightings cannot add fuel. Petting only changes bond. Fuel persists in NVS alongside experience.
 
 ## Build verification
@@ -20,7 +22,13 @@ Nutrition is credited only after a Wi-Fi row passes the session/fix checks and i
 
 ## Bench evidence and remaining acceptance checks
 
-The target identifies as board 27 (StackChan), ESP32-S3 with 16 MB flash and 8 MB PSRAM. A complete factory flash backup was retained locally before installation. USB status has confirmed sustained Wi-Fi/BLE reception, a 320 × 240 landscape display, and a valid fix with 9–10 satellites on Port C at 115200 baud. GPS checksum counters show valid sentences with no failures during the bench capture. Host tests include duplicate-food protection, session reset, five-network snack boundaries, and CSV round trips. These results do not establish performance during an outdoor drive or field detection accuracy.
+The target identifies as board 27 (StackChan), ESP32-S3 with 16 MB flash and 8 MB PSRAM. A complete factory flash backup was retained locally before installation. USB status has confirmed sustained Wi-Fi/BLE reception, a 320 × 240 landscape display, and valid fixes on Port C at 115200 baud. The user confirmed that the display orientation is correct. Host tests include duplicate-food protection, session reset, five-network snack boundaries, and CSV round trips.
+
+An explicitly selected card reporting 511,868,665,856 bytes (512 GB nominal) was successfully quick-formatted as FAT32 through the device. In an approximately 19-second bench session with eight satellites, Dash-Chan saved 37 Wi-Fi/BLE observations and credited 11 distinct Wi-Fi discoveries, taking fuel from 77 to 100. After Stop, the 4,004-byte file reopened with the expected WiGLE header; eight seconds of background watch awarded no further food. The radio queue reported zero drops. GPS diagnostics showed 2,185 valid sentences and one checksum failure after the format and recording sequence. These results do not establish full-card capacity integrity, WiGLE server acceptance, outdoor-drive performance, or field detection accuracy.
+
+After installing the final application build and resetting the device, the same card mounted automatically, fuel persisted at 100, and GPS reacquired a valid fix. No card reinsertion or format was needed after that reset.
+
+The user confirmed head movement during the Axon demo and audible speaker output at the raised volume. Subsequent tuning increases playful alert volume, speech emphasis, and movement intensity. The demo always selects the first spoken phrase for repeatable checks; actual alerts select among the three reactions.
 
 Remaining physical checks:
 

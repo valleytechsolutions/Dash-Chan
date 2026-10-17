@@ -45,7 +45,7 @@ void setup() {
   M5StackChan.begin();
   M5.Display.setRotation(1);
   M5.Display.setBrightness(160);
-  M5.Speaker.setVolume(85);
+  M5.Speaker.setVolume(128);
   dash::uiBegin();
   dash::buddyBegin();
   dash::gpsBegin();

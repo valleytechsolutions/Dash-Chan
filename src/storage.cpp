@@ -3,7 +3,9 @@
 #include <SD.h>
 #include <SPI.h>
 #include <TinyGPSPlus.h>
+#include <diskio.h>
 #include <ff.h>
+#include <sd_diskio.h>
 #include <vfs_api.h>
 namespace dash {
 // Own the SD instance so formatting always uses this card's assigned drive,
@@ -11,6 +13,38 @@ namespace dash {
 class DashSD : public fs::SDFS {
 public:
   DashSD() : SDFS(fs::FSImplPtr(new VFSImpl())) {}
+  bool formatBlank(uint64_t expectedBytes) {
+    end();
+    SPI.begin(SdSck, SdMiso, SdMosi, SdCs);
+    _pdrv = sdcard_init(SdCs, &SPI, 4000000);
+    if (_pdrv == 0xff)
+      return false;
+    DSTATUS init = disk_initialize(_pdrv);
+    uint64_t capacity = (init & STA_NOINIT) ? 0 : uint64_t(sdcard_refresh_sectors(_pdrv)) * 512;
+    snprintf(app.storageError, sizeof(app.storageError), "Raw init %u; bytes %llu", unsigned(init),
+             (unsigned long long)capacity);
+    Serial.printf("SD raw init=%u bytes=%llu expected=%llu\n", unsigned(init),
+                  (unsigned long long)capacity, (unsigned long long)expectedBytes);
+    if ((init & STA_NOINIT) || capacity != expectedBytes) {
+      Serial.println("SD raw format refused: card initialization/capacity mismatch");
+      end();
+      return false;
+    }
+    char volume[] = {char('0' + _pdrv), ':', 0};
+    uint8_t work[FF_MAX_SS];
+    const MKFS_PARM options = {FM_FAT32, 0, 0, 0, 0};
+    FRESULT result = f_mkfs(volume, &options, work, sizeof(work));
+    snprintf(app.storageError, sizeof(app.storageError), "Raw FAT32 result %u", unsigned(result));
+    Serial.printf("SD raw format result=%u\n", unsigned(result));
+    if (result == FR_OK && sdcard_mount(_pdrv, "/sd", 5, false)) {
+      _impl->mountpoint("/sd");
+      return true;
+    }
+    if (result == FR_OK)
+      snprintf(app.storageError, sizeof(app.storageError), "Formatted; remount failed");
+    end();
+    return false;
+  }
   bool formatFat32() {
     if (_pdrv == 0xff)
       return false;
@@ -38,12 +72,13 @@ uint64_t storageCardSize() {
   return card.cardSize();
 }
 bool storageFormat(uint64_t expectedBytes) {
-  if (app.session.armed || !app.sdReady || !expectedBytes || expectedBytes != card.cardSize()) {
-    Serial.println("FORMAT refused: stop recording and supply the mounted card's exact size");
+  if (app.session.armed || !expectedBytes || (app.sdReady && expectedBytes != card.cardSize())) {
+    Serial.println("FORMAT refused: stop recording and supply the card's exact size");
     return false;
   }
+  bool mounted = app.sdReady;
   app.sdReady = false;
-  bool ok = card.formatFat32();
+  bool ok = mounted ? card.formatFat32() : card.formatBlank(expectedBytes);
   // FatFs has already remounted this volume. Reinitializing the card here is
   // unnecessary and can leave older cards unresponsive until power-cycled.
   if (ok)

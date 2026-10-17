@@ -1,4 +1,5 @@
 #include "detector.h"
+#include "idle_motion.h"
 #include "nutrition.h"
 #include <cstdlib>
 #include <fstream>
@@ -156,6 +157,39 @@ int main() {
   food.reset();
   CHECK(food.discoveries() == 0 && food.discover(firstNetwork));
   std::mt19937 random(7);
+  for (unsigned i = 0; i < 32; ++i) {
+    auto cue = panicMotion(i);
+    CHECK(cue.yaw >= -320 && cue.yaw <= 320);
+    CHECK(cue.pitch >= 130 && cue.pitch <= 380);
+    CHECK(cue.speed <= 600 && cue.holdMs >= 300);
+  }
+  // Every relaxed gesture stays in its narrower travel envelope, returns to
+  // center, and leaves an actual rest. A reset cancels an old gesture.
+  for (unsigned avatar = 0; avatar < 3; ++avatar) {
+    for (unsigned sample = 0; sample < 256; ++sample) {
+      IdleMotion idle;
+      uint32_t now = 0xfffffff0;
+      uint32_t seed = random();
+      idle.reset(now, 100);
+      MotionCue cue;
+      CHECK(!idle.tick(now + 99, seed, sample & 1, avatar, false, cue));
+      now += 100;
+      unsigned steps = 0;
+      while (idle.tick(now, seed, sample & 1, avatar, false, cue)) {
+        CHECK(++steps <= 3);
+        CHECK(cue.yaw >= -200 && cue.yaw <= 200);
+        CHECK(cue.pitch >= 145 && cue.pitch <= 310);
+        CHECK(cue.speed >= 75 && cue.speed <= 180);
+        CHECK(cue.holdMs >= 1000 && cue.holdMs <= 2500);
+        CHECK(!idle.tick(now, seed, sample & 1, avatar, false, cue));
+        now += cue.holdMs;
+      }
+      CHECK(steps >= 2 && cue.yaw == 0 && cue.pitch >= 190 && cue.pitch <= 200);
+      idle.reset(now, 4500);
+      CHECK(!idle.tick(now + 4499, seed, false, avatar, false, cue));
+      CHECK(idle.tick(now + 4500, seed, false, avatar, false, cue));
+    }
+  }
   for (int i = 0; i < 50000; ++i) {
     size_t n = random() % 768;
     std::vector<uint8_t> q(n);

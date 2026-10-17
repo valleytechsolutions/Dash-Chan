@@ -4,7 +4,7 @@
 
 ![Mochi the cat, Sprout the dragon, and Orbit the robot](media/companions.svg)
 
-**0.1.0 alpha — installed on an official StackChan.** Builds and host tests pass. USB diagnostics confirm the 320 × 240 display, 8 MB PSRAM, live Wi-Fi/BLE reception, and a valid GPS fix with 9–10 satellites on blue Port C at 115200 baud. Actual WiGLE upload and field detection accuracy remain unverified. The GPS model and wiring must match the selected profile.
+**0.1.0 alpha — installed on an official StackChan.** Builds and host tests pass. USB diagnostics confirm the 320 × 240 display, 8 MB PSRAM, live Wi-Fi/BLE reception, and valid GPS fixes on blue Port C at 115200 baud. A 512 GB card was formatted as FAT32; a short bench session saved 37 GPS-tagged observations, reopened the WiGLE header, and earned snacks from 11 new Wi-Fi BSSIDs. Actual WiGLE upload and field detection accuracy remain unverified. The GPS model and wiring must match the selected profile.
 
 ## Meet your copilot
 
@@ -38,7 +38,9 @@ Axon alerts can speak **“PIG DETECTED! ACT NATURAL!”** or **“Oh man, the f
 | Tap an alert | Dismiss without stopping radio collection |
 | GPS / SD STATUS | GPS fix, satellites, NMEA bytes, SD status, radio drops, GPS port/baud, SD retry |
 
-Head movement defaults off for the first installation. Place the robot securely and enable **Motion** once its mechanical travel and factory calibration are checked. Reactions stay within approximately ±22° yaw and 13–30° pitch, with no continuous spinning. The BSP uses stored factory zero positions when available.
+Head movement defaults off for the first installation. Place the robot securely and enable **Motion** once its mechanical travel and factory calibration are checked. Reactions stay within ±32° yaw and 15–36° pitch, with no continuous spinning. The BSP uses stored factory zero positions when available.
+
+While chilling, your buddy makes soft side glances, little nods, curious upward looks, and posture adjustments, then settles facing forward for a variable rest. Eyes follow the intended glance and the avatar gently breathes. Mochi is relaxed, Sprout a little more lively, and Orbit more measured; low fuel slows everyone down. Petting brings attention back to you. Playful Axon alerts use louder, fast-paced synthesized speech, a follow-up siren, and quick double-takes with nods. Alerts interrupt idle gestures, then ease back to the forward pose. The **Motion** setting disables physical gestures while face animation continues.
 
 ## Hardware and build
 

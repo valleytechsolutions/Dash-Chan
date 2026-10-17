@@ -42,6 +42,7 @@ struct State {
            alerts = 0, sessionAt = 0, gpsChars = 0, gpsGood = 0, gpsBad = 0;
   uint8_t bond = 70, energy = 85;
   Mood mood = Mood::Happy;
+  float gaze = 0;
   Alert active, history[HistoryCapacity];
   uint8_t historyCount = 0;
   char message[96] = "Hey, road buddy. Let's explore!";
