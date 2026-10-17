@@ -30,6 +30,13 @@ void loadSettings() {
   app.settings.customAccessory = p.getUChar("accessory", 0) % 4;
   app.settings.customBody = p.getUShort("body", 0xff7a);
   app.settings.customAccent = p.getUShort("accent", 0xfbb2);
+  auto legacy = app.settings.customAccessory;
+  app.settings.customEyes = p.getUChar("eyes", 0) % 6;
+  app.settings.customEye = p.getUShort("eyecolor", app.settings.customBase == 2 ? 0x87b6 : 0x1085);
+  app.settings.customHeadwear = p.getUChar("headwear", legacy == 1 ? 1 : legacy == 3 ? 2 : 0) % 6;
+  app.settings.customEyewear = p.getUChar("eyewear", 0) % 4;
+  app.settings.customNeckwear = p.getUChar("neckwear", legacy == 2 ? 1 : 0) % 4;
+  app.settings.fieldKit = p.getUChar("fieldkit", 0) % 3;
   p.getString("petname", app.settings.customName, sizeof(app.settings.customName));
   if (!*app.settings.customName)
     strcpy(app.settings.customName, "My buddy");
@@ -58,6 +65,12 @@ void saveSettings() {
   p.putUChar("accessory", app.settings.customAccessory);
   p.putUShort("body", app.settings.customBody);
   p.putUShort("accent", app.settings.customAccent);
+  p.putUChar("eyes", app.settings.customEyes);
+  p.putUShort("eyecolor", app.settings.customEye);
+  p.putUChar("headwear", app.settings.customHeadwear);
+  p.putUChar("eyewear", app.settings.customEyewear);
+  p.putUChar("neckwear", app.settings.customNeckwear);
+  p.putUChar("fieldkit", app.settings.fieldKit);
   p.putString("petname", app.settings.customName);
   p.end();
 }

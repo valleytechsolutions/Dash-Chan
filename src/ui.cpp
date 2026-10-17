@@ -1,13 +1,25 @@
 #include "app.h"
 #include "avatars.h"
 #include "boot_logos.h"
+#include "travel.h"
 #include <M5StackChan.h>
 #include <algorithm>
 namespace dash {
 static M5Canvas canvas(&M5.Display), thumb;
 static bool buffered = false, thumbReady = false;
 static uint32_t painted = 0;
-enum Page { Home, Menu, Appearance, Buddies, Audio, Behavior, Detection, History, Diagnostics };
+enum Page {
+  Home,
+  Menu,
+  Appearance,
+  Buddies,
+  Studio,
+  Audio,
+  Behavior,
+  Detection,
+  History,
+  Diagnostics
+};
 static Page page = Home;
 static uint8_t historyPage = 0;
 static bool detailOpen = false;
@@ -52,12 +64,14 @@ static void heading(const char *name) {
   text(name, 12, 12, colors.accent);
   button(254, 5, 58, 27, "BACK");
 }
-static void pet(M5Canvas &g, int avatar, int x, int y, int mood, int gaze, bool blink,
-                int bob = 0) {
+static void pet(M5Canvas &g, int avatar, int x, int y, int mood, int gaze, bool blink, int bob = 0,
+                int field = 0, int phase = 0) {
   bool custom = avatar == 3;
   drawBuddy(g, custom ? app.settings.customBase : avatar, x, y, mood, gaze, blink, bob,
-            app.settings.customBody, app.settings.customAccent,
-            custom ? app.settings.customAccessory : 0, custom);
+            app.settings.customBody, app.settings.customAccent, 0, custom,
+            custom ? app.settings.customEyes : 0, app.settings.customEye,
+            custom ? app.settings.customHeadwear : 0, custom ? app.settings.customEyewear : 0,
+            custom ? app.settings.customNeckwear : 0, field, phase);
 }
 static void heart(int x, int y) {
   canvas.fillCircle(x - 3, y - 2, 4, colors.heart);
@@ -80,7 +94,9 @@ static void home(uint32_t now) {
     text(s, 12, 31, colors.danger);
   } else {
     snprintf(s, sizeof(s), "%s  %lu rows | %u recent",
-             app.session.armed ? (usableFix(app.fix) ? "RECORDING" : "WAIT GPS") : "WATCHING",
+             app.session.armed
+                 ? (usableFix(app.fix) ? (app.moving ? "CRUISING + LOG" : "RECORDING") : "WAIT GPS")
+                 : (app.moving ? "MOVING + WATCH" : "WATCHING"),
              (unsigned long)app.rows, app.historyCount);
     text(s, 12, 31, colors.muted);
   }
@@ -88,12 +104,20 @@ static void home(uint32_t now) {
     for (int x = 75; x < 250; x += 20)
       for (int y = 56; y < 151; y += 19)
         text(((x / 20 + y / 19 + now / 1200) % 2) ? "1" : "0", x, y, colors.grid);
+  int scene = fieldScene(app.settings.fieldKit, app.session.armed, app.moving);
+  canvas.setClipRect(70, 42, 182, 115);
+  if (scene == 2 && !app.alertOpen) {
+    for (int i = 0; i < 4; ++i) {
+      int x = 78 + (int(now / 25) + i * 47) % 164;
+      canvas.drawLine(x, 149, std::min(247, x + 9), 149, colors.grid);
+    }
+  }
   int shake = app.alertOpen ? int(sin(now / 65.0) * 4) : 0;
   int bob = app.alertOpen ? int(cos(now / 90.0) * 4)
                           : int(sin(now / (app.energy < 30 ? 1600.0 : 650.0)) * 2);
   pet(canvas, unsigned(app.settings.avatar), 160 + shake, 104, int(app.mood),
       app.alertOpen ? int(sin(now / 100.0) * 5) : int(round(app.gaze)),
-      !app.alertOpen && (now % 4100) < 130, bob);
+      !app.alertOpen && (now % 4100) < 130, bob, scene, now / 150);
   if (app.mood == Mood::Love) {
     heart(91, 88 - int(now / 100 % 18));
     heart(229, 90 - int((now / 100 + 9) % 18));
@@ -102,6 +126,7 @@ static void home(uint32_t now) {
     text("!", 83, 59, colors.danger, 2);
     text("!", 230, 70, colors.danger, 2);
   }
+  canvas.clearClipRect();
   text("FUEL", 12, 71, colors.muted);
   canvas.fillRoundRect(12, 85, 44, 5, 2, colors.panel);
   canvas.fillRoundRect(12, 85, std::max(2, int(app.energy) * 44 / 100), 5, 2, colors.accent);
@@ -135,8 +160,31 @@ static void appearance() {
   for (int i = 0; i < 4; ++i)
     button(8 + (i % 2) * 156, 96 + (i / 2) * 45, 148, 36, themeName(Theme(i)),
            unsigned(app.settings.theme) == unsigned(i));
-  wrap("Make a custom buddy in the web creator. Upload over USB or use avatar.cfg on SD.", 12, 194,
-       47, colors.muted);
+  button(8, 188, 304, 38, "AVATAR STUDIO: EYES & GEAR");
+}
+static void studio() {
+  heading("AVATAR STUDIO");
+  const char *eyes[] = {"Classic", "Sparkle", "Sleepy", "Cat", "Pixel", "Wink"};
+  const char *hats[] = {"None", "Bow", "Crown", "Beanie", "Flower", "Scout cap"};
+  const char *glasses[] = {"None", "Round", "Shades", "Visor"};
+  const char *necks[] = {"None", "Scarf", "Bandana", "Bow tie"};
+  const char *kits[] = {"Auto", "Always", "Off"};
+  char s[48];
+  snprintf(s, sizeof(s), "Eyes: %s", eyes[app.settings.customEyes]);
+  button(8, 46, 148, 38, s);
+  snprintf(s, sizeof(s), "Head: %s", hats[app.settings.customHeadwear]);
+  button(164, 46, 148, 38, s);
+  snprintf(s, sizeof(s), "Glasses: %s", glasses[app.settings.customEyewear]);
+  button(8, 94, 148, 38, s);
+  snprintf(s, sizeof(s), "Neck: %s", necks[app.settings.customNeckwear]);
+  button(164, 94, 148, 38, s);
+  snprintf(s, sizeof(s), "Shape: %s", names[app.settings.customBase]);
+  button(8, 142, 148, 38, s);
+  snprintf(s, sizeof(s), "Field kit: %s", kits[app.settings.fieldKit]);
+  button(164, 142, 148, 38, s);
+  button(8, 192, 148, 34, "SHOW MY BUDDY", true);
+  text("Colors + name in", 172, 195, colors.muted);
+  text("the web studio", 172, 210, colors.muted);
 }
 static void buddies(uint32_t now) {
   heading("CHOOSE YOUR BUDDY");
@@ -282,7 +330,7 @@ static void touch(int x, int y) {
     return;
   }
   if (y < 34 && x >= 250) {
-    page = page == Menu ? Home : page == Buddies ? Appearance : Menu;
+    page = page == Menu ? Home : (page == Buddies || page == Studio) ? Appearance : Menu;
     detailOpen = false;
     return;
   }
@@ -306,6 +354,33 @@ static void touch(int x, int y) {
       app.settings.theme = Theme(right ? 1 : 0);
     else if (row(y, 141))
       app.settings.theme = Theme(right ? 3 : 2);
+    else if (row(y, 188, 38))
+      page = Studio;
+    break;
+  case Studio:
+    if (row(y, 46, 38)) {
+      if (right)
+        app.settings.customHeadwear = (app.settings.customHeadwear + 1) % 6;
+      else
+        app.settings.customEyes = (app.settings.customEyes + 1) % 6;
+      app.settings.avatar = Avatar::Custom;
+    } else if (row(y, 94, 38)) {
+      if (right)
+        app.settings.customNeckwear = (app.settings.customNeckwear + 1) % 4;
+      else
+        app.settings.customEyewear = (app.settings.customEyewear + 1) % 4;
+      app.settings.avatar = Avatar::Custom;
+    } else if (row(y, 142, 38)) {
+      if (right)
+        app.settings.fieldKit = (app.settings.fieldKit + 1) % 3;
+      else {
+        app.settings.customBase = (app.settings.customBase + 1) % 3;
+        app.settings.avatar = Avatar::Custom;
+      }
+    } else if (row(y, 192, 34) && !right) {
+      app.settings.avatar = Avatar::Custom;
+      page = Home;
+    }
     break;
   case Buddies:
     if (y >= 47 && y < 168)
@@ -446,6 +521,9 @@ void uiTick() {
     break;
   case Appearance:
     appearance();
+    break;
+  case Studio:
+    studio();
     break;
   case Buddies:
     buddies(now);

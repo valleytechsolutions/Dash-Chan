@@ -1,4 +1,6 @@
 // Dash-Chan installer policy, separate from the page so it can be regression-tested.
+import {parseAvatarLine} from './profile.mjs';
+export {avatarLine} from './profile.mjs';
 export function validateManifest(m) {
   if(m?.schema!==1||m.chip!=='ESP32-S3'||m.flashSize!==16777216||!/^\d+\.\d+\.\d+[-\w.]*$/.test(m.version)||m.files?.length!==4)throw Error('Unsupported or incomplete firmware manifest.');
   const ranges={'bootloader.bin':[0,0x8000],'partitions.bin':[0x8000,0x9000],'boot_app0.bin':[0xe000,0x10000],'firmware.bin':[0x10000,0x510000]};
@@ -34,11 +36,9 @@ export async function installImages(loader,m,images,onStatus=()=>{},onProgress=(
   onStatus('Firmware verified; calibration/settings preserved. Restarting…');
   await restartBoard(loader);onProgress(100);
 }
-export function avatarLine(profile){
-  const name=profile.name.trim();if(!/^[A-Za-z0-9 _-]{1,16}$/.test(name)||!/^#[0-9a-f]{6}$/i.test(profile.body)||!/^#[0-9a-f]{6}$/i.test(profile.accent)||!Number.isInteger(profile.base)||profile.base<0||profile.base>2||!Number.isInteger(profile.accessory)||profile.accessory<0||profile.accessory>3)throw Error('Use a 1–16 character name with letters, numbers, spaces, - or _.');
-  return `DCAV1 ${profile.base} ${profile.body.slice(1).toUpperCase()} ${profile.accent.slice(1).toUpperCase()} ${profile.accessory} ${name}`;
-}
 export async function sendAvatar(port,line,onStatus=()=>{}){
+  parseAvatarLine(line);
+  if(/[\r\n]/.test(line))throw Error('Send one avatar profile at a time.');
   // Application protocol: does not reset the robot or enter its bootloader.
   let reader,writer,timer;let received='';
   try{
@@ -55,6 +55,7 @@ export async function sendAvatar(port,line,onStatus=()=>{}){
     const match=await command('STATUS',/STATUS (\{[^\r\n]+\})/);const status=JSON.parse(match[1]);
     const version=/^(\d+)\.(\d+)\.(\d+)(?:[-+][\w.-]+)?$/.exec(status.version);
     if(!version||!(Number(version[1])>0||Number(version[2])>=2)||status.board!==27)throw Error('This uploader needs Dash-Chan 0.2+ on StackChan K151.');
+    if(line.startsWith('DCAV2 ')&&status.avatar_schema!==2)throw Error('Install Dash-Chan 0.3+ first to use the new eyes and layered outfits. Your current avatar has not changed.');
     if(status.recording)throw Error('Tap STOP & SAVE before changing your avatar.');
     onStatus('Sending your new buddy…');const response=await command('AVATAR SET '+line,/AVATAR (OK|ERROR[^\r\n]*)/);if(response[1]!=='OK')throw Error(response[1]);
     return true;

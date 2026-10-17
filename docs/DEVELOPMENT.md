@@ -26,7 +26,9 @@ The self-hosted esptool-js 0.7.0 bundle is unmodified. Its `HardReset` implement
 
 `site/app.mjs` handles connect/cancel/disconnect, backup downloads, progress, failure messages, unsupported browsers, and mutually exclusive installer/avatar serial access. An install button never bypasses the hardware checkbox or chip-size checks. Download hashes are integrity checks against the published manifest, not independent cryptographic signing.
 
-The avatar creator uses a bounded `DCAV1` text profile. USB checks `STATUS`, refuses during recording, validates the profile on both ends, and waits for `AVATAR OK`. It does not reset or flash. SD profiles override the saved custom appearance on boot. The web renderer mirrors the firmware's original primitive shapes and RGB565 quantization; LCD and browser antialiasing differ.
+Avatar Studio exports a bounded `DCAV2` text profile; `DCAV1` imports migrate bow/scarf/crown into independent layers. USB checks `STATUS` for `avatar_schema:2`, refuses older firmware and recording, validates the profile on both ends, and waits for `AVATAR OK`. It does not reset or flash. SD profiles override the saved custom appearance on boot. The web renderer mirrors the firmware's original primitive shapes and RGB565 quantization; LCD and browser antialiasing differ. Drafts stay in browser local storage. [Profile fields and style choices](AVATAR-STUDIO.md).
+
+`include/travel.h` keeps GPS movement detection separate from scanning, food, and logging. A usable fix and speed no older than two seconds are required. Speed ≥5 km/h for three seconds enters cruising; ≤2 km/h for five seconds exits. Invalid, stale, nonfinite, negative, or implausible (>300 km/h) speeds clear cruising. This is animation state, not a claim of car detection. Auto/Always/Off controls visibility of the original antenna/receiver art. The home pet is clipped to its drawing area so outfits cannot cover status, gauges, or controls.
 
 ## Build, package, and test
 
@@ -35,7 +37,7 @@ python -m pip install platformio==6.2.0
 pio run -e stackchan
 python tools/test.py
 python tools/package.py
-node --test tests/web_test.mjs
+node --test tests/web_test.mjs tests/studio_test.mjs
 ```
 
 Host tests use GNU compilers, `CXX`/`CC`, or `ziglang==0.13.0`. They cover WiGLE CSV escaping and 11-column round trips, GPS quality, session boundaries, duplicate-food protection, cooldown rollover, encounter absence/repeat/family rules, custom profiles/watchlists, probe/header separation from AP logs, traffic hints, head-touch debounce, motion travel, and 50,000 deterministic malformed-packet inputs. Random testing is smoke fuzzing, not a correctness proof.
@@ -50,7 +52,7 @@ python -m http.server 8765 --directory site
 node tests/browser_test.mjs
 ```
 
-`DASH_SITE_URL` selects a deployed site; `DASH_BROWSER` optionally supplies a local Chromium executable. Checks cover desktop and 320/390/768 px layouts, all images, creator download content, invalid names, unsupported-browser messaging, and page/network errors. `web_test.mjs` additionally exercises chip/size refusal, unsafe manifests, corrupt downloads, failed written checks, changed calibration, and avatar recording lockout.
+`DASH_SITE_URL` selects a deployed site; `DASH_BROWSER` optionally supplies a local Chromium executable. Checks cover desktop and 320/390/768 px layouts, all images, layered profile downloads, draft reload, legacy import, rejected imports, keyboard affection, portrait export, invalid names, unsupported-browser messaging, and page/network errors. `web_test.mjs` additionally exercises chip/size refusal, unsafe manifests, corrupt downloads, failed written checks, changed calibration, avatar recording lockout, and old-firmware schema refusal. `studio_test.mjs` round-trips all 1,728 style combinations. Host tests exercise movement thresholds, stale speed, hysteresis, and timer rollover, plus both profile versions and their bounds.
 
 `tools/package.py` writes the flash ZIP and `site/firmware/` from a built application, checks boot mode and protected ranges, and includes source/license notices. `tools/vendor_web.py` refreshes exact pinned browser dependencies and verifies npm tarball integrity before retaining bundle/notices. `tools/pack_logos.py` encodes the supplied artwork at LCD resolution; original PNGs remain in `assets/brands`. Voice regeneration is optional Windows SAPI synthesis in `tools/generate_voice.ps1`; it is not needed to build committed clips.
 
@@ -60,12 +62,13 @@ Use `python tools/device.py --port YOUR_PORT STATUS`. The utility does not inten
 
 | Command | Result |
 |---|---|
-| `STATUS` | Version, board, memory, radio/SD/GPS, rows/drops, fuel/discoveries, sound/voice, recent/suppressed counts |
+| `STATUS` | Version, board, memory, radio/SD/GPS, rows/drops, fuel/discoveries, sound/voice, recent/suppressed counts, avatar schema, GPS speed/movement, ESP-IDF reset reason |
 | `START` / `STOP` | Same recording operations as the face buttons |
 | `CHECK LOG` | Reopen last drive and verify header/byte count |
 | `SCREEN` | Current RGB888 framebuffer; use `--output path.png` |
 | `TAP x y` | Execute a touch at a valid 320×240 coordinate |
-| `AVATAR GET` / `AVATAR SET DCAV1 …` | Inspect/apply custom profile; Set refuses during recording |
+| `AVATAR GET` / `AVATAR SET DCAV2 …` | Inspect/apply custom profile; legacy DCAV1 accepted; Set refuses during recording |
+| `RESTART` | Software restart; refuses during recording |
 | `RELOAD PROFILES` | Reload SD avatar/watchlist while stopped |
 | `DEMO AXON` | Synthetic reaction, no real detection/log/food |
 | `SOUND STATUS` | Speaker/amp diagnostics |
@@ -77,10 +80,14 @@ The development-only `FORMAT SD expected_bytes` command erases the inserted card
 
 Hardware: board 27, ESP32-S3 revision 0.2, 16 MB flash, 8 MB PSRAM, 320×240 display. The user confirmed correct orientation, servo motion, and audible output. A private full factory backup was retained. GPS on blue Port C at 115200 has produced valid 6–8 satellite fixes during beta checks. The installed card reports 511,868,665,856 bytes and mounts as FAT32; that does not verify its entire advertised capacity.
 
-A beta bench drive saved 77 rows, credited 13 new Wi-Fi discoveries, and raised fuel from 70 to 93 (including ongoing passive fuel decay). After Stop, the 8,196-byte file reopened with the expected WiGLE header. Queue drops were zero. Watching afterward did not add food. A prior no-fix session wrote only its header. Heap was approximately 70–79 KB with active radios; PSRAM supplies display buffers.
+A 0.2 beta bench drive saved 77 rows, credited 13 new Wi-Fi discoveries, and raised fuel from 70 to 93 (including ongoing passive fuel decay). After Stop, the 8,196-byte file reopened with the expected WiGLE header. Queue drops were zero. Watching afterward did not add food. A prior no-fix session wrote only its header. Heap was approximately 70–79 KB with active radios; PSRAM supplies display buffers. The 0.3 outfit and travel-state changes do not alter the radio or CSV pipeline.
 
 The web flashing module and pinned esptool-js were exercised against COM60 through a local Web Serial-compatible development bridge: four image verification checks, unchanged NVS, explicit reset, and an acknowledged custom-avatar transfer passed. This tests the actual serial/flashing code on hardware; the browser's native port chooser itself was not automated. Headless browser UI checks and protocol failure tests complement this, not replace it.
 
 The user's repeated-love-speech report led to a global voice switch, silent-by-default speech, visual-only head affection, stronger touch gating, and one-minute face-speech spacing. The flashed device confirmed `sound:false` and `voice:false`; those user preferences are preserved.
+
+For 0.3, a six-field styled profile was sent through the actual web uploader module and acknowledged on the K151. `AVATAR GET` confirmed eyes, colors, and all three accessory layers. The running device supplied the studio and field-kit screenshots. Three commanded software restarts returned fresh boot/status output with reset reason 3 and retained both mute settings. These checks are not cold-power-cycle or road tests.
+
+A truncated panic message appeared during an ad hoc development USB control-line reset sequence. It did not recur in the three software-restart captures or subsequent standard esptool restarts, and no runtime panic was observed during the avatar checks. Its exact cause was not established; use the documented reset/recovery procedure and include complete boot output if reporting a recurrence.
 
 Still unverified: actual WiGLE server upload acceptance, long outdoor-drive stability and GPS loss/reacquisition under movement, full/removed/failing SD behavior across cards, speaker clarity in the enclosure at each volume, and detection recall/false positives against known real devices. Do not turn a successful build or synthetic fixture into a claim that these field checks passed.

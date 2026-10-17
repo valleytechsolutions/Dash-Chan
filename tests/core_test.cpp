@@ -5,6 +5,7 @@
 #include "petting.h"
 #include "profile.h"
 #include "traffic.h"
+#include "travel.h"
 #include "watchlist.h"
 #include <cstdlib>
 #include <fstream>
@@ -57,6 +58,39 @@ int main() {
   CHECK(!head.update(100700, true));
   CHECK(head.update(100950, true));
   AvatarProfile profile;
+  CHECK(parseAvatar("DCAV2 2 112233 FFAACC 4 99FFDD 5 3 2 Field Goblin", profile));
+  CHECK(profile.base == 2 && profile.eyes == 4 && profile.eye == 0x99ffdd &&
+        profile.headwear == 5 && profile.eyewear == 3 && profile.neckwear == 2);
+  CHECK(!parseAvatar("DCAV2 0 FFFFFF FFFFFF 6 112233 0 0 0 Nope", profile));
+  CHECK(!parseAvatar("DCAV2 0 FFFFFF FFFFFF 0 112233 6 0 0 Nope", profile));
+  CHECK(!parseAvatar("DCAV2 0 FFFFFF FFFFFF 0 112233 0 4 0 Nope", profile));
+  CHECK(!parseAvatar("DCAV2 0 FFFFFF FFFFFF 0 112233 0 0 4 Nope", profile));
+  CHECK(!parseAvatar("DCAV2 0 FFFFFF FFFFFF 0 112233 0 0 0 Bad;name", profile));
+  CHECK(!parseAvatar("DCAV3 0 FFFFFF FFFFFF 0 112233 0 0 0 Nope", profile));
+  CHECK(parseAvatar("DCAV1 2 FFFFFF FFAABB 2 Old Buddy", profile));
+  CHECK(profile.eyes == 0 && profile.neckwear == 1 && profile.headwear == 0 &&
+        profile.eye == 0x84f7b5);
+  CHECK(parseAvatar("DCAV1 0 FFFFFF FFAABB 3 Old Crown", profile));
+  CHECK(profile.headwear == 2 && profile.neckwear == 0);
+  TravelState travel;
+  CHECK(!travel.update(100, true, 1.5));
+  CHECK(!travel.update(1000, true, 8));
+  CHECK(!travel.update(3999, true, 8));
+  CHECK(travel.update(4000, true, 8));
+  CHECK(travel.update(5000, true, 3)); // Retain travel inside the hysteresis band.
+  CHECK(travel.update(6000, true, 1));
+  CHECK(travel.update(10999, true, 1));
+  CHECK(!travel.update(11000, true, 1));
+  CHECK(!travel.update(12000, true, 30));
+  CHECK(travel.update(15000, true, 30));
+  CHECK(!travel.update(15001, false, 30)); // GPS loss clears animation immediately.
+  CHECK(!travel.update(16000, true, NAN));
+  CHECK(!travel.update(17000, true, 301));
+  CHECK(!travel.update(0xfffffff0, true, 20));
+  CHECK(travel.update(2984, true, 20));
+  CHECK(fieldScene(0, false, false) == 0 && fieldScene(0, true, false) == 1);
+  CHECK(fieldScene(0, false, true) == 2 && fieldScene(1, false, false) == 1);
+  CHECK(fieldScene(2, true, true) == 0);
   CHECK(parseAvatar("DCAV1 0 FFFFD0 FF88B6 1 My Mochi", profile));
   CHECK(profile.base == 0 && profile.accessory == 1 && !strcmp(profile.name, "My Mochi"));
   CHECK(!parseAvatar("DCAV1 3 FFFFFF FF8800 0 Nope", profile));

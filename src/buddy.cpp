@@ -177,10 +177,14 @@ void buddyTick() {
   if (!app.alertOpen && uint32_t(now - lastChatter) > 22000) {
     lastChatter = now;
     app.mood = app.energy < 30 ? Mood::Sleepy : Mood::Curious;
-    say(app.energy < 30 ? "Let's wardrive! New networks are my snacks."
-                        : idle[app.settings.avatar == Avatar::Custom
-                                   ? app.settings.customBase
-                                   : unsigned(app.settings.avatar)][esp_random() % 4]);
+    const char *road[] = {
+        "Antenna up. Snack radar online!", "You drive. I'll watch the invisible stuff.",
+        "Tiny paws, serious listening gear.", "Are we there yet? My snacks say no."};
+    say((app.moving || app.session.armed) ? road[esp_random() % 4]
+        : app.energy < 30 ? "Let's wardrive! New networks are my snacks."
+                          : idle[app.settings.avatar == Avatar::Custom
+                                     ? app.settings.customBase
+                                     : unsigned(app.settings.avatar)][esp_random() % 4]);
   }
   if (soundActive && (!app.settings.sound || !app.settings.volume)) {
     soundActive = false;

@@ -2,13 +2,13 @@
 
 **A tiny copilot for the invisible world.** Passive radio awareness, GPS wardriving, and an affectionate offline companion for the official **M5Stack StackChan K151**.
 
-## [🚀 Open the web flasher & Buddy Lab](https://valleytechsolutions.github.io/Dash-Chan/)
+## [🚀 Open the web flasher & Avatar Studio](https://valleytechsolutions.github.io/Dash-Chan/)
 
 [First adventure](docs/QUICKSTART.md) · [Flashing & recovery](docs/FLASHING.md) · [Wiki / handbook](docs/wiki/Home.md) · [Downloads](https://github.com/valleytechsolutions/Dash-Chan/releases) · [Sources & attribution](docs/SOURCES.md)
 
 ![Mochi, Sprout, and Orbit: original Dash-Chan companions](media/companions.svg)
 
-**0.2.0 beta.** Installed and checked on an official K151. A bench session saved **77 GPS-tagged Wi-Fi/BLE rows**, credited **13 new Wi-Fi discoveries**, reopened the WiGLE header, and reported **zero queue drops**. The browser installer's flashing module was also exercised against the physical robot: all four image checks passed, NVS remained unchanged, the robot rebooted, and a custom-avatar upload returned its success acknowledgement. Browser layout, profile export, refusal/error paths, and host protocol checks pass. This is a beta, not a claim of perfect detection or field-tested WiGLE server acceptance. [Validation details](docs/DEVELOPMENT.md).
+**0.3.0 beta — Avatar Studio.** Design your companion's eyes, colors, and layered outfit, then send it to your StackChan. Its handheld antenna and receiver animate while exploring. The radio/logging pipeline is unchanged from 0.2, whose bench session saved **77 GPS-tagged Wi-Fi/BLE rows** with **zero queue drops**. This remains a beta: outdoor movement, detection performance, and WiGLE server acceptance need field validation. [Validation details](docs/DEVELOPMENT.md).
 
 ## Meet your copilot
 
@@ -17,13 +17,23 @@
 | **Mochi** | A curious cream cat with a serious snack habit. “My whiskers are on patrol.” |
 | **Sprout** | A mint dragon building a tiny signal hoard. “My wings are in airplane-ish mode.” |
 | **Orbit** | A lilac robot with excellent friendship reception. “My emotional support human is here.” |
-| **Your custom buddy** | Pick one of the three shapes, change body/accent colors, add a bow/scarf/crown, and give it a name in the web creator. |
+| **Your custom buddy** | Mix six eye styles, three colors, headwear, glasses, and neckwear on any original shape. Name it and save it in Avatar Studio. |
 
 Your pet stays visible on its home screen until **you** open a menu. Alerts use an expression, compact signal ribbon, and speech bubble. Idle gestures include glances, nods, curious looks, and quiet pauses. Petting gives heart eyes and affection; fuel and XP come from exploring.
 
 **Wardriving is the only way to feed Dash-Chan.** Every five new Wi-Fi BSSIDs successfully written with valid GPS in the current session earn +12 fuel. Each earns one XP. BLE, background watch, petting, and demos never feed it. Per-drive approximate deduplication prevents repeat-food farming within a session; it may conservatively miss a discovery on a very large drive. Stopping and starting creates a new food session.
 
 This is a scripted personality engine, not cloud AI. No account, microphone processing, or internet connection is needed on the robot.
+
+## Make a buddy that looks like yours
+
+Open **[Avatar Studio](https://valleytechsolutions.github.io/Dash-Chan/#creator)** and start with Signal Scout, Neon Listener, Petal Patrol, or Mochi Royale. Mix **six eye styles**, **six headwear choices**, **four eyewear choices**, and **four neckwear choices**, including None. Change body, accent, and eye colors. Preview love, alert, listening, and cruising poses; save a portrait or an avatar file. Your draft stays in your browser.
+
+**Send to StackChan** applies the design over USB without reflashing. Install 0.3 or newer first. Earlier `DCAV1` avatar files still import. On the robot, **MENU → Look & Themes → Avatar Studio** cycles styles without a computer. [Full studio guide and profile format](docs/AVATAR-STUDIO.md).
+
+In **Auto** field-kit mode, the pet holds a radar-style antenna and pocket receiver while recording or when fresh GPS speed confirms movement. **Always** keeps the gear visible; **Off** hides it. Cruising adds a subtle bob and travel streaks. These are personality animations: the receiver does not process audio, and the antenna does not indicate signal direction. Alerts, muting, logging, and food rules work independently of the outfit.
+
+![The running firmware with a custom scout outfit and listening kit](site/assets/ui-fieldkit.png)
 
 ## Four themes, one familiar face
 
@@ -81,7 +91,7 @@ Use the [web flasher](https://valleytechsolutions.github.io/Dash-Chan/#install) 
 | Face: START / STOP & SAVE | Open or close a wardrive |
 | Face tap / top touch sensor | Affection; no food |
 | Alert speech bubble | Dismiss reaction; continue listening |
-| MENU → Look & Themes | Three original buddies, custom buddy, four themes |
+| MENU → Look & Themes | Three original buddies, custom buddy, four themes, Avatar Studio and field-kit preference |
 | MENU → Sound & Voice | Master mute, voice switch, tones, volume, preview/demo |
 | MENU → Personality | Motion, banter, pet |
 | MENU → Detection | Confidence, family quiet period, optional reminders |
@@ -103,7 +113,7 @@ python -m pip install platformio==6.2.0
 pio run -e stackchan
 python tools/test.py             # g++/gcc, CXX/CC, or ziglang==0.13.0
 python tools/package.py          # release ZIP + site/firmware
-node --test tests/web_test.mjs   # Node 22+
+node --test tests/web_test.mjs tests/studio_test.mjs   # Node 22+
 python -m http.server 8765 --directory site
 ```
 

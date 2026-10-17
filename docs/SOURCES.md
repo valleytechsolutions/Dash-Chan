@@ -19,6 +19,8 @@ Dragon Detector's upstream credits include JustCallMeKoko/ESP32 Marauder, Flock 
 
 Mochi, Sprout, and Orbit are original code-drawn designs in `include/avatars.h`; the same drawing routine generates `media/companions.svg`. Alert voice clips are locally synthesized speech of the requested original phrases, compiled as PCM WAV data; no recordings from third-party firmware are included.
 
+Avatar Studio's six eye styles, layered outfits, presets, handheld antenna, receiver, and travel animation are original Dash-Chan code-drawn artwork. Version 0.3 adds no copied third-party avatar assets or additional upstream detector code. The browser renderer independently mirrors those primitives for previews and portrait export.
+
 SquachWatch's expressive emote sequences and companion-centered interactions were reviewed as design references for blinking, breathing, panic, and affection. Dash-Chan implements its own vector companions and bounded servo animation; it does not copy SquachWatch's mascot, sprites, sound recordings, or UI source. The reviewed SquachWatch repository is GPL-3.0. Its authors and the upstream researchers deserve credit for their detection work.
 
 The BWM and Valley Tech Solutions PNG marks were supplied by the project owner for the boot screen and website. Original files are retained unchanged in `assets/brands`; `tools/pack_logos.py` only prepares LCD-sized encoded copies. Brand/trademark rights remain with their owners and are not granted by Dash-Chan's source-code license. See [brand asset notice](../assets/brands/NOTICE.md).

@@ -1,5 +1,6 @@
 #include "app.h"
 #include <M5StackChan.h>
+#include <esp_system.h>
 namespace dash {
 void printStatus() {
   Serial.printf(
@@ -10,7 +11,8 @@ void printStatus() {
       "\"fuel\":%u,\"food_progress\":%u,\"discoveries\":%lu,\"uptime\":%lu,"
       "\"gps_good\":%lu,\"gps_bad\":%lu,\"sd_bytes\":%llu,\"storage_error\":\"%s\","
       "\"theme\":%u,\"volume\":%u,\"tone\":%u,\"pets\":%lu,\"recent\":%u,\"suppressed\":%lu,"
-      "\"sound\":%s,\"voice\":%s}\n",
+      "\"sound\":%s,\"voice\":%s,\"avatar_schema\":2,\"moving\":%s,\"speed_kph\":%.1f,"
+      "\"reset_reason\":%u}\n",
       Version, unsigned(M5.getBoard()), M5.Display.width(), M5.Display.height(),
       (unsigned long)ESP.getPsramSize(), (unsigned long)ESP.getFreeHeap(),
       app.radioReady ? "true" : "false", app.sdReady ? "true" : "false",
@@ -22,7 +24,8 @@ void printStatus() {
       (unsigned long)app.gpsBad, (unsigned long long)storageCardSize(), app.storageError,
       unsigned(app.settings.theme), app.settings.volume, unsigned(app.settings.tone),
       (unsigned long)app.pets, app.historyCount, (unsigned long)app.suppressed,
-      app.settings.sound ? "true" : "false", app.settings.voice ? "true" : "false");
+      app.settings.sound ? "true" : "false", app.settings.voice ? "true" : "false",
+      app.moving ? "true" : "false", app.speedKph, unsigned(esp_reset_reason()));
 }
 void serialTick() {
   static char line[128];
@@ -46,6 +49,15 @@ void serialTick() {
           startDrive();
         else if (!strcmp(line, "CHECK LOG"))
           storageCheckLog();
+        else if (!strcmp(line, "RESTART")) {
+          if (app.session.armed)
+            Serial.println("RESTART ERROR stop recording first");
+          else {
+            Serial.println("RESTART OK");
+            Serial.flush();
+            ESP.restart();
+          }
+        }
         else if (!strcmp(line, "AVATAR GET"))
           printAvatarConfig();
         else if (!strncmp(line, "AVATAR SET ", 11)) {

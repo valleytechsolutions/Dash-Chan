@@ -24,6 +24,9 @@ struct Settings {
   uint32_t familyQuietMs = 60000;
   uint8_t customBase = 0, customAccessory = 0;
   uint16_t customBody = 0xff7a, customAccent = 0xfbb2;
+  uint8_t customEyes = 0, customHeadwear = 0, customEyewear = 0, customNeckwear = 0;
+  uint16_t customEye = 0x1085;
+  uint8_t fieldKit = 0; // Auto / Always / Off; cosmetic, never controls the radios.
   char customName[17] = "My buddy";
 };
 struct Contact {
@@ -66,6 +69,8 @@ struct State {
   bool demo = false;
   uint32_t pets = 0;
   uint32_t suppressed = 0;
+  bool moving = false;
+  double speedKph = -1;
 };
 extern State app;
 extern Contact contacts[ContactCapacity];

@@ -1,5 +1,5 @@
-import {loadManifest,loadImages,checkBoard,installImages,restartBoard,avatarLine,sendAvatar,sha256} from './flasher.mjs';
-import {drawPet} from './pet.mjs';
+import {loadManifest,loadImages,checkBoard,installImages,restartBoard,sendAvatar,sha256} from './flasher.mjs';
+import {initStudio} from './studio.mjs';
 const $=id=>document.getElementById(id);
 let manifest,loader,transport,busy=false,uploading=false;
 const supported=!!navigator.serial&&window.isSecureContext;
@@ -35,20 +35,12 @@ $('flash').addEventListener('click',async()=>{
   finally{await closeConnection();busy=false;controls();}
 });
 window.addEventListener('beforeunload',e=>{if(busy||uploading){e.preventDefault();e.returnValue='';}});
-const form=$('avatar-form');let mood=0;
-function profile(){const data=new FormData(form);return {name:String(data.get('name')),base:Number(data.get('base')),body:String(data.get('body')),accent:String(data.get('accent')),accessory:Number(data.get('accessory')),custom:true,mood};}
-function updateName(){$('preview-name').textContent=profile().name.trim()||'Your buddy';}
-form.addEventListener('input',updateName);
-document.querySelectorAll('[data-mood]').forEach(b=>b.addEventListener('click',()=>{mood=Number(b.dataset.mood);document.querySelectorAll('[data-mood]').forEach(x=>{x.classList.toggle('selected',x===b);x.setAttribute('aria-pressed',x===b?'true':'false');});}));
-form.addEventListener('submit',e=>{e.preventDefault();try{download(avatarLine(profile())+'\n','avatar.cfg','text/plain');$('avatar-status').textContent='Saved! Copy avatar.cfg into /dashchan/ on the SD card, then restart. Its presence selects your custom buddy on every boot.';$('avatar-status').className='';}catch(err){$('avatar-status').textContent=err.message;$('avatar-status').className='error';}});
-$('upload-avatar').addEventListener('click',async()=>{
-  if(busy||loader||uploading||!form.reportValidity())return;let line;
-  try{line=avatarLine(profile());}catch(e){$('avatar-status').textContent=e.message;return;}
-  uploading=true;controls();$('avatar-status').className='';
-  try{const port=await navigator.serial.requestPort({filters:[{usbVendorId:0x303a}]});await sendAvatar(port,line,m=>{$('avatar-status').textContent=m;});$('avatar-status').textContent='Your buddy is on StackChan! The custom appearance is saved across restarts. An SD avatar.cfg takes priority on boot.';}
-  catch(e){$('avatar-status').textContent=e.name==='NotFoundError'?'Port selection canceled.':e.message;$('avatar-status').className=e.name==='NotFoundError'?'':'error';}
-  finally{uploading=false;controls();}
+initStudio({
+  upload:async(line,onStatus)=>{
+    if(busy||loader||uploading)throw Error('Disconnect the installer before sending your buddy.');
+    uploading=true;controls();
+    try{const port=await navigator.serial.requestPort({filters:[{usbVendorId:0x303a}]});await sendAvatar(port,line,onStatus);}
+    finally{uploading=false;controls();}
+  }
 });
-const reduced=matchMedia('(prefers-reduced-motion: reduce)');let last=0;
-function animate(now){if(now-last>70){last=now;const time=reduced.matches?300:now;drawPet($('hero-pet'),{mood:3},time);drawPet($('avatar-preview'),profile(),time);}requestAnimationFrame(animate);}
-requestAnimationFrame(animate);controls();
+controls();

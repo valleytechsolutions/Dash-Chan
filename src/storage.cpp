@@ -1,4 +1,5 @@
 #include "app.h"
+#include "travel.h"
 #include <Preferences.h>
 #include <SD.h>
 #include <SPI.h>
@@ -8,6 +9,7 @@
 #include <sd_diskio.h>
 #include <vfs_api.h>
 namespace dash {
+static TravelState travel;
 // Own the SD instance so formatting always uses this card's assigned drive,
 // never a guessed FatFs drive number or another filesystem.
 class DashSD : public fs::SDFS {
@@ -135,6 +137,9 @@ void gpsBegin() {
   int rx = app.settings.gpsPort ? 1 : GpsRx, tx = app.settings.gpsPort ? 2 : GpsTx;
   gpsUart.begin(app.settings.gpsBaud, SERIAL_8N1, rx, tx);
   app.fix = {};
+  travel = {};
+  app.moving = false;
+  app.speedKph = -1;
 }
 void gpsTick() {
   unsigned budget = 1024;
@@ -160,6 +165,9 @@ void gpsTick() {
              gps.date.month(), gps.date.day(), gps.time.hour(), gps.time.minute(),
              gps.time.second());
   app.fix = f;
+  bool speedFresh = usableFix(f) && gps.speed.isValid() && gps.speed.age() <= 2000;
+  app.speedKph = speedFresh ? gps.speed.kmph() : -1;
+  app.moving = travel.update(millis(), speedFresh, app.speedKph);
 }
 static void storageFail(const char *reason) {
   snprintf(app.storageError, sizeof(app.storageError), "%s", reason);

@@ -2,9 +2,10 @@
 
 Welcome to your tiny road buddy: passive Wi-Fi/BLE awareness, GPS wardriving, SD logs, and a scripted companion for the official M5Stack StackChan K151.
 
-**[Open the web flasher and avatar creator](https://valleytechsolutions.github.io/Dash-Chan/)**
+**[Open the web flasher and Avatar Studio](https://valleytechsolutions.github.io/Dash-Chan/)**
 
 - [First adventure and every setting](https://github.com/valleytechsolutions/Dash-Chan/blob/main/docs/QUICKSTART.md)
+- [Avatar Studio: eyes, outfits, and field gear](https://github.com/valleytechsolutions/Dash-Chan/blob/main/docs/AVATAR-STUDIO.md)
 - [Flash, update, factory backup, and recovery](https://github.com/valleytechsolutions/Dash-Chan/blob/main/docs/FLASHING.md)
 - [Detection methods, confidence, quiet encounters, and watchlists](https://github.com/valleytechsolutions/Dash-Chan/blob/main/docs/DETECTIONS.md)
 - [Hardware connections and GPS](https://github.com/valleytechsolutions/Dash-Chan/blob/main/docs/HARDWARE.md)
