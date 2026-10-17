@@ -12,7 +12,8 @@ void printStatus() {
       "\"gps_good\":%lu,\"gps_bad\":%lu,\"sd_bytes\":%llu,\"storage_error\":\"%s\","
       "\"theme\":%u,\"volume\":%u,\"tone\":%u,\"pets\":%lu,\"recent\":%u,\"suppressed\":%lu,"
       "\"sound\":%s,\"voice\":%s,\"avatar_schema\":2,\"moving\":%s,\"speed_kph\":%.1f,"
-      "\"reset_reason\":%u}\n",
+      "\"reset_reason\":%u,\"avatar_bases\":5,\"gps_profile\":%u,\"gps_port\":%u,"
+      "\"gps_rx\":%d,\"gps_baud\":%lu,\"gps_active_baud\":%lu,\"gps_searching\":%s}\n",
       Version, unsigned(M5.getBoard()), M5.Display.width(), M5.Display.height(),
       (unsigned long)ESP.getPsramSize(), (unsigned long)ESP.getFreeHeap(),
       app.radioReady ? "true" : "false", app.sdReady ? "true" : "false",
@@ -25,7 +26,10 @@ void printStatus() {
       unsigned(app.settings.theme), app.settings.volume, unsigned(app.settings.tone),
       (unsigned long)app.pets, app.historyCount, (unsigned long)app.suppressed,
       app.settings.sound ? "true" : "false", app.settings.voice ? "true" : "false",
-      app.moving ? "true" : "false", app.speedKph, unsigned(esp_reset_reason()));
+      app.moving ? "true" : "false", app.speedKph, unsigned(esp_reset_reason()),
+      app.settings.gpsProfile, app.settings.gpsPort, gpsRxPin(gpsConfig()),
+      (unsigned long)app.settings.gpsBaud, (unsigned long)app.gpsActiveBaud,
+      app.gpsSearching ? "true" : "false");
 }
 void serialTick() {
   static char line[128];
@@ -49,6 +53,10 @@ void serialTick() {
           startDrive();
         else if (!strcmp(line, "CHECK LOG"))
           storageCheckLog();
+        else if (!strcmp(line, "GPS FIND"))
+          Serial.println(gpsFindBaud() ? "GPS SEARCH started" : "GPS ERROR stop recording first");
+        else if (!strcmp(line, "GPS CANCEL"))
+          gpsCancelSearch();
         else if (!strcmp(line, "RESTART")) {
           if (app.session.armed)
             Serial.println("RESTART ERROR stop recording first");
@@ -57,8 +65,7 @@ void serialTick() {
             Serial.flush();
             ESP.restart();
           }
-        }
-        else if (!strcmp(line, "AVATAR GET"))
+        } else if (!strcmp(line, "AVATAR GET"))
           printAvatarConfig();
         else if (!strncmp(line, "AVATAR SET ", 11)) {
           Serial.println(app.session.armed              ? "AVATAR ERROR stop recording first"

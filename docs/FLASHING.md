@@ -62,7 +62,7 @@ Do not substitute another robot's backup or calibration. If your original backup
 ```sh
 git clone https://github.com/valleytechsolutions/Dash-Chan.git
 cd Dash-Chan
-git checkout v0.3.0-beta
+git checkout v0.4.0-beta
 python -m pip install platformio==6.2.0
 pio run -e stackchan
 python tools/package.py

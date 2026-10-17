@@ -1,13 +1,15 @@
 // Versioned appearance only. Importing a profile never changes audio or radio settings.
 export const DEFAULT_PROFILE = Object.freeze({name:'My buddy',base:0,body:'#fff3d2',accent:'#ff88b6',eyes:0,eye:'#101029',headwear:0,eyewear:0,neckwear:0});
 export const OPTIONS = {
-  base:['Mochi · cat','Sprout · dragon','Orbit · robot'],
+  base:['Mochi · cat','Sprout · dragon','Orbit · robot','Wisp · ghost','Ember · flame'],
   eyes:['Classic','Sparkle','Sleepy','Cat eyes','Pixel','Wink'],
   headwear:['None','Bow','Crown','Beanie','Flower','Scout cap'],
   eyewear:['None','Round glasses','Shades','Cyber visor'],
   neckwear:['None','Scarf','Bandana','Bow tie'],
 };
 export const PRESETS = [
+  {...DEFAULT_PROFILE,name:'Wisp',base:3,body:'#000000',accent:'#c5bfff',eye:'#edffff',eyes:0},
+  {...DEFAULT_PROFILE,name:'Ember',base:4,body:'#ff4d24',accent:'#ffe040',eye:'#201029',eyes:0},
   {...DEFAULT_PROFILE,name:'Signal scout',headwear:5,neckwear:2,eyes:1,accent:'#ffad73'},
   {...DEFAULT_PROFILE,name:'Neon listener',base:2,body:'#a8a0ff',accent:'#7af3ce',eye:'#9affdd',eyes:4,eyewear:3,neckwear:1},
   {...DEFAULT_PROFILE,name:'Petal patrol',base:1,body:'#a5edc0',accent:'#ff9dc8',eyes:3,eye:'#245549',headwear:4},
@@ -37,7 +39,7 @@ export function avatarLine(input){
 export function parseAvatarLine(text){
   if(typeof text!=='string'||text.length>128)throw Error('That avatar file is too large or invalid.');
   const line=text.trim();
-  let m=/^DCAV2 ([0-2]) ([a-f0-9]{6}) ([a-f0-9]{6}) ([0-5]) ([a-f0-9]{6}) ([0-5]) ([0-3]) ([0-3]) ([A-Za-z0-9 _-]{1,16})$/i.exec(line);
+  let m=/^DCAV2 ([0-4]) ([a-f0-9]{6}) ([a-f0-9]{6}) ([0-5]) ([a-f0-9]{6}) ([0-5]) ([0-3]) ([0-3]) ([A-Za-z0-9 _-]{1,16})$/i.exec(line);
   if(m)return validateProfile({base:+m[1],body:'#'+m[2],accent:'#'+m[3],eyes:+m[4],eye:'#'+m[5],headwear:+m[6],eyewear:+m[7],neckwear:+m[8],name:m[9]});
   m=/^DCAV1 ([0-2]) ([a-f0-9]{6}) ([a-f0-9]{6}) ([0-3]) ([A-Za-z0-9 _-]{1,16})$/i.exec(line);
   if(m)return validateProfile({base:+m[1],body:'#'+m[2],accent:'#'+m[3],eye:+m[1]===2?'#84f7b5':'#101029',headwear:+m[4]===1?1:+m[4]===3?2:0,neckwear:+m[4]===2?1:0,name:m[5]});

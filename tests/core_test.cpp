@@ -1,5 +1,6 @@
 #include "detector.h"
 #include "encounters.h"
+#include "gps_support.h"
 #include "idle_motion.h"
 #include "nutrition.h"
 #include "petting.h"
@@ -40,7 +41,92 @@ static void ad(std::vector<uint8_t> &p, uint8_t type, std::initializer_list<uint
   p.push_back(type);
   p.insert(p.end(), d);
 }
+static std::string sentence(const std::string &body) {
+  uint8_t sum = 0;
+  for (char c : body)
+    sum ^= c;
+  char suffix[8];
+  snprintf(suffix, sizeof(suffix), "*%02X\r\n", sum);
+  return "$" + body + suffix;
+}
+static bool feed(NmeaFrame &frame, const std::string &input) {
+  bool decoded = false;
+  for (char c : input)
+    decoded |= frame.feed(c);
+  return decoded;
+}
+static void checkGps() {
+  GpsConfig cfg;
+  CHECK(validGpsConfig(cfg) && gpsRxPin(cfg) == 18);
+  cfg.port = 1;
+  CHECK(gpsRxPin(cfg) == 1);
+  cfg.port = 3;
+  CHECK(gpsRxPin(cfg) == 8);
+  cfg.port = 2;
+  for (auto pin : GpsInputPins) {
+    cfg.rx = pin;
+    CHECK(validGpsConfig(cfg) && gpsRxPin(cfg) == pin);
+  }
+  for (int pin : {0, 4, 6, 7, 11, 12, 19, 20, 35, 36, 37, 255}) {
+    cfg.rx = pin;
+    CHECK(!validGpsConfig(cfg));
+  }
+  cfg.rx = 18;
+  for (unsigned i = 0; i < GpsPresetCount; ++i) {
+    cfg.profile = i;
+    cfg.baud = GpsPresets[i].baud;
+    CHECK(validGpsConfig(cfg));
+  }
+  cfg.profile = GpsPresetCount;
+  CHECK(!validGpsConfig(cfg));
+  cfg.profile = 0;
+  cfg.baud = 12345;
+  CHECK(!validGpsConfig(cfg));
+  cfg.baud = 9600;
+  cfg.port = 4;
+  CHECK(!validGpsConfig(cfg));
+  for (const char *talker : {"GP", "GN", "GA", "GL", "GB", "BD", "GQ", "GI"}) {
+    NmeaFrame f;
+    const std::string body = "RMC,123519.00,V,,,,,,,171026,,,N"; // No satellite fix required.
+    CHECK(feed(f, sentence(std::string(talker) + body)));
+    auto expected = sentence("GP" + body);
+    expected.erase(expected.size() - 2, 1); // Normalized output ends with LF.
+    CHECK(std::string(f.line()) == expected);
+    CHECK(f.good == 1 && f.bad == 0);
+  }
+  NmeaFrame f;
+  CHECK(!feed(f, sentence("GNGSV,1,1,00"))); // Valid but not fix-bearing.
+  CHECK(!feed(f, sentence("XXGGA,1,2,3")));
+  CHECK(!feed(f, sentence("PTEST,1,2,3")));
+  CHECK(f.good == 3 && f.bad == 0);
+  auto bad = sentence("GNRMC,123519.00,V,,,,,,,171026,,,N");
+  bad[8] ^= 1;
+  CHECK(!feed(f, bad) && f.bad == 1);
+  CHECK(!feed(f, "$GNRMC,0*XX\n") && f.bad == 2);
+  CHECK(!feed(f, "$GNGGA,0\n") && f.bad == 3);
+  CHECK(!feed(f, "$" + std::string(180, 'A') + "\n") && f.bad == 4);
+  CHECK(!feed(f, std::string("$GNRMC,") + char(0) + "\n") && f.bad == 5);
+  CHECK(feed(f, "noise$partial" + sentence("GNGGA,1,2,3"))); // Re-sync at next '$'.
+  CHECK(f.good == 4);
+  GpsBaudSearch search;
+  CHECK(!search.sentence() && search.tick(10000) == 0);
+  search.start(0xfffffff0);
+  CHECK(search.baud() == 9600 && search.tick(3483) == 0);
+  CHECK(!search.sentence());
+  CHECK(search.tick(3484) == 1 && search.baud() == 115200);
+  CHECK(!search.sentence()); // Hits from a previous baud cannot count.
+  CHECK(search.sentence() && !search.active());
+  CHECK(!search.sentence() && search.tick(20000) == 0);
+  search.start(0);
+  for (unsigned i = 1; i < GpsRateCount; ++i)
+    CHECK(search.tick(3500 * i) == 1);
+  CHECK(search.tick(3500 * GpsRateCount) == -1 && !search.active());
+  search.start(0);
+  search.cancel();
+  CHECK(search.tick(3500) == 0 && !search.sentence());
+}
 int main() {
+  checkGps();
   PetTouch head;
   CHECK(!head.update(0, false));
   CHECK(!head.update(600, false));
@@ -58,6 +144,11 @@ int main() {
   CHECK(!head.update(100700, true));
   CHECK(head.update(100950, true));
   AvatarProfile profile;
+  CHECK(parseAvatar("DCAV2 3 000000 C5BFFF 0 EDFFFF 0 0 0 Wisp", profile));
+  CHECK(profile.base == 3 && profile.body == 0);
+  CHECK(parseAvatar("DCAV2 4 FF4D24 FFE040 1 201029 0 0 0 Ember", profile));
+  CHECK(profile.base == 4);
+  CHECK(!parseAvatar("DCAV2 5 FFFFFF FFFFFF 0 000000 0 0 0 Nope", profile));
   CHECK(parseAvatar("DCAV2 2 112233 FFAACC 4 99FFDD 5 3 2 Field Goblin", profile));
   CHECK(profile.base == 2 && profile.eyes == 4 && profile.eye == 0x99ffdd &&
         profile.headwear == 5 && profile.eyewear == 3 && profile.neckwear == 2);
@@ -338,7 +429,7 @@ int main() {
   }
   // Every relaxed gesture stays in its narrower travel envelope, returns to
   // center, and leaves an actual rest. A reset cancels an old gesture.
-  for (unsigned avatar = 0; avatar < 3; ++avatar) {
+  for (unsigned avatar = 0; avatar < 5; ++avatar) {
     for (unsigned sample = 0; sample < 256; ++sample) {
       IdleMotion idle;
       uint32_t now = 0xfffffff0;

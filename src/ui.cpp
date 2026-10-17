@@ -18,18 +18,24 @@ enum Page {
   Behavior,
   Detection,
   History,
-  Diagnostics
+  Diagnostics,
+  GpsSetup,
+  GpsModels,
+  GpsWiring
 };
 static Page page = Home;
 static uint8_t historyPage = 0;
 static bool detailOpen = false;
 static Alert detail;
 static Palette colors;
-static const char *names[] = {"Mochi", "Sprout", "Orbit"};
+static const char *names[] = {"Mochi", "Sprout", "Orbit", "Wisp", "Ember"};
+static unsigned buddyPage = 0, gpsModelPage = 0;
+static GpsConfig gpsDraft;
+static bool gpsWasSearching = false;
 static const char *tones[] = {"Personality", "Siren", "Arcade", "Chime", "Silent"};
 static const char *petName() {
   return app.settings.avatar == Avatar::Custom ? app.settings.customName
-                                               : names[unsigned(app.settings.avatar)];
+                                               : names[avatarBase(app.settings.avatar, 0)];
 }
 static void text(const char *s, int x, int y, uint16_t color, int size = 1) {
   canvas.setTextSize(size);
@@ -67,7 +73,7 @@ static void heading(const char *name) {
 static void pet(M5Canvas &g, int avatar, int x, int y, int mood, int gaze, bool blink, int bob = 0,
                 int field = 0, int phase = 0) {
   bool custom = avatar == 3;
-  drawBuddy(g, custom ? app.settings.customBase : avatar, x, y, mood, gaze, blink, bob,
+  drawBuddy(g, avatarBase(Avatar(avatar), app.settings.customBase), x, y, mood, gaze, blink, bob,
             app.settings.customBody, app.settings.customAccent, 0, custom,
             custom ? app.settings.customEyes : 0, app.settings.customEye,
             custom ? app.settings.customHeadwear : 0, custom ? app.settings.customEyewear : 0,
@@ -189,18 +195,23 @@ static void studio() {
 static void buddies(uint32_t now) {
   heading("CHOOSE YOUR BUDDY");
   for (int a = 0; a < 3; ++a) {
+    int base = int(buddyPage * 3) + a;
+    if (base >= 5)
+      break;
+    int id = base < 3 ? base : base + 1;
     int x = 54 + 106 * a;
-    bool selected = unsigned(app.settings.avatar) == unsigned(a);
+    bool selected = unsigned(app.settings.avatar) == unsigned(id);
     canvas.fillRoundRect(x - 49, 47, 98, 121, 10, selected ? colors.panel : colors.bg);
     if (thumbReady) {
       thumb.fillSprite(selected ? colors.panel : colors.bg);
-      pet(thumb, a, 80, 61, 0, 0, now % 4000 < 100);
+      pet(thumb, id, 80, 61, 0, 0, now % 4000 < 100);
       thumb.pushRotateZoom(&canvas, x, 107, 0, 0.58, 0.65);
     }
-    text(names[a], x - 18, 149, selected ? colors.accent : colors.text);
+    text(names[base], x - 18, 149, selected ? colors.accent : colors.text);
   }
-  button(8, 184, 304, 40, (std::string("Custom: ") + app.settings.customName).c_str(),
+  button(8, 184, 206, 40, (std::string("Custom: ") + app.settings.customName).c_str(),
          app.settings.avatar == Avatar::Custom);
+  button(222, 184, 90, 40, buddyPage ? "< ORIGINALS" : "WISP/EMBER >");
 }
 static void audio() {
   heading("SOUND & VOICE");
@@ -300,12 +311,67 @@ static void diagnostics() {
        : app.session.armed ? app.logPath
                            : "Ready: start a wardrive from the face.",
        10, 104, 49, colors.muted);
-  snprintf(s, sizeof(s), "GPS: %s", app.settings.gpsPort ? "PORT A" : "PORT C");
-  button(8, 151, 148, 34, s);
-  snprintf(s, sizeof(s), "Baud: %lu", (unsigned long)app.settings.gpsBaud);
-  button(164, 151, 148, 34, s);
+  snprintf(s, sizeof(s), "GPS SETUP: %s",
+           app.gpsSearching ? "FINDING BAUD" : GpsPresets[app.settings.gpsProfile].name);
+  button(8, 151, 304, 34, s);
   button(8, 199, 148, 33, "RETRY SD");
   button(164, 199, 148, 33, "HOME", true);
+}
+static void gpsSetup() {
+  heading("GPS MODULE & WIRING");
+  char s[80];
+  snprintf(s, sizeof(s), "Module: %s", GpsPresets[gpsDraft.profile].name);
+  button(8, 42, 304, 32, s);
+  button(8, 82, 148, 32,
+         gpsDraft.port == 0   ? "Blue Port C"
+         : gpsDraft.port == 1 ? "Port A"
+         : gpsDraft.port == 3 ? "Port B"
+                              : "Custom Grove RX");
+  snprintf(s, sizeof(s), "Host RX: G%d", gpsRxPin(gpsDraft));
+  button(164, 82, 148, 32, s);
+  snprintf(s, sizeof(s), "Baud: %lu", (unsigned long)gpsDraft.baud);
+  button(8, 122, 148, 32, s);
+  button(164, 122, 148, 32, app.gpsSearching ? "CANCEL SEARCH" : "APPLY + FIND BAUD");
+  if (app.gpsSearching) {
+    snprintf(s, sizeof(s), "Trying %lu baud; radios still watch", (unsigned long)app.gpsActiveBaud);
+    text(s, 10, 163, colors.accent);
+  } else
+    text(app.session.armed    ? "Stop recording to change GPS settings"
+         : usableFix(app.fix) ? "GPS READY; receiving valid fix data"
+                              : app.gpsMessage,
+         10, 163, colors.muted);
+  text("UART receive-only; module RX unused", 10, 179, colors.muted);
+  button(8, 201, 148, 32, "APPLY SETTINGS", true);
+  button(164, 201, 148, 32, "WIRING GUIDE");
+}
+static void gpsModels() {
+  heading("CHOOSE GPS MODULE");
+  for (unsigned i = 0; i < 4 && gpsModelPage * 4 + i < GpsPresetCount; ++i) {
+    unsigned n = gpsModelPage * 4 + i;
+    button(8, 43 + i * 37, 304, 32, GpsPresets[n].name, n == gpsDraft.profile);
+  }
+  button(8, 201, 90, 32, "PREV");
+  button(222, 201, 90, 32, "NEXT");
+  char s[12];
+  snprintf(s, sizeof(s), "%u / %u", gpsModelPage + 1, (GpsPresetCount + 3) / 4);
+  text(s, 140, 213, colors.muted);
+}
+static void gpsWiring() {
+  heading("GPS WIRING HELP");
+  char s[64];
+  snprintf(s, sizeof(s), "GPS TX -> StackChan G%d (RX)", gpsRxPin(gpsDraft));
+  text(s, 10, 46, colors.accent);
+  text("GPS GND -> Grove black / GND", 10, 65, colors.text);
+  text("GPS RX and PPS: leave disconnected", 10, 84, colors.text);
+  text("White / yellow: C G18/G17", 10, 106, colors.muted);
+  text("A G1/G2 | B G8/G9", 10, 122, colors.muted);
+  wrap("Grove red is 5V. Bare ATGM336H needs regulated power per its datasheet. UART logic: 3.3V "
+       "only.",
+       10, 145, 48, colors.danger, 3);
+  wrap(GpsPresets[gpsDraft.profile].adapter
+           ? "Use a UART breakout/adapter. A preset does not change the connector pinout."
+           : "Unit GPS: use its Grove cable on Port C. Power off before rewiring.",
+       10, 196, 48, colors.muted, 3);
 }
 static bool row(int y, int top, int height = 36) {
   return y >= top && y < top + height;
@@ -330,7 +396,11 @@ static void touch(int x, int y) {
     return;
   }
   if (y < 34 && x >= 250) {
-    page = page == Menu ? Home : (page == Buddies || page == Studio) ? Appearance : Menu;
+    page = page == Menu                               ? Home
+           : (page == Buddies || page == Studio)      ? Appearance
+           : (page == GpsModels || page == GpsWiring) ? GpsSetup
+           : page == GpsSetup                         ? Diagnostics
+                                                      : Menu;
     detailOpen = false;
     return;
   }
@@ -374,7 +444,7 @@ static void touch(int x, int y) {
       if (right)
         app.settings.fieldKit = (app.settings.fieldKit + 1) % 3;
       else {
-        app.settings.customBase = (app.settings.customBase + 1) % 3;
+        app.settings.customBase = (app.settings.customBase + 1) % 5;
         app.settings.avatar = Avatar::Custom;
       }
     } else if (row(y, 192, 34) && !right) {
@@ -383,10 +453,16 @@ static void touch(int x, int y) {
     }
     break;
   case Buddies:
-    if (y >= 47 && y < 168)
-      app.settings.avatar = Avatar(std::min(2, x / 106));
-    else if (row(y, 184, 40))
-      app.settings.avatar = Avatar::Custom;
+    if (y >= 47 && y < 168) {
+      int base = int(buddyPage * 3) + std::min(2, x / 106);
+      if (base < 5)
+        app.settings.avatar = Avatar(base < 3 ? base : base + 1);
+    } else if (row(y, 184, 40)) {
+      if (x >= 222)
+        buddyPage ^= 1;
+      else
+        app.settings.avatar = Avatar::Custom;
+    }
     break;
   case Audio:
     if (row(y, 44))
@@ -457,20 +533,70 @@ static void touch(int x, int y) {
     }
     break;
   case Diagnostics:
-    if (row(y, 151, 34) && !app.session.armed) {
-      if (!right)
-        app.settings.gpsPort ^= 1;
-      else
-        app.settings.gpsBaud = app.settings.gpsBaud == 9600     ? 115200
-                               : app.settings.gpsBaud == 115200 ? 38400
-                                                                : 9600;
-      gpsBegin();
+    if (row(y, 151, 34)) {
+      gpsDraft = gpsConfig();
+      page = GpsSetup;
     } else if (row(y, 199, 33)) {
       if (right)
         page = Home;
       else if (!app.session.armed) {
         storageBegin();
         storageLoadAvatar();
+      }
+    }
+    break;
+  case GpsSetup:
+    if (row(y, 201, 32) && right) {
+      page = GpsWiring;
+      break;
+    }
+    if (app.session.armed)
+      break;
+    if (app.gpsSearching) {
+      if (row(y, 122, 32) && right)
+        gpsCancelSearch();
+      break;
+    }
+    if (row(y, 42, 32)) {
+      gpsModelPage = gpsDraft.profile / 4;
+      page = GpsModels;
+    } else if (row(y, 82, 32)) {
+      if (!right)
+        gpsDraft.port = (gpsDraft.port + 1) % 4;
+      else {
+        int pin = gpsRxPin(gpsDraft);
+        unsigned n = 0;
+        while (n < GpsInputPinCount && GpsInputPins[n] != pin)
+          ++n;
+        gpsDraft.port = 2;
+        gpsDraft.rx = GpsInputPins[(n + 1) % GpsInputPinCount];
+      }
+    } else if (row(y, 122, 32)) {
+      if (right) {
+        if (gpsApply(gpsDraft))
+          gpsFindBaud();
+      } else {
+        unsigned n = 0;
+        while (n < GpsRateCount && GpsRates[n] != gpsDraft.baud)
+          ++n;
+        gpsDraft.baud = GpsRates[(n + 1) % GpsRateCount];
+      }
+    } else if (row(y, 201, 32) && !right)
+      gpsApply(gpsDraft);
+    break;
+  case GpsModels:
+    if (app.session.armed)
+      break;
+    if (row(y, 201, 32))
+      gpsModelPage =
+          (gpsModelPage + (right ? 1 : (GpsPresetCount + 3) / 4 - 1)) % ((GpsPresetCount + 3) / 4);
+    else if (y >= 43 && y < 191) {
+      unsigned n = gpsModelPage * 4 + (y - 43) / 37;
+      if (n < GpsPresetCount) {
+        gpsDraft.profile = n;
+        if (n)
+          gpsDraft.baud = GpsPresets[n].baud;
+        page = GpsSetup;
       }
     }
     break;
@@ -501,6 +627,9 @@ void uiBoot() {
   delay(1500);
 }
 void uiTick() {
+  if (gpsWasSearching && !app.gpsSearching)
+    gpsDraft = gpsConfig();
+  gpsWasSearching = app.gpsSearching;
   if (!buffered)
     return;
   auto t = M5.Touch.getDetail();
@@ -542,6 +671,15 @@ void uiTick() {
     break;
   case Diagnostics:
     diagnostics();
+    break;
+  case GpsSetup:
+    gpsSetup();
+    break;
+  case GpsModels:
+    gpsModels();
+    break;
+  case GpsWiring:
+    gpsWiring();
     break;
   }
   canvas.pushSprite(0, 0);

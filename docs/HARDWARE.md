@@ -6,10 +6,13 @@ This build targets the official **K151 StackChan**. A similarly named DIY robot 
 |---|---|
 | Built-in LCD/touch/speaker/power | M5Unified + M5GFX board detection |
 | Feetech servos | StackChan-BSP, UART1, G6/G7, 1 Mbaud |
-| GPS Port C | UART2, host RX G18, host TX G17 |
-| GPS Port A option | UART2, host RX G1, host TX G2 |
+| GPS Port C | UART2, host RX G18 (receive-only) |
+| GPS Port B option | UART2, host RX G8 (receive-only) |
+| GPS Port A option | UART2, host RX G1 (receive-only) |
 | SD | CS G4, SCK G36, MISO G35, MOSI G37; 4 MHz with 1 MHz mount fallback |
 | Head touch / lights | StackChan-BSP through built-in I2C |
+
+See the [GPS presets, baud finder, compatibility table, and DIY ATGM336H wiring guide](GPS.md). Custom RX supports only the six exposed Grove signal pins.
 
 The GPS Unit and stackable GPS Module/Module GPS v2 are different products. Verify the actual model, cable orientation, UART voltage, baud, and switch/pin routing. The default profile is for an external UART unit connected through Port C. Never connect RS-232 voltage levels directly to ESP32 GPIO. GPS settings cannot be changed during an active recording session.
 
@@ -35,7 +38,7 @@ Use the packaged split-image instructions with **DIO** bootloader flash mode. Th
 
 The project carries a scoped [Espressif SD-driver backport](../lib/DashChanSD/README.md) for card initialization and completed writes. Shared Arduino/PlatformIO package files are not modified. SD mount starts at 4 MHz and retries at 1 MHz if needed.
 
-USB maintenance commands are supported by `tools/device.py --port YOUR_PORT COMMAND`: `STATUS`, `SCREEN`, `TAP x y`, `START`, `STOP`, and `CHECK LOG`. `STATUS` includes NMEA checksum counters, mounted SD capacity, food progress, and storage errors. After stopping, `CHECK LOG` reopens the latest session and checks its WiGLE header and file size.
+USB maintenance commands are supported by `tools/device.py --port YOUR_PORT COMMAND`: `STATUS`, `SCREEN`, `TAP x y`, `START`, `STOP`, `GPS FIND`, `GPS CANCEL`, and `CHECK LOG`. `STATUS` includes NMEA checksum counters, mounted SD capacity, food progress, and storage errors. After stopping, `CHECK LOG` reopens the latest session and checks its WiGLE header and file size.
 
 `SOUND TEST` plays a short diagnostic tone and reports the playback configuration and amplifier registers; `SOUND STATUS` reads those diagnostics without playing anything. The explicit tone test can sound even if normal companion sounds are set to Quiet.
 

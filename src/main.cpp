@@ -10,13 +10,19 @@ std::atomic<uint32_t> captureGeneration{0};
 void loadSettings() {
   Preferences p;
   p.begin("dashchan", true);
-  app.settings.avatar = Avatar(p.getUChar("avatar", 0) % 4);
+  app.settings.avatar = Avatar(p.getUChar("avatar", 0) % 6);
   app.settings.sound = p.getBool("sound", true);
   app.settings.motion = p.getBool("motion", false);
   app.settings.spicy = p.getBool("spicy", true);
   app.settings.threshold = Confidence(constrain(p.getUChar("filter", 2), 1, 3));
   app.settings.gpsBaud = p.getUInt("baud", GpsBaud);
-  app.settings.gpsPort = p.getUChar("gpsport", 0) % 2;
+  app.settings.gpsPort = p.getUChar("gpsport", 0) % 4;
+  app.settings.gpsProfile = p.getUChar("gpsmodel", 0) % GpsPresetCount;
+  app.settings.gpsRx = p.getUChar("gpsrx", 18);
+  if (!validGpsConfig(gpsConfig())) {
+    app.settings.gpsRx = 18;
+    app.settings.gpsBaud = GpsBaud;
+  }
   app.settings.xp = p.getUInt("xp", 0);
   app.energy = std::min(100, int(p.getUChar("fuel", 85)));
   app.settings.theme = Theme(p.getUChar("theme", 0) % 4);
@@ -26,7 +32,7 @@ void loadSettings() {
   app.settings.voice = p.getBool("voice", false);
   app.settings.repeatAlerts = p.getBool("repeat", false);
   app.settings.familyQuietMs = constrain(p.getUInt("quietms", 60000), 15000u, 600000u);
-  app.settings.customBase = p.getUChar("custombase", 0) % 3;
+  app.settings.customBase = p.getUChar("custombase", 0) % 5;
   app.settings.customAccessory = p.getUChar("accessory", 0) % 4;
   app.settings.customBody = p.getUShort("body", 0xff7a);
   app.settings.customAccent = p.getUShort("accent", 0xfbb2);
@@ -52,6 +58,8 @@ void saveSettings() {
   p.putUChar("filter", uint8_t(app.settings.threshold));
   p.putUInt("baud", app.settings.gpsBaud);
   p.putUChar("gpsport", app.settings.gpsPort);
+  p.putUChar("gpsmodel", app.settings.gpsProfile);
+  p.putUChar("gpsrx", app.settings.gpsRx);
   p.putUInt("xp", app.settings.xp);
   p.putUChar("fuel", app.energy);
   p.putUChar("theme", uint8_t(app.settings.theme));
@@ -80,6 +88,9 @@ void say(const char *text) {
 }
 } // namespace dash
 void setup() {
+  // Hold a complete STATUS reply even when USB reads lag during GPS changes.
+  // Configure before begin(), while the CDC interrupt has not been attached.
+  Serial.setTxBufferSize(2048);
   Serial.begin(115200);
   dash::loadSettings();
   M5StackChan.begin();

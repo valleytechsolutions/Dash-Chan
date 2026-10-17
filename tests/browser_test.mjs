@@ -53,6 +53,15 @@ try{
   await page.locator('#random-avatar').click();assert.equal(await page.locator('#avatar-form').evaluate(f=>f.checkValidity()),true);
   await page.getByRole('button',{name:'Use Signal scout preset',exact:true}).click();
   await page.getByRole('button',{name:'Happy',exact:true}).click();
+  assert.equal(await page.locator('#preset-gallery button').count(),6);
+  for(const [name,base] of [['Wisp',3],['Ember',4]]){
+    await page.getByRole('button',{name:`Use ${name} preset`,exact:true}).click();
+    assert.equal(await page.locator('input[name=name]').inputValue(),name);
+    const save=page.waitForEvent('download');await page.locator('#save-avatar').click();
+    await (await save).saveAs(`build/web/${name}.cfg`);
+    assert.match(await readFile(`build/web/${name}.cfg`,'utf8'),new RegExp(`^DCAV2 ${base} `));
+    await page.locator('#avatar-preview').screenshot({path:`build/web/${name}.png`});
+  }
   const badImages=await page.locator('img').evaluateAll(imgs=>imgs.filter(i=>!i.complete||!i.naturalWidth).map(i=>i.src));assert.deepEqual(badImages,[]);
   await page.evaluate(()=>window.scrollTo(0,0));await page.screenshot({path:'build/web/desktop.png',fullPage:true});
   for(const width of [390,320,768]){

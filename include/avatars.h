@@ -12,10 +12,14 @@ void drawBuddy(G &g, int avatar, int cx, int cy, int mood, int gaze, bool blink,
                bool custom = false, int eyeStyle = 0, uint16_t eyeColor = Ink, int headwear = -1,
                int eyewear = 0, int neckwear = -1, int field = 0, int phase = 0) {
   cy += bounce;
-  uint16_t body = avatar == 0 ? Paper : avatar == 1 ? Mint : Lilac;
+  uint16_t body = avatar == 0   ? Paper
+                  : avatar == 1 ? Mint
+                  : avatar == 2 ? Lilac
+                  : avatar == 3 ? 0x0000
+                                : 0xfa64;
   if (custom)
     body = customBody;
-  uint16_t blush = custom ? customAccent : Blush;
+  uint16_t blush = custom ? customAccent : avatar == 3 ? 0xc5ff : avatar == 4 ? 0xff28 : Blush;
   g.fillEllipse(cx, cy + 46, 49, 6, 0x18e7);
   if (avatar == 0) {
     g.fillTriangle(cx - 44, cy - 16, cx - 44, cy - 52, cx - 12, cy - 28, body);
@@ -34,7 +38,7 @@ void drawBuddy(G &g, int avatar, int cx, int cy, int mood, int gaze, bool blink,
     g.fillEllipse(cx, cy + 27, 28, 17, 0xdff6);
     g.fillEllipse(cx - 31, cy + 37, 16, 9, body);
     g.fillEllipse(cx + 31, cy + 37, 16, 9, body);
-  } else {
+  } else if (avatar == 2) {
     g.fillRoundRect(cx - 57, cy - 13, 12, 31, 5, 0x8bdb);
     g.fillRoundRect(cx + 45, cy - 13, 12, 31, 5, 0x8bdb);
     g.fillRect(cx - 2, cy - 52, 4, 16, body);
@@ -44,8 +48,35 @@ void drawBuddy(G &g, int avatar, int cx, int cy, int mood, int gaze, bool blink,
     g.fillCircle(cx - 9, cy + 33, 3, Mint);
     g.fillCircle(cx, cy + 33, 3, Peach);
     g.fillCircle(cx + 9, cy + 33, 3, blush);
+  } else if (avatar == 3) {
+    // Black ghost with a fine charcoal rim: readable on all four themes.
+    g.fillEllipse(cx, cy, 49, 43, 0x420a);
+    g.fillEllipse(cx, cy, 47, 41, body);
+    g.fillTriangle(cx - 44, cy + 13, cx - 51, cy + 42, cx - 12, cy + 33, body);
+    g.fillTriangle(cx + 44, cy + 13, cx + 51, cy + 42, cx + 12, cy + 33, body);
+    for (int x : {-28, 0, 28})
+      g.fillEllipse(cx + x, cy + 35 + (x == 0 ? 4 : 0), 15, 10, body);
+    g.fillTriangle(cx - 13, cy - 33, cx + 5, cy - 57, cx + 12, cy - 32, body);
+    g.drawLine(cx - 8, cy - 39, cx + 3, cy - 52, 0x420a);
+    for (int side : {-1, 1}) {
+      int y = cy - 13 - int((phase + side + 8) % 8) * 2;
+      g.fillCircle(cx + side * 60, y, 4, 0x420a);
+      g.fillCircle(cx + side * 60, y, 2, body);
+    }
+  } else {
+    int flicker = (phase % 6 < 3) ? -2 : 2;
+    g.fillTriangle(cx - 38, cy + 12, cx - 33, cy - 43 - flicker, cx - 4, cy - 10, body);
+    g.fillTriangle(cx - 24, cy - 12, cx + 3 + flicker, cy - 61, cx + 28, cy + 3, body);
+    g.fillTriangle(cx + 11, cy - 3, cx + 43, cy - 40 + flicker, cx + 45, cy + 18, body);
+    g.fillEllipse(cx, cy + 7, 47, 36, body);
+    g.fillEllipse(cx, cy + 25, 27, 17, blush);
+    g.fillTriangle(cx - 18, cy + 25, cx + 3, cy + 2, cx + 20, cy + 27, blush);
+    g.fillEllipse(cx - 28, cy + 38, 14, 8, body);
+    g.fillEllipse(cx + 28, cy + 38, 14, 8, body);
+    for (int side : {-1, 1})
+      g.fillCircle(cx + side * 56, cy - 10 - int((phase + side + 8) % 8) * 3, 2, blush);
   }
-  uint16_t eye = custom ? eyeColor : avatar == 2 ? Mint : Ink;
+  uint16_t eye = custom ? eyeColor : avatar == 2 ? Mint : avatar == 3 ? 0xefff : Ink;
   int ey = cy - 4, ex = cx + gaze;
   if (mood == 3) {
     for (int s = -1; s <= 1; s += 2) {
@@ -83,7 +114,7 @@ void drawBuddy(G &g, int avatar, int cx, int cy, int mood, int gaze, bool blink,
       }
     }
   }
-  if (avatar != 2) {
+  if (avatar == 0 || avatar == 1 || avatar == 4) {
     g.fillEllipse(cx - 36, cy + 12, 8, 4, blush);
     g.fillEllipse(cx + 36, cy + 12, 8, 4, blush);
   }

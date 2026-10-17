@@ -37,24 +37,24 @@ struct Svg {
 int main() {
   std::ofstream f("media/companions.svg");
   Svg s{f};
-  f << "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 960 350'><rect width='960' "
-       "height='350' rx='24' fill='#0b1123'/><text x='40' y='44' font-family='sans-serif' "
+  f << "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 960 620'><rect width='960' "
+       "height='620' rx='24' fill='#0b1123'/><text x='40' y='44' font-family='sans-serif' "
        "font-size='20' font-weight='bold' fill='#8df0b5'>DASH-CHAN / MEET YOUR COPILOTS</text>";
-  const char *names[] = {"MOCHI", "SPROUT", "ORBIT"};
-  const char *desc[] = {"Curious cat. Professional snack enthusiast.",
-                        "Pocket dragon. Collector of invisible treasure.",
-                        "Little robot. Big friendship signal."};
-  for (int a = 0; a < 3; ++a) {
-    int x = 160 + 320 * a;
-    s.fillRoundRect(x - 142, 66, 284, 262, 18, 0x1928);
-    f << "<g transform='translate(" << x << " 164) scale(1.4)'>";
+  const char *names[] = {"MOCHI", "SPROUT", "ORBIT", "WISP", "EMBER"};
+  const char *desc[] = {"Professional snack enthusiast.", "Collector of invisible treasure.",
+                        "Big friendship signal.", "Your emotional support shadow.",
+                        "Small flame. Big adventure."};
+  for (int a = 0; a < 5; ++a) {
+    int x = a < 3 ? 160 + 320 * a : 320 + 320 * (a - 3), y = a < 3 ? 164 : 440;
+    s.fillRoundRect(x - 142, y - 98, 284, 250, 18, 0x1928);
+    f << "<g transform='translate(" << x << " " << y << ") scale(1.4)'>";
     dash::drawBuddy(s, a, 0, 0, 0, 0, false);
-    f << "</g><text x='" << x
-      << "' y='268' text-anchor='middle' font-family='sans-serif' font-size='21' "
-         "font-weight='bold' fill='#f7f1e6'>"
-      << names[a] << "</text><text x='" << x
-      << "' y='298' text-anchor='middle' font-family='sans-serif' font-size='11' fill='#abb9ce'>"
-      << desc[a] << "</text>";
+    f << "</g><text x='" << x << "' y='" << y + 104
+      << "' text-anchor='middle' font-family='sans-serif' font-size='21' font-weight='bold' "
+         "fill='#f7f1e6'>"
+      << names[a] << "</text><text x='" << x << "' y='" << y + 132
+      << "' text-anchor='middle' font-family='sans-serif' font-size='11' fill='#abb9ce'>" << desc[a]
+      << "</text>";
   }
   f << "</svg>";
 }

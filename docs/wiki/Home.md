@@ -8,6 +8,7 @@ Welcome to your tiny road buddy: passive Wi-Fi/BLE awareness, GPS wardriving, SD
 - [Avatar Studio: eyes, outfits, and field gear](https://github.com/valleytechsolutions/Dash-Chan/blob/main/docs/AVATAR-STUDIO.md)
 - [Flash, update, factory backup, and recovery](https://github.com/valleytechsolutions/Dash-Chan/blob/main/docs/FLASHING.md)
 - [Detection methods, confidence, quiet encounters, and watchlists](https://github.com/valleytechsolutions/Dash-Chan/blob/main/docs/DETECTIONS.md)
+- [GPS presets, baud finder, and ATGM336H wiring](https://github.com/valleytechsolutions/Dash-Chan/blob/main/docs/GPS.md)
 - [Hardware connections and GPS](https://github.com/valleytechsolutions/Dash-Chan/blob/main/docs/HARDWARE.md)
 - [Architecture, serial commands, and measured validation](https://github.com/valleytechsolutions/Dash-Chan/blob/main/docs/DEVELOPMENT.md)
 - [Pinned sources and attributions](https://github.com/valleytechsolutions/Dash-Chan/blob/main/docs/SOURCES.md)

@@ -19,13 +19,17 @@ static float gazeTarget = 0;
 static uint32_t lastGaze = 0;
 static unsigned panicStep = 0;
 static uint32_t panicWait = 0;
-static const char *idle[3][4] = {
+static const char *idle[5][4] = {
     {"Tiny paws. Big curiosity.", "Let's find networks. I'm peckish!",
      "I can hear the invisible internet.", "My whiskers are on patrol."},
     {"Small dragon. Excellent lookout.", "Collecting signals for my hoard.",
      "New networks taste like adventure.", "My wings are in airplane-ish mode."},
     {"Beep. Friendship signal: strong.", "Processing... you are my favorite.",
-     "No cloud. Just a little personality.", "My emotional support human is here."}};
+     "No cloud. Just a little personality.", "My emotional support human is here."},
+    {"Boo. Did I scare the Wi-Fi?", "Tiny ghost. Huge snack problem.",
+     "Haunting the airwaves with you.", "I am your emotional support shadow."},
+    {"Small flame. Big warm feelings.", "These networks are looking toasty.",
+     "Fueled by friendship. And Wi-Fi snacks.", "My heart is a tiny campfire."}};
 void buddyMotion(bool on) {
   app.settings.motion = on;
   idleMotion.reset(millis());
@@ -181,10 +185,9 @@ void buddyTick() {
         "Antenna up. Snack radar online!", "You drive. I'll watch the invisible stuff.",
         "Tiny paws, serious listening gear.", "Are we there yet? My snacks say no."};
     say((app.moving || app.session.armed) ? road[esp_random() % 4]
-        : app.energy < 30 ? "Let's wardrive! New networks are my snacks."
-                          : idle[app.settings.avatar == Avatar::Custom
-                                     ? app.settings.customBase
-                                     : unsigned(app.settings.avatar)][esp_random() % 4]);
+        : app.energy < 30
+            ? "Let's wardrive! New networks are my snacks."
+            : idle[avatarBase(app.settings.avatar, app.settings.customBase)][esp_random() % 4]);
   }
   if (soundActive && (!app.settings.sound || !app.settings.volume)) {
     soundActive = false;

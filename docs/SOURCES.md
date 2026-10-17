@@ -26,3 +26,7 @@ SquachWatch's expressive emote sequences and companion-centered interactions wer
 The BWM and Valley Tech Solutions PNG marks were supplied by the project owner for the boot screen and website. Original files are retained unchanged in `assets/brands`; `tools/pack_logos.py` only prepares LCD-sized encoded copies. Brand/trademark rights remain with their owners and are not granted by Dash-Chan's source-code license. See [brand asset notice](../assets/brands/NOTICE.md).
 
 Runtime libraries are fetched with their original licenses: M5Unified/M5GFX/StackChan-BSP (MIT), NimBLE-Arduino (Apache-2.0 and included notices), TinyGPSPlus (LGPL-2.1), Arduino ESP32 (LGPL-2.1 with ESP-IDF component notices). Dash-Chan's GPL-3.0-or-later license does not replace those notices or imply that upstream authors endorse this project.
+
+## GPS preset research (0.4)
+
+The [GPS compatibility table](GPS.md) links each M5Stack receiver's official product documentation, the K151 pin map, and the ZhongKe ATGM336H-5N/-6N manufacturer manuals. Presets are original baud/connection metadata; the bounded NMEA framing and search implementation are original Dash-Chan code. No manufacturer firmware or manual artwork is bundled. The reviewed modules are UART/NMEA compatible with appropriate adapters; only Unit GPS v1.1 has been bench tested on this robot. Wisp and Ember are original vector characters rendered in firmware and the web studio.

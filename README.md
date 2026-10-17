@@ -6,9 +6,11 @@
 
 [First adventure](docs/QUICKSTART.md) · [Flashing & recovery](docs/FLASHING.md) · [Wiki / handbook](docs/wiki/Home.md) · [Downloads](https://github.com/valleytechsolutions/Dash-Chan/releases) · [Sources & attribution](docs/SOURCES.md)
 
-![Mochi, Sprout, and Orbit: original Dash-Chan companions](media/companions.svg)
+![Mochi, Sprout, Orbit, Wisp, and Ember: original Dash-Chan companions](media/companions.svg)
 
-**0.3.0 beta — Avatar Studio.** Design your companion's eyes, colors, and layered outfit, then send it to your StackChan. Its handheld antenna and receiver animate while exploring. The radio/logging pipeline is unchanged from 0.2, whose bench session saved **77 GPS-tagged Wi-Fi/BLE rows** with **zero queue drops**. This remains a beta: outdoor movement, detection performance, and WiGLE server acceptance need field validation. [Validation details](docs/DEVELOPMENT.md).
+**0.4.0 beta — Wisp, Ember & GPS setup.** Adopt a cute black ghost or a tiny fire buddy, customize all five shapes in Avatar Studio, and connect a wider range of UART GPS receivers. Named M5Stack/ATGM336H presets, Grove receive-pin selection, and a one-shot baud finder are now on the robot. [GPS compatibility and wiring](docs/GPS.md).
+
+This remains a beta: outdoor movement, detection performance, and WiGLE server acceptance need field validation. [Measured checks and limits](docs/DEVELOPMENT.md).
 
 ## Meet your copilot
 
@@ -17,7 +19,13 @@
 | **Mochi** | A curious cream cat with a serious snack habit. “My whiskers are on patrol.” |
 | **Sprout** | A mint dragon building a tiny signal hoard. “My wings are in airplane-ish mode.” |
 | **Orbit** | A lilac robot with excellent friendship reception. “My emotional support human is here.” |
+| **Wisp** | An all-black little ghost with bright eyes and drifting wisps. “Your emotional support shadow.” |
+| **Ember** | A tiny orange flame with flickering tips and floating sparks. “Small flame. Big adventure.” |
 | **Your custom buddy** | Mix six eye styles, three colors, headwear, glasses, and neckwear on any original shape. Name it and save it in Avatar Studio. |
+
+| Wisp on the robot | Ember on the robot |
+|---|---|
+| ![Wisp](site/assets/ui-wisp.png) | ![Ember](site/assets/ui-ember.png) |
 
 Your pet stays visible on its home screen until **you** open a menu. Alerts use an expression, compact signal ribbon, and speech bubble. Idle gestures include glances, nods, curious looks, and quiet pauses. Petting gives heart eyes and affection; fuel and XP come from exploring.
 
@@ -27,9 +35,9 @@ This is a scripted personality engine, not cloud AI. No account, microphone proc
 
 ## Make a buddy that looks like yours
 
-Open **[Avatar Studio](https://valleytechsolutions.github.io/Dash-Chan/#creator)** and start with Signal Scout, Neon Listener, Petal Patrol, or Mochi Royale. Mix **six eye styles**, **six headwear choices**, **four eyewear choices**, and **four neckwear choices**, including None. Change body, accent, and eye colors. Preview love, alert, listening, and cruising poses; save a portrait or an avatar file. Your draft stays in your browser.
+Open **[Avatar Studio](https://valleytechsolutions.github.io/Dash-Chan/#creator)** and start with Wisp, Ember, Signal Scout, Neon Listener, Petal Patrol, or Mochi Royale. Mix **six eye styles**, **six headwear choices**, **four eyewear choices**, and **four neckwear choices**, including None. Change body, accent, and eye colors. Preview love, alert, listening, and cruising poses; save a portrait or an avatar file. Your draft stays in your browser.
 
-**Send to StackChan** applies the design over USB without reflashing. Install 0.3 or newer first. Earlier `DCAV1` avatar files still import. On the robot, **MENU → Look & Themes → Avatar Studio** cycles styles without a computer. [Full studio guide and profile format](docs/AVATAR-STUDIO.md).
+**Send to StackChan** applies the design over USB without reflashing. Install 0.4 or newer for all five shapes. Earlier `DCAV1` avatar files still import. On the robot, **MENU → Look & Themes → Avatar Studio** cycles styles without a computer. [Full studio guide and profile format](docs/AVATAR-STUDIO.md).
 
 In **Auto** field-kit mode, the pet holds a radar-style antenna and pocket receiver while recording or when fresh GPS speed confirms movement. **Always** keeps the gear visible; **Off** hides it. Cruising adds a subtle bob and travel streaks. These are personality animations: the receiver does not process audio, and the antenna does not indicate signal direction. Alerts, muting, logging, and food rules work independently of the outfit.
 
@@ -79,7 +87,7 @@ There are 128 encounter-ledger slots and 32 browsable recent entries. Very dense
 
 - **Official StackChan K151/CoreS3:** ESP32-S3, 16 MB flash, 8 MB Quad PSRAM, 320 × 240 landscape display. Generic DIY Stack-chan servo wiring is unsupported.
 - **Native radio:** 2.4 GHz Wi-Fi and BLE. No 5 GHz, Bluetooth Classic, LoRa, or sub-GHz reception.
-- **GPS:** M5Stack Unit GPS on blue Port C, RX G18 / TX G17, UART2. Select 9600/38400/115200 in GPS & SD. The development unit uses 115200; your unit may differ.
+- **GPS:** UART NMEA on blue Port C by default (host RX G18), with A/B/custom Grove RX options. **GPS & SD → GPS SETUP** has M5Stack and ATGM336H presets plus baud search. Stack/Atom/Cap receivers need adapters; bare ATGM modules need regulated 3.3 V power. [Compatibility table and wiring](docs/GPS.md).
 - **Storage:** FAT32 microSD in the robot. No automatic formatting.
 
 Use the [web flasher](https://valleytechsolutions.github.io/Dash-Chan/#install) in desktop Chrome/Edge. It can download a full factory backup, validates the chip and flash size, checks SHA-256 downloads, writes split images without whole-chip erase, verifies written flash, and checks that NVS calibration is unchanged. The same site provides the creator, real UI images, quickstart, downloads, and attributions. [Detailed install/recovery instructions](docs/FLASHING.md).
@@ -91,12 +99,12 @@ Use the [web flasher](https://valleytechsolutions.github.io/Dash-Chan/#install) 
 | Face: START / STOP & SAVE | Open or close a wardrive |
 | Face tap / top touch sensor | Affection; no food |
 | Alert speech bubble | Dismiss reaction; continue listening |
-| MENU → Look & Themes | Three original buddies, custom buddy, four themes, Avatar Studio and field-kit preference |
+| MENU → Look & Themes | Five original buddies, custom buddy, four themes, Avatar Studio and field-kit preference |
 | MENU → Sound & Voice | Master mute, voice switch, tones, volume, preview/demo |
 | MENU → Personality | Motion, banter, pet |
 | MENU → Detection | Confidence, family quiet period, optional reminders |
 | MENU → Recent Signals | Paginated evidence and last-seen details |
-| MENU → GPS & SD | GPS quality, rows/drops, error text, port/baud, SD retry |
+| MENU → GPS & SD | GPS quality, rows/drops, error text, module presets, receive pins, baud finder, wiring help, SD retry |
 
 ## Logs and GPS quality
 

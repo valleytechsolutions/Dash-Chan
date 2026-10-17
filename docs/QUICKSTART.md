@@ -5,8 +5,8 @@ Dash-Chan turns the official M5Stack StackChan K151 into an offline companion fo
 ## Set up
 
 1. [Install with the web flasher](https://valleytechsolutions.github.io/Dash-Chan/#install), or follow [manual flashing and recovery](FLASHING.md). Use the official K151, not a DIY servo Stack-chan.
-2. Insert a FAT32 microSD card. Connect your M5Stack Unit GPS to **blue Port C**. GPS uses RX G18 / TX G17 on UART2; servos use their own UART.
-3. Open **MENU → GPS & SD**. Select the GPS unit's actual baud: 9600, 38400, or 115200. The development unit is working at 115200. The default for new installations is 9600. Port and baud changes are locked during recording.
+2. Insert a FAT32 microSD card. Connect your M5Stack Unit GPS to **blue Port C**. GPS uses receive-only UART2 on G18; servos use their own UART. For other modules, see the [compatibility table and wiring guide](GPS.md).
+3. Open **MENU → GPS & SD → GPS SETUP**. Select your module preset and actual port. Tap **APPLY SETTINGS**, or **APPLY + FIND BAUD** if its speed is unknown. The finder saves a rate after two valid NMEA sentences, or restores the applied rate after cancellation/timeout. Stop recording before changing GPS settings.
 4. Go outside with a clear view of the sky. **GPS READY** means a fresh fix, valid UTC, four or more satellites, and HDOP no greater than 5. Acquiring satellites alone is not enough.
 5. Choose **Look & Themes** for your buddy and theme. Under **Personality**, enable gentle or lively head motion if desired. Motion is off on a new installation; existing preferences persist.
 6. Under **Sound & Voice**, choose your volume and alert tone. **Voice starts OFF**. Enable it only if you want speech. **Master sound OFF** silences both speech and tones immediately. Your pet keeps animating and collecting signals when muted.
@@ -26,12 +26,12 @@ The pet remains visible during alerts and recording. No event automatically open
 
 | Menu | Controls |
 |---|---|
-| Look & Themes | Mochi, Sprout, Orbit, or a custom buddy; Dark, Light, Matrix, BWM; Avatar Studio with eyes, layered outfits, and Auto/Always/Off field gear |
+| Look & Themes | Mochi, Sprout, Orbit, Wisp, Ember, or a custom buddy; Dark, Light, Matrix, BWM; Avatar Studio with eyes, layered outfits, and Auto/Always/Off field gear |
 | Sound & Voice | Personality, Siren, Arcade, Chime, Silent; volume 0/100/170/220/255; Master sound; Voice; preview; synthetic Axon demo |
 | Personality | Head motion Off/Gentle/Lively; Spicy panic/Gentle lookout; pet button |
 | Detection | Confidence filter; same-family quiet period 60/180/300 seconds; optional five-minute reminders |
 | Recent Signals | Up to 32 entries, four per page; transport, RSSI, name/address, evidence, count, last-seen age |
-| GPS & SD | Fix/satellites/HDOP, received NMEA characters, rows, queue drops, storage errors, port/baud, SD retry |
+| GPS & SD | Fix/satellites/HDOP, received NMEA characters, rows, queue drops, storage errors, module presets, port/RX, baud finder, wiring help, SD retry |
 
 **Silent** is a detection-tone choice. **Voice OFF** disables every spoken clip. **Master sound OFF** disables all audio. With Voice OFF, Personality uses electronic sounds instead of speech. Spicy captions can remain on-screen independently of voice.
 
@@ -54,9 +54,9 @@ Tap STOP & SAVE before ejecting the card or powering off. A sudden power loss ca
 
 Open [Avatar Studio](https://valleytechsolutions.github.io/Dash-Chan/#creator). Choose a preset or mix a base shape, six eye styles, three colors, headwear, glasses, and neckwear. Names allow up to 16 ASCII letters, digits, spaces, hyphens, or underscores. Your browser keeps a local draft. Preview different moods and travel poses before sending it.
 
-**USB:** install firmware **0.3 or newer**, disconnect the installer, leave Dash-Chan running normally, stop any recording, and select **Send to StackChan**. The uploader checks the running firmware, sends the profile, and waits for `AVATAR OK`. It does not reflash the robot or change mute settings. An older firmware receives a clear upgrade message before a new profile is sent.
+**USB:** install firmware **0.4 or newer**, disconnect the installer, leave Dash-Chan running normally, stop any recording, and select **Send to StackChan**. The uploader checks the running firmware, sends the profile, and waits for `AVATAR OK`. It does not reflash the robot or change mute settings. An older firmware receives a clear upgrade message before a new profile is sent.
 
-**SD:** download `avatar.cfg`, create `/dashchan/`, copy the file there, and restart. That file takes priority on every boot; remove or update it if you later want a USB-uploaded appearance to persist. USB uploads are stored in NVS. The creator customizes the three original vector shapes; it is not an arbitrary photo/sprite uploader.
+**SD:** download `avatar.cfg`, create `/dashchan/`, copy the file there, and restart. That file takes priority on every boot; remove or update it if you later want a USB-uploaded appearance to persist. USB uploads are stored in NVS. The creator customizes the five original vector shapes; it is not an arbitrary photo/sprite uploader.
 
 The original `DCAV1` files still work. New exports use `DCAV2`:
 

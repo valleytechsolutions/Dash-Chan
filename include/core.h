@@ -192,7 +192,7 @@ inline std::string csv(const char *s) {
   return r + '\"';
 }
 inline const char *wigleHeader() {
-  return "WigleWifi-1.4,appRelease=0.3.0-beta,model=StackChan,release=Dash-Chan,device=ESP32-S3,"
+  return "WigleWifi-1.4,appRelease=0.4.0-beta,model=StackChan,release=Dash-Chan,device=ESP32-S3,"
          "display=ILI9342,board=K151,brand=M5Stack\nMAC,SSID,AuthMode,FirstSeen,Channel,RSSI,"
          "CurrentLatitude,CurrentLongitude,AltitudeMeters,AccuracyMeters,Type\n";
 }

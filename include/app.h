@@ -1,13 +1,21 @@
 #pragma once
 #include "config.h"
 #include "core.h"
+#include "gps_support.h"
 #include "nutrition.h"
 #include "themes.h"
 #include "watchlist.h"
 #include <Arduino.h>
 #include <atomic>
 namespace dash {
-enum class Avatar : uint8_t { Mochi, Sprout, Orbit, Custom };
+// Preserve saved value 3 for Custom across upgrades.
+enum class Avatar : uint8_t { Mochi, Sprout, Orbit, Custom, Wisp, Ember };
+inline unsigned avatarBase(Avatar a, unsigned custom) {
+  return a == Avatar::Custom  ? custom
+         : a == Avatar::Wisp  ? 3
+         : a == Avatar::Ember ? 4
+                              : unsigned(a);
+}
 enum class Mood : uint8_t { Happy, Curious, Sleepy, Love, Alarm };
 enum class AlertTone : uint8_t { Personality, Siren, Arcade, Chime, Silent };
 struct Settings {
@@ -16,6 +24,7 @@ struct Settings {
   Confidence threshold = Confidence::Medium;
   uint32_t gpsBaud = GpsBaud;
   uint8_t gpsPort = 0;
+  uint8_t gpsProfile = 0, gpsRx = 18;
   uint32_t xp = 0;
   Theme theme = Theme::Dark;
   AlertTone tone = AlertTone::Personality;
@@ -71,6 +80,9 @@ struct State {
   uint32_t suppressed = 0;
   bool moving = false;
   double speedKph = -1;
+  bool gpsSearching = false;
+  uint32_t gpsActiveBaud = GpsBaud;
+  char gpsMessage[64] = "Waiting for NMEA";
 };
 extern State app;
 extern Contact contacts[ContactCapacity];
@@ -80,6 +92,10 @@ void saveSettings();
 void loadSettings();
 void gpsBegin();
 void gpsTick();
+GpsConfig gpsConfig();
+bool gpsApply(const GpsConfig &);
+bool gpsFindBaud();
+void gpsCancelSearch();
 void storageBegin();
 void storageTick();
 uint64_t storageCardSize();

@@ -19,7 +19,7 @@ loader=fakeLoader();let reads=0;loader.readFlash=async(a,n)=>new Uint8Array(n).f
 loader=fakeLoader();const bad=structuredClone(images);bad[0].data[0]=99;await assert.rejects(()=>installImages(loader,manifest,bad),/changed/);assert(!loader.options);
 const line=avatarLine({name:' Sir Mochi ',base:0,body:'#ffffff',accent:'#ff1234',accessory:3});assert.equal(line,'DCAV2 0 FFFFFF FF1234 0 101029 2 0 0 Sir Mochi');
 for(const name of ['', '   ','x\nSTART','more than sixteen chars','🐱'])assert.throws(()=>avatarLine({name,base:0,body:'#ffffff',accent:'#ff1234',accessory:3}));
-function mockPort(recording=false,schema=2){let controller;return {commands:[],closed:false,open:async function(){this.readable=new ReadableStream({start(c){controller=c;}});this.writable=new WritableStream({write:bytes=>{const command=new TextDecoder().decode(bytes).trim();this.commands.push(command);const response=command==='STATUS'?`STATUS ${JSON.stringify({version:'0.3.0-beta',board:27,recording,avatar_schema:schema})}\n`:'AVATAR OK\n';controller.enqueue(new TextEncoder().encode(response));}});},setSignals:async()=>{},close:async function(){this.closed=true;}};}
+function mockPort(recording=false,schema=2,bases=5){let controller;return {commands:[],closed:false,open:async function(){this.readable=new ReadableStream({start(c){controller=c;}});this.writable=new WritableStream({write:bytes=>{const command=new TextDecoder().decode(bytes).trim();this.commands.push(command);const response=command==='STATUS'?`STATUS ${JSON.stringify({version:'0.4.0-beta',board:27,recording,avatar_schema:schema,avatar_bases:bases})}\n`:'AVATAR OK\n';controller.enqueue(new TextEncoder().encode(response));}});},setSignals:async()=>{},close:async function(){this.closed=true;}};}
 let port=mockPort();assert(await sendAvatar(port,line));assert(port.closed);assert.equal(port.commands[1],'AVATAR SET '+line);
 port=mockPort(true);await assert.rejects(()=>sendAvatar(port,line),/STOP & SAVE/);assert(port.closed);assert.equal(port.commands.length,1);
 // When packaged firmware exists, independently check every published byte and protected sector boundary.
@@ -27,3 +27,12 @@ try{const real=validateManifest(JSON.parse(await readFile(new URL('../site/firmw
 console.log('Web installer and avatar protocol tests passed (including failure and refusal paths).');
 
 port=mockPort(false,0);await assert.rejects(()=>sendAvatar(port,line),/0.3/);assert.equal(port.commands.length,1);
+
+for(const base of [3,4]){
+  const buddy=avatarLine({name:base===3?'Wisp':'Ember',base,body:'#000000',accent:'#c5bfff',eye:'#edffff'});
+  port=mockPort(false,2,5);assert(await sendAvatar(port,buddy));assert.equal(port.commands[1],'AVATAR SET '+buddy);assert(port.closed);
+  for(const bases of [undefined,3]){
+    port=mockPort(false,2,bases===undefined?null:bases);
+    await assert.rejects(()=>sendAvatar(port,buddy),/0.4/);assert.equal(port.commands.length,1);assert(port.closed);
+  }
+}

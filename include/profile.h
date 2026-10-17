@@ -23,7 +23,8 @@ inline bool parseAvatar(const char *line, AvatarProfile &out) {
                     &p.accent, &p.eyes, &p.eye, &p.headwear, &p.eyewear, &p.neckwear, p.name,
                     &extra) != 9)
     return false;
-  if (p.base > 2 || p.eyes > 5 || p.headwear > 5 || p.eyewear > 3 || p.neckwear > 3 || !*p.name)
+  if (p.base > 4 || (!strncmp(line, "DCAV1 ", 6) && p.base > 2) || p.eyes > 5 || p.headwear > 5 ||
+      p.eyewear > 3 || p.neckwear > 3 || !*p.name)
     return false;
   if (p.body > 0xffffff || p.accent > 0xffffff || p.eye > 0xffffff)
     return false;

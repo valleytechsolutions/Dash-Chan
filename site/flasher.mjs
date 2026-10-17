@@ -56,6 +56,7 @@ export async function sendAvatar(port,line,onStatus=()=>{}){
     const version=/^(\d+)\.(\d+)\.(\d+)(?:[-+][\w.-]+)?$/.exec(status.version);
     if(!version||!(Number(version[1])>0||Number(version[2])>=2)||status.board!==27)throw Error('This uploader needs Dash-Chan 0.2+ on StackChan K151.');
     if(line.startsWith('DCAV2 ')&&status.avatar_schema!==2)throw Error('Install Dash-Chan 0.3+ first to use the new eyes and layered outfits. Your current avatar has not changed.');
+    if(parseAvatarLine(line).base>=3 && !(status.avatar_bases>=5))throw Error('Install Dash-Chan 0.4+ first for Wisp and Ember. Your current avatar has not changed.');
     if(status.recording)throw Error('Tap STOP & SAVE before changing your avatar.');
     onStatus('Sending your new buddy…');const response=await command('AVATAR SET '+line,/AVATAR (OK|ERROR[^\r\n]*)/);if(response[1]!=='OK')throw Error(response[1]);
     return true;

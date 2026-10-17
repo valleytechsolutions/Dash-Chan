@@ -1,15 +1,12 @@
 #include "app.h"
-#include "travel.h"
 #include <Preferences.h>
 #include <SD.h>
 #include <SPI.h>
-#include <TinyGPSPlus.h>
 #include <diskio.h>
 #include <ff.h>
 #include <sd_diskio.h>
 #include <vfs_api.h>
 namespace dash {
-static TravelState travel;
 // Own the SD instance so formatting always uses this card's assigned drive,
 // never a guessed FatFs drive number or another filesystem.
 class DashSD : public fs::SDFS {
@@ -66,8 +63,6 @@ public:
   }
 };
 static DashSD card;
-static TinyGPSPlus gps;
-static HardwareSerial gpsUart(2);
 static File drive;
 static uint32_t lastFlush = 0;
 void storageLoadAvatar() {
@@ -80,7 +75,7 @@ void storageLoadAvatar() {
     while (n && (line[n - 1] == '\r' || line[n - 1] == ' '))
       line[--n] = 0;
     if (!applyAvatarConfig(line))
-      Serial.println("Avatar file ignored: invalid DCAV1 profile");
+      Serial.println("Avatar file ignored: invalid avatar profile");
     config.close();
   }
   watchlist.clear();
@@ -130,45 +125,6 @@ bool storageFormat(uint64_t expectedBytes) {
   Serial.println("FORMAT OK: FAT32, wardrives and events directories ready");
   return true;
 }
-void gpsBegin() {
-  gpsUart.end();
-  gps = TinyGPSPlus();
-  gpsUart.setRxBufferSize(2048);
-  int rx = app.settings.gpsPort ? 1 : GpsRx, tx = app.settings.gpsPort ? 2 : GpsTx;
-  gpsUart.begin(app.settings.gpsBaud, SERIAL_8N1, rx, tx);
-  app.fix = {};
-  travel = {};
-  app.moving = false;
-  app.speedKph = -1;
-}
-void gpsTick() {
-  unsigned budget = 1024;
-  while (gpsUart.available() && budget--)
-    gps.encode(char(gpsUart.read()));
-  app.gpsChars = gps.charsProcessed();
-  app.gpsGood = gps.passedChecksum();
-  app.gpsBad = gps.failedChecksum();
-  Fix f;
-  f.age = gps.location.age();
-  f.lat = gps.location.lat();
-  f.lon = gps.location.lng();
-  f.alt = gps.altitude.meters();
-  f.sats = gps.satellites.value();
-  f.hdop = gps.hdop.hdop();
-  f.valid = gps.location.isValid() && gps.altitude.isValid() && gps.altitude.age() <= 2000 &&
-            gps.hdop.isValid() && gps.hdop.age() <= 2000 && gps.satellites.isValid() &&
-            gps.satellites.age() <= 2000 && gps.date.isValid() && gps.time.isValid() &&
-            gps.date.age() <= 2000 && gps.time.age() <= 2000 && gps.date.year() >= 2024 &&
-            gps.date.year() <= 2099;
-  if (f.valid)
-    snprintf(f.utc, sizeof(f.utc), "%04d-%02d-%02d %02d:%02d:%02d", gps.date.year(),
-             gps.date.month(), gps.date.day(), gps.time.hour(), gps.time.minute(),
-             gps.time.second());
-  app.fix = f;
-  bool speedFresh = usableFix(f) && gps.speed.isValid() && gps.speed.age() <= 2000;
-  app.speedKph = speedFresh ? gps.speed.kmph() : -1;
-  app.moving = travel.update(millis(), speedFresh, app.speedKph);
-}
 static void storageFail(const char *reason) {
   snprintf(app.storageError, sizeof(app.storageError), "%s", reason);
   app.session.stop();
@@ -196,6 +152,10 @@ void storageBegin() {
            app.sdReady ? "" : "Insert FAT32 SD; tap Retry SD");
 }
 bool startDrive() {
+  if (app.gpsSearching) {
+    say("Finish GPS baud search before recording.");
+    return false;
+  }
   if (app.session.armed)
     return true;
   if (!app.radioReady) {

@@ -7,8 +7,9 @@ export function drawPet(canvas,options={},time=0){
   g.clearRect(0,0,canvas.width,canvas.height);g.save();
   const scale=Math.min(canvas.width/220,canvas.height/165);
   g.translate(canvas.width/2,canvas.height/2+2+Math.sin(time/650)*2*scale);g.scale(scale,scale);
-  const ink=rgb(0x1085),paper=rgb(0xff7a),mint=rgb(0x87b6),peach=rgb(0xfdaf),lilac=rgb(0xc5ff),blush=custom?quantize(accent):rgb(0xfbb2);
-  const skin=custom?quantize(body):[paper,mint,lilac][base];
+  const ink=rgb(0x1085),paper=rgb(0xff7a),mint=rgb(0x87b6),peach=rgb(0xfdaf),lilac=rgb(0xc5ff),blush=custom?quantize(accent):rgb(base===3?0xc5ff:base===4?0xff28:0xfbb2);
+  const skin=custom?quantize(body):[paper,mint,lilac,'#000000',rgb(0xfa64)][base];
+  const phase=Math.floor(time/150);
   const ellipse=(x,y,rx,ry,c)=>{g.fillStyle=c;g.beginPath();g.ellipse(x,y,rx,ry,0,0,Math.PI*2);g.fill();};
   const rect=(x,y,w,h,r,c)=>{g.fillStyle=c;g.beginPath();g.roundRect(x,y,w,h,r);g.fill();};
   const tri=(x,y,x2,y2,x3,y3,c)=>{g.fillStyle=c;g.beginPath();g.moveTo(x,y);g.lineTo(x2,y2);g.lineTo(x3,y3);g.closePath();g.fill();};
@@ -24,12 +25,25 @@ export function drawPet(canvas,options={},time=0){
     tri(-40,15,-72,-16,-53,33,rgb(0x35d0));tri(40,15,72,-16,53,33,rgb(0x35d0));
     tri(-32,-24,-30,-55,-12,-31,peach);tri(32,-24,30,-55,12,-31,peach);
     ellipse(0,1,51,42,skin);ellipse(0,27,28,17,rgb(0xdff6));ellipse(-31,37,16,9,skin);ellipse(31,37,16,9,skin);
-  }else{
+  }else if(base===2){
     rect(-57,-13,12,31,5,rgb(0x8bdb));rect(45,-13,12,31,5,rgb(0x8bdb));
     rect(-2,-52,4,16,0,skin);ellipse(0,-55,7,7,peach);rect(-48,-36,96,77,22,skin);rect(-39,-25,78,49,16,ink);
     ellipse(-9,33,3,3,mint);ellipse(0,33,3,3,peach);ellipse(9,33,3,3,blush);
+  }else if(base===3){
+    ellipse(0,0,49,43,rgb(0x420a));ellipse(0,0,47,41,skin);
+    tri(-44,13,-51,42,-12,33,skin);tri(44,13,51,42,12,33,skin);
+    for(const x of [-28,0,28])ellipse(x,35+(x===0?4:0),15,10,skin);
+    tri(-13,-33,5,-57,12,-32,skin);line(-8,-39,3,-52,rgb(0x420a));
+    for(const side of [-1,1]){const y=-13-(phase+side+8)%8*2;ellipse(side*60,y,4,4,rgb(0x420a));ellipse(side*60,y,2,2,skin);}
+  }else{
+    const flicker=phase%6<3?-2:2;
+    tri(-38,12,-33,-43-flicker,-4,-10,skin);tri(-24,-12,3+flicker,-61,28,3,skin);
+    tri(11,-3,43,-40+flicker,45,18,skin);ellipse(0,7,47,36,skin);
+    ellipse(0,25,27,17,blush);tri(-18,25,3,2,20,27,blush);
+    ellipse(-28,38,14,8,skin);ellipse(28,38,14,8,skin);
+    for(const side of [-1,1])ellipse(side*56,-10-(phase+side+8)%8*3,2,2,blush);
   }
-  const eyeInk=custom?quantize(eye):base===2?mint:ink;
+  const eyeInk=custom?quantize(eye):base===2?mint:base===3?rgb(0xefff):ink;
   const gaze=mood===4?Math.sin(time/100)*5:Math.sin(time/2100)*3;
   for(const side of [-1,1]){
     const x=side*21+gaze,y=-4;
@@ -42,7 +56,7 @@ export function drawPet(canvas,options={},time=0){
     else if(eyes===4){rect(x-9,y-10,18,20,3,eyeInk);rect(x-5,y-6,5,5,0,'white');}
     else{line(x-9,y+2,x,y-3,eyeInk);line(x,y-3,x+9,y+2,eyeInk);}
   }
-  if(base!==2){ellipse(-36,12,8,4,blush);ellipse(36,12,8,4,blush);}
+  if(base===0||base===1||base===4){ellipse(-36,12,8,4,blush);ellipse(36,12,8,4,blush);}
   if(mood===4){ellipse(0,22,7,10,eyeInk);tri(58,-26,64,-11,52,-11,rgb(0x55ff));}
   else{line(-8,17,-4,21,eyeInk);line(-4,21,0,18,eyeInk);line(0,18,4,21,eyeInk);line(4,21,8,17,eyeInk);}
   const gy=mood===3||mood===4?-25:-4;

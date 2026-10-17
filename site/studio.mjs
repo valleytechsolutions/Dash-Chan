@@ -66,7 +66,7 @@ export function initStudio({upload}) {
   });
   form.addEventListener('submit',e=>{
     e.preventDefault();
-    try{download(avatarLine(profile())+'\n','avatar.cfg','text/plain');notice('Saved! Use firmware 0.3+ and copy avatar.cfg to /dashchan/ on SD. That file selects your buddy on every boot.');}
+    try{download(avatarLine(profile())+'\n','avatar.cfg','text/plain');notice('Saved! Use firmware 0.4+ and copy avatar.cfg to /dashchan/ on SD. That file selects your buddy on every boot.');}
     catch(error){notice(error.message,true);}
   });
   $('import-avatar').addEventListener('change',async e=>{

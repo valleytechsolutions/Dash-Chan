@@ -1,6 +1,6 @@
 # Avatar Studio
 
-Build a companion with its own eyes and outfit in **[the web studio](https://valleytechsolutions.github.io/Dash-Chan/#creator)**. The robot needs **Dash-Chan 0.3 or newer** for the new style fields. No account is needed.
+Build a companion with its own eyes and outfit in **[the web studio](https://valleytechsolutions.github.io/Dash-Chan/#creator)**. The robot needs **Dash-Chan 0.4 or newer** for the new style fields. No account is needed.
 
 ## Create and send
 
@@ -18,17 +18,21 @@ The studio saves a valid draft in this browser's local storage. Clearing site da
 
 USB profiles are saved in device NVS. Alternatively, place `avatar.cfg` at `/dashchan/avatar.cfg` on the microSD. That file takes priority at each boot or SD retry; remove or update it if you later want a USB design to persist. Never remove the SD during recording.
 
+![Wisp and Ember in the native buddy picker](../site/assets/ui-new-buddies.png)
+
 ## Styles
 
 | Layer | Choices, in profile-number order starting at zero |
 |---|---|
-| Shape | Cat, Dragon, Robot |
+| Shape | Cat, Dragon, Robot, Wisp (ghost), Ember (flame) |
 | Eyes | Classic, Sparkle, Sleepy, Cat eyes, Pixel, Wink |
 | Headwear | None, Bow, Crown, Beanie, Flower, Scout cap |
 | Eyewear | None, Round glasses, Shades, Cyber visor |
 | Neckwear | None, Scarf, Bandana, Bow tie |
 
-That is **1,728 combinations** before colors and names. Love, blinking, sleep, and panic temporarily override the chosen resting eyes. LCD RGB565 colors and browser antialiasing differ slightly.
+That is **2,880 combinations** before colors and names. Love, blinking, sleep, and panic temporarily override the chosen resting eyes. LCD RGB565 colors and browser antialiasing differ slightly.
+
+Wisp is an all-black ghost with bright eyes, a charcoal edge and drifting wisps. Ember has flickering flame tips and rising sparks. Both support every outfit layer, affection, panic, and field gear. Choose their web presets for the default colors, or customize them freely. On the robot, **Look & Themes → Choose buddy → WISP/EMBER** opens their adoption page.
 
 ## Change styles on the robot
 
@@ -56,4 +60,4 @@ Fields: `DCAV2 base bodyRGB accentRGB eyes eyeRGB headwear eyewear neckwear name
 
 Original `DCAV1 base bodyRGB accentRGB accessory name` files migrate automatically: bow becomes headwear, scarf becomes neckwear, and crown becomes headwear. Original eye color is retained by shape. Updating firmware also migrates saved legacy accessory preferences.
 
-USB uses `STATUS` with `avatar_schema:2`, then `AVATAR SET DCAV2 …`, and expects `AVATAR OK`. Uploads refuse during recording. An older firmware is refused before sending a new profile. `AVATAR GET` reports saved fields using RGB565 color values.
+USB uses `STATUS` with `avatar_schema:2`, then `AVATAR SET DCAV2 …`, and expects `AVATAR OK`. Uploads refuse during recording. Wisp/Ember uploads additionally require `avatar_bases:5` from firmware 0.4; older firmware is refused before sending those shapes. Original shapes still upload to 0.3. DCAV1 remains limited to its three original bases. `AVATAR GET` reports saved fields using RGB565 color values.
