@@ -1,4 +1,5 @@
 #include "detector.h"
+#include "nutrition.h"
 #include <cstdlib>
 #include <fstream>
 #include <iostream>
@@ -139,6 +140,21 @@ int main() {
   c.mark(0xfffffff0);
   CHECK(!c.ready(5, 30));
   CHECK(c.ready(15, 30));
+  WardriveFood food;
+  CHECK(food.discoveries() == 0 && food.progress() == 0);
+  for (uint8_t i = 0; i < 5; ++i) {
+    uint8_t network[] = {0x02, 0x10, 0x20, 0x30, 0x40, i};
+    CHECK(food.discover(network));
+    for (unsigned repeat = 0; repeat < 100; ++repeat)
+      CHECK(!food.discover(network));
+    CHECK(food.discoveries() == unsigned(i + 1));
+    CHECK(food.progress() == unsigned(i + 1) % 5);
+  }
+  // The contact cache expiring has no effect on this per-session memory.
+  uint8_t firstNetwork[] = {0x02, 0x10, 0x20, 0x30, 0x40, 0};
+  CHECK(!food.discover(firstNetwork));
+  food.reset();
+  CHECK(food.discoveries() == 0 && food.discover(firstNetwork));
   std::mt19937 random(7);
   for (int i = 0; i < 50000; ++i) {
     size_t n = random() % 768;

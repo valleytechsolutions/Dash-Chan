@@ -4,7 +4,7 @@
 
 ![Mochi the cat, Sprout the dragon, and Orbit the robot](media/companions.svg)
 
-**0.1.0 alpha — builds and host tests pass; physical StackChan/GPS validation is pending.** This is an initial working implementation, not a field-validated release. The exact GPS model and wiring must match the selected profile.
+**0.1.0 alpha — builds and host tests pass; installed on an official StackChan.** USB diagnostics confirm board detection, 8 MB PSRAM, live Wi-Fi/BLE reception, and SD mounting. Outdoor GPS, actual WiGLE upload, and field detection accuracy remain unverified. The GPS model and wiring must match the selected profile.
 
 ## Meet your copilot
 
@@ -12,7 +12,9 @@
 - **Sprout:** a mint dragon who collects signals for a tiny treasure hoard.
 - **Orbit:** a lilac robot whose strongest signal is friendship.
 
-Tap their face or the head touch sensor for scritches. Choose a buddy, give treats, build bond and experience, and watch blinking, expressions, chatter, and bounded head movements. Personality is local and scripted; no AI service, account, microphone, or internet is required.
+Tap their face or the head touch sensor for scritches. Choose a buddy, build bond and experience, and watch blinking, expressions, chatter, and bounded head movements. **Wardriving is the only way to feed your buddy:** every five new Wi-Fi BSSIDs saved with a valid GPS fix earns a snack (+12 fuel). Each discovery also earns experience. Background watch, BLE advertisements, petting, and demo alerts never feed it. Fuel is saved periodically and when stopping a drive; a new installation starts with 85 fuel. Personality is local and scripted; no AI service, account, microphone, or internet is required.
+
+Food progress resets for each new drive. Repeated BSSIDs in that drive do not count again, even after the encounter cache expires. A bounded 2 KB Bloom filter can conservatively miss some new discoveries on large drives; it never awards extra food for a repeat. The food filter does not affect CSV logging.
 
 ## Two jobs, one buddy
 
@@ -28,7 +30,7 @@ Axon alerts can speak **“PIG DETECTED! ACT NATURAL!”** or **“Oh man, the f
 |---|---|
 | START WARDRIVE / STOP & SAVE | Open or close a new SD session |
 | Tap face / touch head | Pet your buddy |
-| BUDDY | Pick one of three avatars, feed, pet |
+| BUDDY | Pick an avatar, pet, or FIND FOOD by starting a wardrive |
 | MENU | Sound, motion, banter, confidence threshold, history, diagnostics |
 | Tap title/status bar | Recent detection history |
 | Tap an alert | Dismiss without stopping radio collection |

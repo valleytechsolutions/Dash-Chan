@@ -61,6 +61,8 @@ static void home(uint32_t now) {
   text("FUEL", 263, 62, Muted);
   canvas.fillRoundRect(263, 76, 45, 5, 2, Panel);
   canvas.fillRoundRect(263, 76, std::max(2, int(app.energy) * 45 / 100), 5, 2, Accent);
+  snprintf(status, sizeof(status), "%u/5 food", app.food.progress());
+  text(status, 258, 89, Muted);
   if (app.session.armed) {
     snprintf(status, sizeof(status), "%s\n%lu rows", usableFix(app.fix) ? "REC" : "WAIT GPS",
              (unsigned long)app.rows);
@@ -106,7 +108,7 @@ static void buddies(uint32_t now) {
     }
     text(names[a], x - 18, 154, White);
   }
-  button(8, 194, 96, 38, "TREAT", Accent);
+  button(8, 194, 96, 38, app.session.armed ? "KEEP DRIVING" : "FIND FOOD", Accent);
   button(112, 194, 96, 38, "PET");
   button(216, 194, 96, 38, "HOME");
 }
@@ -197,9 +199,11 @@ static void touch(int x, int y) {
       app.settings.avatar = Avatar(std::min(2, x / 107));
       saveSettings();
     } else if (y >= 194) {
-      if (x < 105)
-        buddyFeed();
-      else if (x < 210)
+      if (x < 105) {
+        if (!app.session.armed)
+          startDrive();
+        page = 0;
+      } else if (x < 210)
         buddyPet();
       else
         page = 0;
@@ -312,10 +316,10 @@ void uiScreenshot() {
   uint8_t row[320 * 3];
   for (int y = 0; y < 240; ++y) {
     for (int x = 0; x < 320; ++x) {
-      uint32_t c = canvas.readPixel(x, y);
-      row[x * 3] = c >> 16;
-      row[x * 3 + 1] = c >> 8;
-      row[x * 3 + 2] = c;
+      uint16_t c = canvas.readPixel(x, y);
+      row[x * 3] = ((c >> 11) * 255 + 15) / 31;
+      row[x * 3 + 1] = (((c >> 5) & 63) * 255 + 31) / 63;
+      row[x * 3 + 2] = ((c & 31) * 255 + 15) / 31;
     }
     Serial.write(row, sizeof(row));
   }

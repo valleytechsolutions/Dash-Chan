@@ -8,6 +8,8 @@ Recording has a monotonic session generation copied into each received packet. T
 
 Servo work uses the official BSP's asynchronous motion task and a narrow application travel range. UI, pet needs, randomized chatter, siren timing, and scan windows use elapsed milliseconds. No cloud AI or credentials are involved.
 
+Nutrition is credited only after a Wi-Fi row passes the session/fix checks and is successfully written. The per-drive BSSID filter is independent of the expiring contact cache. Every five new discoveries add 12 fuel; duplicate sightings cannot add fuel. Petting only changes bond. Fuel persists in NVS alongside experience.
+
 ## Build verification
 
 `pio run -e stackchan` produces `.pio/build/stackchan/firmware.bin` and `firmware.elf`. The ELF is useful for debugging; publish only the intended artifacts. Dependency versions and the BSP commit are pinned in `platformio.ini`.
@@ -16,7 +18,11 @@ Servo work uses the official BSP's asynchronous motion task and a narrow applica
 
 `tools/render_avatars.cpp` generates the preview from the firmware drawing routine. It is a design preview, not a photograph of the physical LCD.
 
-## Physical acceptance checklist (pending)
+## Bench evidence and remaining acceptance checks
+
+The target identifies as board 27 (StackChan), ESP32-S3 with 16 MB flash and 8 MB PSRAM. A complete factory flash backup was retained locally before installation. USB status has confirmed sustained Wi-Fi/BLE reception and a mounted microSD. Host tests include duplicate-food protection, session reset, five-network snack boundaries, and CSV round trips. These results do not establish outdoor GPS or field detection performance.
+
+Remaining physical checks:
 
 - Correct board/flash/PSRAM detected; boot without reset loop; no unintended servo movement.
 - Touch coordinates, display orientation, head touch, three avatars, all menus.

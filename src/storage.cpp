@@ -3,11 +3,59 @@
 #include <SD.h>
 #include <SPI.h>
 #include <TinyGPSPlus.h>
+#include <ff.h>
+#include <vfs_api.h>
 namespace dash {
+// Own the SD instance so formatting always uses this card's assigned drive,
+// never a guessed FatFs drive number or another filesystem.
+class DashSD : public fs::SDFS {
+public:
+  DashSD() : SDFS(fs::FSImplPtr(new VFSImpl())) {}
+  bool formatFat32() {
+    if (_pdrv == 0xff)
+      return false;
+    char volume[] = {char('0' + _pdrv), ':', 0};
+    FATFS *filesystem = nullptr;
+    DWORD freeClusters;
+    if (f_getfree(volume, &freeClusters, &filesystem) != FR_OK)
+      return false;
+    uint8_t work[FF_MAX_SS];
+    const MKFS_PARM options = {FM_FAT32, 0, 0, 0, 0};
+    if (f_mount(nullptr, volume, 0) != FR_OK)
+      return false;
+    FRESULT formatted = f_mkfs(volume, &options, work, sizeof(work));
+    FRESULT mounted = f_mount(filesystem, volume, 1);
+    return formatted == FR_OK && mounted == FR_OK;
+  }
+};
+static DashSD card;
 static TinyGPSPlus gps;
 static HardwareSerial gpsUart(2);
 static File drive;
 static uint32_t lastFlush = 0;
+uint64_t storageCardSize() {
+  return card.cardSize();
+}
+bool storageFormat(uint64_t expectedBytes) {
+  if (app.session.armed || !app.sdReady || !expectedBytes || expectedBytes != card.cardSize()) {
+    Serial.println("FORMAT refused: stop recording and supply the mounted card's exact size");
+    return false;
+  }
+  app.sdReady = false;
+  bool ok = card.formatFat32();
+  card.end();
+  storageBegin();
+  if (!ok || !app.sdReady) {
+    say("SD format failed. Check card status.");
+    Serial.println("FORMAT failed");
+    return false;
+  }
+  app.rows = app.skippedFix = 0;
+  app.logPath[0] = 0;
+  say("Fresh card! Ready for our next adventure.");
+  Serial.println("FORMAT OK: FAT32, wardrives and events directories ready");
+  return true;
+}
 void gpsBegin() {
   gpsUart.end();
   gps = TinyGPSPlus();
@@ -21,6 +69,8 @@ void gpsTick() {
   while (gpsUart.available() && budget--)
     gps.encode(char(gpsUart.read()));
   app.gpsChars = gps.charsProcessed();
+  app.gpsGood = gps.passedChecksum();
+  app.gpsBad = gps.failedChecksum();
   Fix f;
   f.age = gps.location.age();
   f.lat = gps.location.lat();
@@ -52,11 +102,11 @@ void storageBegin() {
   if (app.session.armed)
     return;
   SPI.begin(SdSck, SdMiso, SdMosi, SdCs);
-  SD.end();
-  app.sdReady = SD.begin(SdCs, SPI, 10000000) && SD.cardType() != CARD_NONE;
+  card.end();
+  app.sdReady = card.begin(SdCs, SPI, 10000000) && card.cardType() != CARD_NONE;
   if (app.sdReady)
-    app.sdReady = (SD.exists("/wardrives") || SD.mkdir("/wardrives")) &&
-                  (SD.exists("/events") || SD.mkdir("/events"));
+    app.sdReady = (card.exists("/wardrives") || card.mkdir("/wardrives")) &&
+                  (card.exists("/events") || card.mkdir("/events"));
   snprintf(app.storageError, sizeof(app.storageError), "%s",
            app.sdReady ? "" : "Insert FAT32 SD; tap Retry SD");
 }
@@ -80,7 +130,7 @@ bool startDrive() {
   for (int i = 0; i < 1000; ++i) {
     ++seq;
     snprintf(app.logPath, sizeof(app.logPath), "/wardrives/dash-%08lu.csv", (unsigned long)seq);
-    if (!SD.exists(app.logPath)) {
+    if (!card.exists(app.logPath)) {
       found = true;
       break;
     }
@@ -92,7 +142,7 @@ bool startDrive() {
   }
   p.putUInt("session", seq);
   p.end();
-  drive = SD.open(app.logPath, FILE_WRITE);
+  drive = card.open(app.logPath, FILE_WRITE);
   const char *header = wigleHeader();
   if (!drive || drive.print(header) != strlen(header)) {
     storageFail("SD write failed. Drive stopped.");
@@ -100,6 +150,7 @@ bool startDrive() {
   }
   drive.flush();
   app.rows = app.skippedFix = 0;
+  app.food.reset();
   app.sessionAt = millis();
   app.session.start();
   captureGeneration.store(app.session.generation);
@@ -126,6 +177,25 @@ void storageTick() {
       storageFail("SD error. Recording stopped.");
   }
 }
+void storageCheckLog() {
+  if (!app.sdReady || app.session.armed || !*app.logPath) {
+    Serial.println("LOGCHECK unavailable: stop a recorded session first");
+    return;
+  }
+  File file = card.open(app.logPath, FILE_READ);
+  if (!file) {
+    Serial.println("LOGCHECK failed: cannot reopen file");
+    return;
+  }
+  size_t bytes = file.size();
+  bool matches = true;
+  for (const char *p = wigleHeader(); *p; ++p)
+    if (file.read() != *p)
+      matches = false;
+  file.close();
+  Serial.printf("LOGCHECK header=%s bytes=%u rows=%lu\n", matches ? "OK" : "BAD", unsigned(bytes),
+                (unsigned long)app.rows);
+}
 void logObservation(Contact &c, const char *auth, uint32_t captureGen, uint32_t at) {
   if (!app.session.accepts(captureGen) || !drive)
     return;
@@ -145,17 +215,16 @@ void logObservation(Contact &c, const char *auth, uint32_t captureGen, uint32_t 
   c.logGeneration = captureGen;
   c.logged.mark(at);
   ++app.rows;
-  if (app.rows % 25 == 0) {
-    ++app.settings.xp;
-    app.energy = std::min(100, int(app.energy) + 1);
-  }
+  // Only a fresh Wi-Fi network actually written with a valid fix can feed us.
+  if (!c.ble)
+    buddyDiscovery(c.mac);
 }
 void logAlert(const Alert &a) {
   if (!app.sdReady)
     return;
   const char *path = "/events/detections.csv";
-  bool fresh = !SD.exists(path);
-  File file = SD.open(path, FILE_APPEND);
+  bool fresh = !card.exists(path);
+  File file = card.open(path, FILE_APPEND);
   if (!file)
     return;
   if (fresh)

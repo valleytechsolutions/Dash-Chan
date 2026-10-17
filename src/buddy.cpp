@@ -5,12 +5,12 @@
 namespace dash {
 static uint32_t lastMotion = 0, lastNeed = 0, lastChatter = 0, lastSave = 0, loveAt = 0,
                 lastSiren = 0;
-static Cooldown petTimer, feedTimer;
+static Cooldown petTimer;
 static const char *idle[3][4] = {
-    {"Tiny paws. Big curiosity.", "Your copilot requests one snack.",
+    {"Tiny paws. Big curiosity.", "Let's find networks. I'm peckish!",
      "I can hear the invisible internet.", "My whiskers are on patrol."},
     {"Small dragon. Excellent lookout.", "Collecting signals for my hoard.",
-     "I brought courage. And snacks.", "My wings are in airplane-ish mode."},
+     "New networks taste like adventure.", "My wings are in airplane-ish mode."},
     {"Beep. Friendship signal: strong.", "Processing... you are my favorite.",
      "No cloud. Just a little personality.", "My emotional support human is here."}};
 void buddyMotion(bool on) {
@@ -41,18 +41,20 @@ void buddyPet() {
   if (app.settings.sound)
     M5.Speaker.tone(1046, 70);
 }
-void buddyFeed() {
-  if (!feedTimer.ready(millis(), 10000)) {
-    say("Still chewing. Tiny mouth, remember?");
+void buddyDiscovery(const uint8_t mac[6]) {
+  if (!app.session.armed || !app.food.discover(mac))
     return;
-  }
-  feedTimer.mark(millis());
-  app.energy = std::min(100, int(app.energy) + 18);
   ++app.settings.xp;
+  if (app.food.progress() != 0)
+    return;
+  app.energy = std::min(100, int(app.energy) + 12);
+  // Never replace an active signal warning with snack chatter.
+  if (app.alertOpen)
+    return;
   app.mood = Mood::Love;
   loveAt = millis();
-  say(app.settings.avatar == Avatar::Sprout ? "Crunch! A snack for my signal hoard."
-                                            : "Nom nom. Adventure fuel acquired!");
+  say(app.settings.avatar == Avatar::Sprout ? "Five new networks! Crunch. Signal hoard snack!"
+                                            : "Nom nom! Five new networks earned a snack!");
   if (app.settings.sound)
     M5.Speaker.tone(1320, 100);
 }
@@ -118,7 +120,7 @@ void buddyTick() {
   if (!app.alertOpen && uint32_t(now - lastChatter) > 22000) {
     lastChatter = now;
     app.mood = app.energy < 30 ? Mood::Sleepy : Mood::Curious;
-    say(app.energy < 30 ? "A tiny snack would be wonderful."
+    say(app.energy < 30 ? "Let's wardrive! New networks are my snacks."
                         : idle[unsigned(app.settings.avatar)][esp_random() % 4]);
   }
   if (app.alertOpen && app.settings.sound && app.active.match.family == Family::Axon &&

@@ -1,6 +1,7 @@
 #pragma once
 #include "config.h"
 #include "core.h"
+#include "nutrition.h"
 #include <Arduino.h>
 #include <atomic>
 namespace dash {
@@ -33,11 +34,12 @@ struct Alert {
 struct State {
   Settings settings;
   Session session;
+  WardriveFood food;
   Fix fix;
   bool sdReady = false, radioReady = false, blePhase = false, alertOpen = false;
   uint8_t channel = 1;
   uint32_t wifiSeen = 0, bleSeen = 0, rows = 0, skippedFix = 0, malformed = 0, drops = 0,
-           alerts = 0, sessionAt = 0, gpsChars = 0;
+           alerts = 0, sessionAt = 0, gpsChars = 0, gpsGood = 0, gpsBad = 0;
   uint8_t bond = 70, energy = 85;
   Mood mood = Mood::Happy;
   Alert active, history[HistoryCapacity];
@@ -57,6 +59,9 @@ void gpsBegin();
 void gpsTick();
 void storageBegin();
 void storageTick();
+uint64_t storageCardSize();
+bool storageFormat(uint64_t expectedBytes);
+void storageCheckLog();
 bool startDrive();
 void stopDrive();
 void logObservation(Contact &, const char *auth, uint32_t captureGen, uint32_t at);
@@ -66,7 +71,7 @@ void radioTick();
 void buddyBegin();
 void buddyTick();
 void buddyPet();
-void buddyFeed();
+void buddyDiscovery(const uint8_t mac[6]);
 void buddyAlert(const Alert &, bool demo = false);
 void buddyDismiss();
 void buddyMotion(bool);

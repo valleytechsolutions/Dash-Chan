@@ -31,4 +31,8 @@ esptool --chip esp32s3 --port YOUR_PORT read-flash 0 ALL backups/factory.bin
 
 Esptool 4 uses underscore command names (`flash_id`, `read_flash`). Restoring a complete verified backup overwrites the current firmware and settings. M5Burner also offers the factory firmware; follow M5Stack's restoration instructions.
 
+Use the packaged split-image instructions with **DIO** bootloader flash mode. The QIO/QSPI Arduino memory profile enables runtime Quad flash/PSRAM access; forcing a QIO bootloader header caused a watchdog reset loop on the tested K151. Preserve the NVS sectors and factory servo calibration. LCD rotation 1 provides the 320 × 240 landscape interface.
+
+USB maintenance commands are supported by `tools/device.py --port YOUR_PORT COMMAND`: `STATUS`, `SCREEN`, `TAP x y`, `START`, and `STOP`. `STATUS` includes NMEA checksum counters and mounted SD capacity. The destructive command `FORMAT SD <sd_bytes>` performs a FAT32 quick format of that exact mounted card, removing all its files. It refuses while recording or if the supplied capacity does not match. Use only when intentionally erasing that card; this is not secure data erasure. Normal boot and SD retry never format a card.
+
 Official references: [StackChan pin map/download mode](https://docs.m5stack.com/en/StackChan), [SD example](https://docs.m5stack.com/en/arduino/stackchan/sdcard), [servo BSP](https://github.com/m5stack/StackChan-BSP).

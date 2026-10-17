@@ -1,6 +1,7 @@
 #include "app.h"
 #include <M5StackChan.h>
 #include <Preferences.h>
+#include <algorithm>
 namespace dash {
 State app;
 Contact contacts[ContactCapacity];
@@ -16,6 +17,7 @@ void loadSettings() {
   app.settings.gpsBaud = p.getUInt("baud", GpsBaud);
   app.settings.gpsPort = p.getUChar("gpsport", 0) % 2;
   app.settings.xp = p.getUInt("xp", 0);
+  app.energy = std::min(100, int(p.getUChar("fuel", 85)));
   p.end();
 }
 void saveSettings() {
@@ -29,6 +31,7 @@ void saveSettings() {
   p.putUInt("baud", app.settings.gpsBaud);
   p.putUChar("gpsport", app.settings.gpsPort);
   p.putUInt("xp", app.settings.xp);
+  p.putUChar("fuel", app.energy);
   p.end();
 }
 void say(const char *text) {
@@ -40,7 +43,7 @@ void setup() {
   Serial.begin(115200);
   dash::loadSettings();
   M5StackChan.begin();
-  M5.Display.setRotation(0);
+  M5.Display.setRotation(1);
   M5.Display.setBrightness(160);
   M5.Speaker.setVolume(85);
   dash::uiBegin();
