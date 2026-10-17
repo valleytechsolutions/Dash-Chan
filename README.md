@@ -4,7 +4,7 @@
 
 ## [🚀 Open the web flasher & Avatar Studio](https://valleytechsolutions.github.io/Dash-Chan/)
 
-[First adventure](docs/QUICKSTART.md) · [Flashing & recovery](docs/FLASHING.md) · [Wiki / handbook](docs/wiki/Home.md) · [Downloads](https://github.com/valleytechsolutions/Dash-Chan/releases) · [Sources & attribution](docs/SOURCES.md)
+[First adventure](docs/QUICKSTART.md) · [Flashing & recovery](docs/FLASHING.md) · [M5Burner factory-image guide](docs/M5BURNER.md) · [Wiki / handbook](docs/wiki/Home.md) · [Downloads](https://github.com/valleytechsolutions/Dash-Chan/releases) · [Sources & attribution](docs/SOURCES.md)
 
 ![Mochi, Sprout, Orbit, Wisp, and Ember: original Dash-Chan companions](media/companions.svg)
 
