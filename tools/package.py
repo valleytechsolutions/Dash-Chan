@@ -11,6 +11,14 @@ shutil.copy2(root/'LICENSE', dest/'LICENSE')
 shutil.copytree(root/'docs/licenses', dest/'licenses', dirs_exist_ok=True)
 shutil.copy2(root/'lib/opendroneid/LICENSE', dest/'licenses/OPENDRONEID-APACHE-2.0.txt')
 shutil.copy2(root/'lib/DashChanSD/LICENSE', dest/'licenses/SD-APACHE-2.0.txt')
+dependencies=root/'.pio/libdeps/stackchan'
+for library in ['StackChan-BSP','M5Unified','M5GFX','M5HAL','M5UnitUnified','M5Utility','NimBLE-Arduino']:
+    for notice in ['LICENSE','NOTICE']:
+        source=dependencies/library/notice
+        if source.is_file():
+            shutil.copy2(source,dest/'licenses'/f'{library}-{notice}.txt')
+gps_header=(dependencies/'TinyGPSPlus/src/TinyGPS++.h').read_text(encoding='utf-8')
+(dest/'licenses/TinyGPSPlus-NOTICE.txt').write_text(gps_header.split('*/',1)[0]+'*/\n',encoding='utf-8')
 (dest/'SOURCE.txt').write_text('Corresponding source and build instructions: https://github.com/valleytechsolutions/Dash-Chan/tree/v0.1.0-alpha\nDependency versions and credits: https://github.com/valleytechsolutions/Dash-Chan/blob/v0.1.0-alpha/docs/SOURCES.md\nDash-Chan is GPL-3.0-or-later; imported components retain their notices.\n')
 packages=Path(os.environ.get('PLATFORMIO_PACKAGES_DIR',Path.home()/'.platformio/packages'))
 shutil.copy2(packages/'framework-arduinoespressif32/tools/partitions/boot_app0.bin',dest/'boot_app0.bin')
