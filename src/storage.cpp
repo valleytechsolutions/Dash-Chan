@@ -25,6 +25,7 @@ public:
       return false;
     FRESULT formatted = f_mkfs(volume, &options, work, sizeof(work));
     FRESULT mounted = f_mount(filesystem, volume, 1);
+    Serial.printf("SD format result=%u remount=%u\n", unsigned(formatted), unsigned(mounted));
     return formatted == FR_OK && mounted == FR_OK;
   }
 };
@@ -43,14 +44,18 @@ bool storageFormat(uint64_t expectedBytes) {
   }
   app.sdReady = false;
   bool ok = card.formatFat32();
-  card.end();
-  storageBegin();
+  // FatFs has already remounted this volume. Reinitializing the card here is
+  // unnecessary and can leave older cards unresponsive until power-cycled.
+  if (ok)
+    app.sdReady = (card.exists("/wardrives") || card.mkdir("/wardrives")) &&
+                  (card.exists("/events") || card.mkdir("/events"));
   if (!ok || !app.sdReady) {
     say("SD format failed. Check card status.");
     Serial.println("FORMAT failed");
     return false;
   }
   app.rows = app.skippedFix = 0;
+  app.storageError[0] = 0;
   app.logPath[0] = 0;
   say("Fresh card! Ready for our next adventure.");
   Serial.println("FORMAT OK: FAT32, wardrives and events directories ready");
