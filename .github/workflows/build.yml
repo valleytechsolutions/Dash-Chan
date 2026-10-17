@@ -1,0 +1,22 @@
+name: Firmware and protocol tests
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install platformio==6.2.0
+      - run: python tools/test.py
+      - run: pio run -e stackchan
+      - run: python tools/package.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Dash-Chan-stackchan-alpha
+          path: |
+            build/Dash-Chan-0.1.0-alpha.zip
+            build/test-wigle.csv

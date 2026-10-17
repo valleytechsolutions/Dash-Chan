@@ -1,0 +1,12 @@
+.pio/
+.tools/
+.references/
+.venv/
+build/
+backups/
+sdcard/wardrives/
+sdcard/events/
+*.log
+__pycache__/
+.DS_Store
+.vscode/
