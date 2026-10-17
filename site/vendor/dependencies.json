@@ -1,0 +1,32 @@
+[
+  {
+    "name": "esptool-js",
+    "version": "0.7.0",
+    "tarball": "https://registry.npmjs.org/esptool-js/-/esptool-js-0.7.0.tgz",
+    "integrity": "sha512-9wHuW/s9t4Vs6HKcr3pra3gbRVWwaN0eabMWodWH4KEJHEYZxgmWwZ3s0F4xcWVCZOc/L98bGZ4uWoZvR8KBKA==",
+    "license": "Apache-2.0",
+    "notices": [
+      "esptool-js-LICENSE.txt"
+    ]
+  },
+  {
+    "name": "pako",
+    "version": "2.1.0",
+    "tarball": "https://registry.npmjs.org/pako/-/pako-2.1.0.tgz",
+    "integrity": "sha512-w+eufiZ1WuJYgPXbV/PO3NCMEc3xqylkKHzp8bxp1uW4qaSNQUkwmLLEc3kKsfz8lpV1F8Ht3U1Cm+9Srog2ug==",
+    "license": "(MIT AND Zlib)",
+    "notices": [
+      "pako-LICENSE.txt"
+    ]
+  },
+  {
+    "name": "atob-lite",
+    "version": "2.0.0",
+    "tarball": "https://registry.npmjs.org/atob-lite/-/atob-lite-2.0.0.tgz",
+    "integrity": "sha512-LEeSAWeh2Gfa2FtlQE1shxQ8zi5F9GHarrGKz08TMdODD5T4eH6BMsvtnhbWZ+XQn+Gb6om/917ucvRu7l7ukw==",
+    "license": "MIT",
+    "notices": [
+      "atob-lite-LICENSE.md.txt"
+    ]
+  }
+]

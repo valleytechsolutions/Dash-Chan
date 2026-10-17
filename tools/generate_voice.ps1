@@ -15,6 +15,9 @@ try {
     $dashSynth.SetOutputToNull()
     $dashSynth.SetOutputToWaveFile((Join-Path $dashRoot '.tools\audio\fuzz.wav'))
     $dashSynth.SpeakSsml('<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xml:lang="en-US"><prosody rate="fast" pitch="+20%" volume="x-loud">Oh man!<break time="70ms"/><emphasis level="strong"><prosody pitch="+30%">The fuzz!</prosody></emphasis><break time="70ms"/>Act natural!</prosody></speak>')
+    $dashSynth.SetOutputToNull()
+    $dashSynth.SetOutputToWaveFile((Join-Path $dashRoot '.tools\audio\love.wav'))
+    $dashSynth.SpeakSsml('<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xml:lang="en-US"><prosody rate="medium" pitch="+18%" volume="x-loud">I <emphasis level="strong">love</emphasis> your face!</prosody></speak>')
 } finally { $dashSynth.Dispose() }
 & $Python tools\pack_voice.py
 if ($LASTEXITCODE -ne 0) { throw 'Voice packing failed' }

@@ -1,5 +1,9 @@
-name: Firmware and protocol tests
-on: [push, pull_request, workflow_dispatch]
+name: Verify firmware and publish Pages
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
 permissions:
   contents: read
 jobs:
@@ -10,13 +14,45 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
       - run: pip install platformio==6.2.0
       - run: python tools/test.py
       - run: pio run -e stackchan
       - run: python tools/package.py
+      - run: node --test tests/web_test.mjs
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - name: Check browser layouts and creator
+        run: |
+          python -m http.server 8765 --bind 127.0.0.1 --directory site > /tmp/dash-site.log 2>&1 &
+          node tests/browser_test.mjs
       - uses: actions/upload-artifact@v4
         with:
-          name: Dash-Chan-stackchan-alpha
+          name: Dash-Chan-stackchan-beta
           path: |
-            build/Dash-Chan-0.1.0-alpha.zip
+            build/Dash-Chan-0.2.0-beta.zip
             build/test-wigle.csv
+            build/web/
+      - uses: actions/upload-pages-artifact@v3
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        with:
+          path: site
+  deploy:
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    needs: verify
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+    steps:
+      - name: Publish verified site
+        id: deployment
+        uses: actions/deploy-pages@v4

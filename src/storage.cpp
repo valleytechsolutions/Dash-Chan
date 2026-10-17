@@ -68,6 +68,38 @@ static TinyGPSPlus gps;
 static HardwareSerial gpsUart(2);
 static File drive;
 static uint32_t lastFlush = 0;
+void storageLoadAvatar() {
+  if (!app.sdReady)
+    return;
+  File config = card.open("/dashchan/avatar.cfg", FILE_READ);
+  if (config) {
+    char line[100]{};
+    size_t n = config.readBytesUntil('\n', line, sizeof(line) - 1);
+    while (n && (line[n - 1] == '\r' || line[n - 1] == ' '))
+      line[--n] = 0;
+    if (!applyAvatarConfig(line))
+      Serial.println("Avatar file ignored: invalid DCAV1 profile");
+    config.close();
+  }
+  watchlist.clear();
+  File rules = card.open("/dashchan/watchlist.csv", FILE_READ);
+  while (rules && rules.available()) {
+    char line[100]{};
+    size_t n = rules.readBytesUntil('\n', line, sizeof(line) - 1);
+    if (n == sizeof(line) - 1) {
+      while (rules.available() && rules.read() != '\n') {
+      }
+      Serial.println("Watchlist row ignored: too long");
+      continue;
+    }
+    while (n && (line[n - 1] == '\r' || line[n - 1] == ' '))
+      line[--n] = 0;
+    if (*line && *line != '#' && !watchlist.add(line))
+      Serial.println("Watchlist row ignored: invalid rule or limit reached");
+  }
+  if (rules)
+    rules.close();
+}
 uint64_t storageCardSize() {
   return card.cardSize();
 }

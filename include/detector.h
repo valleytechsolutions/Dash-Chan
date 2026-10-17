@@ -47,6 +47,18 @@ inline Match translate(dragon::Match m) {
   case F::Drone:
     f = Family::Drone;
     break;
+  case F::IBeacon:
+    f = Family::Beacon;
+    break;
+  case F::Deauth:
+    f = Family::Deauth;
+    break;
+  case F::EvilTwin:
+    f = Family::EvilTwin;
+    break;
+  case F::BleSpam:
+    f = Family::BleSpam;
+    break;
   case F::Tracker:
   case F::SmartTag:
   case F::GoogleTag:
@@ -65,15 +77,30 @@ inline Match translate(dragon::Match m) {
   return {f, static_cast<Confidence>(m.confidence), m.evidence};
 }
 inline WifiFrame classifyWifi(const uint8_t *data, size_t len) {
-  auto f = parseWifi(data, len);
+  auto d = dragon::parseWifi(data, len);
+  WifiFrame f;
+  if (!d.valid)
+    return f;
+  if (d.beacon)
+    f = parseWifi(data, len);
+  else {
+    f.valid = true;
+    memcpy(f.mac, d.source, 6);
+  }
   if (!f.valid)
     return f;
-  auto d = dragon::parseWifi(data, len);
-  if (!d.valid) {
-    f.valid = false;
-    return f;
-  }
   f.match = translate(dragon::withAxon(d.match, dragon::inspectAxonWifi(data, len)));
+  // Receiver research prefixes are clues to an addressed device, not an AP
+  // observation. Never write these headers/probes/action frames to WiGLE.
+  if (!d.beacon) {
+    auto receiver = translate(dragon::addressHint(
+        d.destination, true, {dragon::Family::Wifi, dragon::Confidence::None, ""}));
+    if (receiver.confidence > f.match.confidence) {
+      f.match = receiver;
+      f.match.evidence = "Receiver address vendor clue; identity not authenticated";
+      memcpy(f.mac, d.destination, 6);
+    }
+  }
   return f;
 }
 inline BleFrame classifyBle(const uint8_t *data, size_t len, const uint8_t *mac,

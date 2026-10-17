@@ -1,278 +1,408 @@
 #include "app.h"
 #include "avatars.h"
+#include "boot_logos.h"
 #include <M5StackChan.h>
 #include <algorithm>
 namespace dash {
 static M5Canvas canvas(&M5.Display), thumb;
 static bool buffered = false, thumbReady = false;
 static uint32_t painted = 0;
-static uint8_t page = 0;
-static int selectedAlert = -1;
-constexpr uint16_t Bg = 0x0864, Panel = 0x1928, Muted = 0x94b5, Accent = 0x87b6, White = 0xf7be,
-                   Orange = 0xfd2d;
+enum Page { Home, Menu, Appearance, Buddies, Audio, Behavior, Detection, History, Diagnostics };
+static Page page = Home;
+static uint8_t historyPage = 0;
+static bool detailOpen = false;
+static Alert detail;
+static Palette colors;
 static const char *names[] = {"Mochi", "Sprout", "Orbit"};
-static void text(const char *s, int x, int y, uint16_t color = White, int size = 1) {
-  canvas.setTextColor(color);
+static const char *tones[] = {"Personality", "Siren", "Arcade", "Chime", "Silent"};
+static const char *petName() {
+  return app.settings.avatar == Avatar::Custom ? app.settings.customName
+                                               : names[unsigned(app.settings.avatar)];
+}
+static void text(const char *s, int x, int y, uint16_t color, int size = 1) {
   canvas.setTextSize(size);
+  canvas.setTextColor(color);
   canvas.setCursor(x, y);
   canvas.print(s);
 }
-static void button(int x, int y, int w, int h, const char *label, uint16_t color = Panel) {
-  canvas.fillRoundRect(x, y, w, h, 9, color);
+static void button(int x, int y, int w, int h, const char *label, bool active = false) {
+  canvas.fillRoundRect(x, y, w, h, 9, active ? colors.accent : colors.panel);
   canvas.setTextDatum(middle_center);
-  canvas.setTextColor(color == Accent ? Ink : White);
   canvas.setTextSize(1);
+  canvas.setTextColor(active ? (app.settings.theme == Theme::Light ? 0xffff : Ink) : colors.text);
   canvas.drawString(label, x + w / 2, y + h / 2);
   canvas.setTextDatum(top_left);
 }
-static void wrap(const char *s, int x, int y, int width, uint16_t color = White) {
+static void wrap(const char *s, int x, int y, int width, uint16_t color, int lines = 3) {
   std::string rest = s;
-  for (int line = 0; line < 3 && !rest.empty(); ++line) {
+  for (int line = 0; line < lines && !rest.empty(); ++line) {
     size_t n = std::min(rest.size(), size_t(width));
     if (n < rest.size()) {
       size_t space = rest.rfind(' ', n);
       if (space != std::string::npos && space > 0)
         n = space;
     }
-    std::string part = rest.substr(0, n);
-    text(part.c_str(), x, y + line * 12, color);
+    text(rest.substr(0, n).c_str(), x, y + line * 12, color);
     rest.erase(0, n);
     while (!rest.empty() && rest.front() == ' ')
       rest.erase(0, 1);
   }
 }
-static void home(uint32_t now) {
-  text("DASH-CHAN", 10, 8, Accent);
-  char status[80];
-  snprintf(status, sizeof(status), "%s  %s",
-           app.radioReady ? (app.blePhase ? "BLE" : "WiFi") : "RADIO ERROR",
-           usableFix(app.fix) ? "GPS FIX" : "NO FIX");
-  text(status, 176, 8, Muted);
-  snprintf(status, sizeof(status), "%s  Lv.%lu   %lu WiFi / %lu BLE",
-           names[unsigned(app.settings.avatar)], (unsigned long)(1 + app.settings.xp / 25),
-           (unsigned long)app.wifiSeen, (unsigned long)app.bleSeen);
-  text(status, 10, 26, Muted);
-  int bob = int(sin(now / (app.energy < 30 ? 1500.0 : 1000.0)) * 2);
-  drawBuddy(canvas, unsigned(app.settings.avatar), 160, 95, int(app.mood), int(round(app.gaze)),
-            (now % 4100) < 130, bob);
-  text("BOND", 12, 62, Muted);
-  canvas.fillRoundRect(12, 76, 48, 5, 2, Panel);
-  canvas.fillRoundRect(12, 76, std::max(2, int(app.bond) * 48 / 100), 5, 2, Blush);
-  text("FUEL", 263, 62, Muted);
-  canvas.fillRoundRect(263, 76, 45, 5, 2, Panel);
-  canvas.fillRoundRect(263, 76, std::max(2, int(app.energy) * 45 / 100), 5, 2, Accent);
-  snprintf(status, sizeof(status), "%u/5 food", app.food.progress());
-  text(status, 258, 89, Muted);
-  if (app.session.armed) {
-    snprintf(status, sizeof(status), "%s\n%lu rows", usableFix(app.fix) ? "REC" : "WAIT GPS",
-             (unsigned long)app.rows);
-    text(status, 12, 101, usableFix(app.fix) ? Accent : Orange);
-  } else
-    text("WATCH\nalways on", 12, 101, Accent);
-  text("pet me", 266, 111, Muted);
-  canvas.fillRoundRect(8, 151, 304, 38, 10, Panel);
-  wrap(app.message, 17, 158, 47);
-  button(8, 198, 177, 34, app.session.armed ? "STOP & SAVE" : "START WARDRIVE",
-         app.session.armed ? 0xba49 : Accent);
-  button(192, 198, 57, 34, "BUDDY");
-  button(256, 198, 56, 34, "MENU");
-  if (app.alertOpen) {
-    canvas.fillRoundRect(5, 40, 310, 108, 12, app.demo ? 0x62b0 : 0x6247);
-    text(app.demo ? "DEMO ALERT  /  tap to dismiss" : "SIGNAL ALERT  /  tap to dismiss", 14, 48,
-         Orange);
-    if (thumbReady) {
-      thumb.fillSprite(app.demo ? 0x62b0 : 0x6247);
-      drawBuddy(thumb, unsigned(app.settings.avatar), 80, 61, 4, int(sin(now / 100.0) * 5), false);
-      float shake = app.settings.spicy ? sin(now / 70.0) : 0;
-      thumb.pushRotateZoom(&canvas, 56 + int(shake * 3), 101 + int(cos(now / 90.0) * 2), shake * 7,
-                           0.58, 0.58);
-    }
-    text(familyName(app.active.match.family), 103, 65, White);
-    char detail[80];
-    snprintf(detail, sizeof(detail), "%s | %d dBm", confidenceName(app.active.match.confidence),
-             app.active.rssi);
-    text(detail, 103, 82, Accent);
-    wrap(app.active.match.evidence, 103, 97, 32, White);
-    text("Candidate signal; identity not verified", 14, 135, Muted);
-  }
+static void heading(const char *name) {
+  text(name, 12, 12, colors.accent);
+  button(254, 5, 58, 27, "BACK");
 }
-static void buddies(uint32_t now) {
-  text("CHOOSE YOUR COPILOT", 12, 12, Accent);
-  for (int a = 0; a < 3; ++a) {
-    int x = 53 + 107 * a;
-    if (unsigned(app.settings.avatar) == unsigned(a))
-      canvas.fillRoundRect(x - 49, 38, 98, 137, 12, Panel);
-    // Scale the same full-size art into three thumbnails.
-    if (thumbReady) {
-      thumb.fillSprite(unsigned(app.settings.avatar) == unsigned(a) ? Panel : Bg);
-      drawBuddy(thumb, a, 80, 61, 0, 0, now % 4000 < 100);
-      thumb.pushRotateZoom(&canvas, x, 100, 0, 0.58, 0.72);
-    }
-    text(names[a], x - 18, 154, White);
+static void pet(M5Canvas &g, int avatar, int x, int y, int mood, int gaze, bool blink,
+                int bob = 0) {
+  bool custom = avatar == 3;
+  drawBuddy(g, custom ? app.settings.customBase : avatar, x, y, mood, gaze, blink, bob,
+            app.settings.customBody, app.settings.customAccent,
+            custom ? app.settings.customAccessory : 0, custom);
+}
+static void heart(int x, int y) {
+  canvas.fillCircle(x - 3, y - 2, 4, colors.heart);
+  canvas.fillCircle(x + 3, y - 2, 4, colors.heart);
+  canvas.fillTriangle(x - 7, y, x + 7, y, x, y + 8, colors.heart);
+}
+static void home(uint32_t now) {
+  char s[80];
+  snprintf(s, sizeof(s), "%s  Lv.%lu", petName(), (unsigned long)(1 + app.settings.xp / 25));
+  text(s, 12, 10, colors.accent);
+  text(!app.radioReady      ? "RADIO ERROR"
+       : !app.sdReady       ? "NO SD"
+       : usableFix(app.fix) ? "GPS READY"
+                            : "GPS WAIT",
+       247, 10, colors.muted);
+  if (app.alertOpen) {
+    snprintf(s, sizeof(s), "%s %s | %s",
+             app.demo ? "DEMO:" : "SIGNAL:", familyName(app.active.match.family),
+             confidenceName(app.active.match.confidence));
+    text(s, 12, 31, colors.danger);
+  } else {
+    snprintf(s, sizeof(s), "%s  %lu rows | %u recent",
+             app.session.armed ? (usableFix(app.fix) ? "RECORDING" : "WAIT GPS") : "WATCHING",
+             (unsigned long)app.rows, app.historyCount);
+    text(s, 12, 31, colors.muted);
   }
-  button(8, 194, 96, 38, app.session.armed ? "KEEP DRIVING" : "FIND FOOD", Accent);
-  button(112, 194, 96, 38, "PET");
-  button(216, 194, 96, 38, "HOME");
+  if (app.settings.theme == Theme::Matrix)
+    for (int x = 75; x < 250; x += 20)
+      for (int y = 56; y < 151; y += 19)
+        text(((x / 20 + y / 19 + now / 1200) % 2) ? "1" : "0", x, y, colors.grid);
+  int shake = app.alertOpen ? int(sin(now / 65.0) * 4) : 0;
+  int bob = app.alertOpen ? int(cos(now / 90.0) * 4)
+                          : int(sin(now / (app.energy < 30 ? 1600.0 : 650.0)) * 2);
+  pet(canvas, unsigned(app.settings.avatar), 160 + shake, 104, int(app.mood),
+      app.alertOpen ? int(sin(now / 100.0) * 5) : int(round(app.gaze)),
+      !app.alertOpen && (now % 4100) < 130, bob);
+  if (app.mood == Mood::Love) {
+    heart(91, 88 - int(now / 100 % 18));
+    heart(229, 90 - int((now / 100 + 9) % 18));
+  }
+  if (app.alertOpen) {
+    text("!", 83, 59, colors.danger, 2);
+    text("!", 230, 70, colors.danger, 2);
+  }
+  text("FUEL", 12, 71, colors.muted);
+  canvas.fillRoundRect(12, 85, 44, 5, 2, colors.panel);
+  canvas.fillRoundRect(12, 85, std::max(2, int(app.energy) * 44 / 100), 5, 2, colors.accent);
+  snprintf(s, sizeof(s), "%u%%", app.energy);
+  text(s, 12, 99, colors.text);
+  snprintf(s, sizeof(s), "%u/5", app.food.progress());
+  text(s, 12, 115, colors.accent);
+  text("snack", 12, 127, colors.muted);
+  text("BOND", 270, 71, colors.muted);
+  canvas.fillRoundRect(266, 85, 42, 5, 2, colors.panel);
+  canvas.fillRoundRect(266, 85, std::max(2, int(app.bond) * 42 / 100), 5, 2, colors.heart);
+  text("pet me", 266, 102, colors.muted);
+  canvas.fillRoundRect(8, 159, 304, 34, 9, colors.panel);
+  wrap(app.message, 17, 166, 47, app.alertOpen ? colors.danger : colors.text, 2);
+  button(8, 201, 222, 32, app.session.armed ? "STOP & SAVE" : "START WARDRIVE", true);
+  button(238, 201, 74, 32, "MENU");
 }
 static void menu() {
-  text("COPILOT SETTINGS", 12, 9, Accent);
-  button(252, 4, 60, 24, "HOME");
-  char s[64];
-  snprintf(s, sizeof(s), "Sound: %s", app.settings.sound ? "ON" : "QUIET");
-  button(8, 39, 148, 32, s);
-  snprintf(s, sizeof(s), "Motion: %s", app.settings.motion ? "ON" : "OFF");
-  button(164, 39, 148, 32, s);
-  snprintf(s, sizeof(s), "Banter: %s", app.settings.spicy ? "SPICY" : "GENTLE");
-  button(8, 78, 148, 32, s);
-  snprintf(s, sizeof(s), "Alerts: %s+", confidenceName(app.settings.threshold));
-  button(164, 78, 148, 32, s);
-  button(8, 117, 148, 32, "DETECTION HISTORY");
-  button(164, 117, 148, 32, "GPS / SD STATUS");
-  button(8, 156, 148, 32, "TRY AXON REACTION");
-  button(164, 156, 148, 32, "CHOOSE BUDDY");
-  wrap("Motion uses gentle, limited head turns. Low confidence includes broad vendor clues.", 12,
-       204, 48, Muted);
+  heading("YOUR LITTLE COPILOT");
+  button(8, 45, 148, 42, "LOOK & THEMES");
+  button(164, 45, 148, 42, "SOUND & VOICE");
+  button(8, 97, 148, 42, "PERSONALITY");
+  button(164, 97, 148, 42, "DETECTION");
+  button(8, 149, 148, 42, "RECENT SIGNALS");
+  button(164, 149, 148, 42, "GPS & SD");
+  text("Watching continues on every screen.", 12, 212, colors.muted);
 }
-static void diagnostics() {
-  text("GPS / RECORDING", 12, 9, Accent);
-  button(252, 4, 60, 24, "BACK");
-  char s[96];
-  snprintf(s, sizeof(s), "GPS %s / %u satellites / HDOP %.1f", usableFix(app.fix) ? "FIX" : "WAIT",
-           app.fix.sats, app.fix.hdop);
-  text(s, 10, 39);
-  snprintf(s, sizeof(s), "NMEA chars %lu / fix age %lu ms", (unsigned long)app.gpsChars,
-           (unsigned long)app.fix.age);
-  text(s, 10, 55, Muted);
-  snprintf(s, sizeof(s), "SD %s | %lu rows | %lu no-fix skips", app.sdReady ? "READY" : "MISSING",
-           (unsigned long)app.rows, (unsigned long)app.skippedFix);
-  text(s, 10, 73);
-  snprintf(s, sizeof(s), "Radio: %s | drops %lu | malformed %lu", app.radioReady ? "OK" : "ERROR",
-           (unsigned long)app.drops, (unsigned long)app.malformed);
-  text(s, 10, 91, Muted);
-  wrap(*app.storageError ? app.storageError : app.logPath, 10, 109, 49, Orange);
-  snprintf(s, sizeof(s), "GPS: %s", app.settings.gpsPort ? "PORT A" : "PORT C");
-  button(8, 150, 148, 32, s);
-  snprintf(s, sizeof(s), "Baud: %lu", (unsigned long)app.settings.gpsBaud);
-  button(164, 150, 148, 32, s);
-  button(8, 194, 148, 36, "RETRY SD");
-  button(164, 194, 148, 36, "HOME");
+static void appearance() {
+  heading("LOOK & THEMES");
+  button(8, 44, 304, 38, (std::string("Choose buddy: ") + petName()).c_str());
+  for (int i = 0; i < 4; ++i)
+    button(8 + (i % 2) * 156, 96 + (i / 2) * 45, 148, 36, themeName(Theme(i)),
+           unsigned(app.settings.theme) == unsigned(i));
+  wrap("Make a custom buddy in the web creator. Upload over USB or use avatar.cfg on SD.", 12, 194,
+       47, colors.muted);
+}
+static void buddies(uint32_t now) {
+  heading("CHOOSE YOUR BUDDY");
+  for (int a = 0; a < 3; ++a) {
+    int x = 54 + 106 * a;
+    bool selected = unsigned(app.settings.avatar) == unsigned(a);
+    canvas.fillRoundRect(x - 49, 47, 98, 121, 10, selected ? colors.panel : colors.bg);
+    if (thumbReady) {
+      thumb.fillSprite(selected ? colors.panel : colors.bg);
+      pet(thumb, a, 80, 61, 0, 0, now % 4000 < 100);
+      thumb.pushRotateZoom(&canvas, x, 107, 0, 0.58, 0.65);
+    }
+    text(names[a], x - 18, 149, selected ? colors.accent : colors.text);
+  }
+  button(8, 184, 304, 40, (std::string("Custom: ") + app.settings.customName).c_str(),
+         app.settings.avatar == Avatar::Custom);
+}
+static void audio() {
+  heading("SOUND & VOICE");
+  char s[64];
+  snprintf(s, sizeof(s), "Alert tone: %s  >", tones[unsigned(app.settings.tone)]);
+  button(8, 44, 304, 36, s);
+  snprintf(s, sizeof(s), "Volume: %u / 255", app.settings.volume);
+  text(s, 12, 92, colors.muted);
+  constexpr uint8_t levels[] = {0, 100, 170, 220, 255};
+  for (int i = 0; i < 5; ++i) {
+    snprintf(s, sizeof(s), "%u", levels[i]);
+    button(8 + i * 62, 109, 56, 30, s, app.settings.volume == levels[i]);
+  }
+  button(8, 151, 148, 34, app.settings.sound ? "Master sound: ON" : "Master sound: OFF");
+  button(164, 151, 148, 34, app.settings.voice ? "Voice: ON" : "Voice: OFF");
+  button(8, 198, 148, 34, "PREVIEW TONE");
+  button(164, 198, 148, 34, "AXON DEMO", true);
+}
+static void behavior() {
+  heading("PERSONALITY");
+  button(8, 44, 304, 38,
+         !app.settings.motion            ? "Head motion: OFF"
+         : app.settings.motionStyle == 1 ? "Head motion: Gentle"
+                                         : "Head motion: Lively");
+  button(8, 94, 304, 38, app.settings.spicy ? "Banter: Spicy panic" : "Banter: Gentle lookout");
+  button(8, 144, 304, 38, "PET YOUR BUDDY", true);
+  wrap("Stroke the top sensor or tap the face for love. Only GPS-tagged wardriving feeds me!", 12,
+       199, 47, colors.muted);
+}
+static void detection() {
+  heading("DETECTION");
+  char s[70];
+  snprintf(s, sizeof(s), "Notify: %s confidence or higher", confidenceName(app.settings.threshold));
+  button(8, 44, 304, 36, s);
+  snprintf(s, sizeof(s), "Same-family quiet: %lu seconds",
+           (unsigned long)(app.settings.familyQuietMs / 1000));
+  button(8, 90, 304, 36, s);
+  button(8, 136, 304, 36,
+         app.settings.repeatAlerts ? "Reminders: every 5 min" : "Reminders: OFF (new encounters)");
+  wrap("Same device stays quiet until absent 5 min. Stronger evidence may alert again. Signals are "
+       "clues, not proof of identity.",
+       12, 190, 47, colors.muted);
 }
 static void history() {
-  text("RECENT DETECTIONS", 12, 9, Accent);
-  button(252, 4, 60, 24, "BACK");
-  if (selectedAlert >= 0 && selectedAlert < app.historyCount) {
-    auto &a = app.history[selectedAlert];
-    text(familyName(a.match.family), 12, 45, White, 2);
-    wrap(a.name, 12, 73, 47);
-    text(a.mac, 12, 100, Muted);
-    wrap(a.match.evidence, 12, 121, 47, Accent);
-    button(12, 193, 296, 37, "BACK TO HISTORY");
+  heading("RECENT SIGNALS");
+  char s[90];
+  if (detailOpen) {
+    for (unsigned i = 0; i < app.historyCount; ++i) {
+      const auto &a = app.history[i];
+      if (a.ble == detail.ble && a.addressType == detail.addressType &&
+          a.match.family == detail.match.family && !strcmp(a.mac, detail.mac)) {
+        detail = a;
+        break;
+      }
+    }
+    text(familyName(detail.match.family), 12, 46, colors.text);
+    snprintf(s, sizeof(s), "%s | %s | %d dBm", confidenceName(detail.match.confidence),
+             detail.ble ? "BLE" : "WiFi", detail.rssi);
+    text(s, 12, 65, colors.accent);
+    wrap(*detail.name ? detail.name : "(no advertised name)", 12, 86, 47, colors.text, 1);
+    text(detail.mac, 12, 105, colors.muted);
+    wrap(detail.match.evidence, 12, 126, 47, colors.muted);
+    snprintf(s, sizeof(s), "Seen %lu times | last %lus ago", (unsigned long)detail.sightings,
+             (unsigned long)((millis() - detail.at) / 1000));
+    text(s, 12, 170, colors.accent);
+    button(8, 198, 304, 34, "BACK TO RECENT");
     return;
   }
   if (!app.historyCount)
-    wrap("No alert events yet. Background Wi-Fi and BLE listening continues on every screen.", 12,
-         64, 45, Muted);
-  for (int i = 0; i < std::min(5, int(app.historyCount)); ++i) {
-    char s[80];
-    auto &a = app.history[i];
-    snprintf(s, sizeof(s), "%s  %d dBm", familyName(a.match.family), a.rssi);
-    button(8, 40 + i * 38, 304, 32, s);
+    wrap("Nothing matched your alert filter yet. Your buddy is still watching Wi-Fi and BLE.", 12,
+         70, 45, colors.muted);
+  unsigned pages = std::max(1u, (app.historyCount + 3u) / 4);
+  historyPage = std::min(unsigned(historyPage), pages - 1);
+  for (unsigned i = 0; i < 4 && historyPage * 4 + i < app.historyCount; ++i) {
+    auto &a = app.history[historyPage * 4 + i];
+    snprintf(s, sizeof(s), "%s | %d dBm", familyName(a.match.family), a.rssi);
+    button(8, 43 + i * 36, 304, 31, s);
   }
+  button(8, 199, 84, 33, "PREV");
+  button(228, 199, 84, 33, "NEXT");
+  snprintf(s, sizeof(s), "%u / %u", historyPage + 1, pages);
+  text(s, 144, 212, colors.muted);
+}
+static void diagnostics() {
+  heading("GPS & SD");
+  char s[96];
+  snprintf(s, sizeof(s), "GPS %s | %u sats | HDOP %.1f", usableFix(app.fix) ? "READY" : "WAIT",
+           app.fix.sats, app.fix.hdop);
+  text(s, 10, 44, colors.text);
+  snprintf(s, sizeof(s), "NMEA %lu chars | fix age %lu ms", (unsigned long)app.gpsChars,
+           (unsigned long)app.fix.age);
+  text(s, 10, 62, colors.muted);
+  snprintf(s, sizeof(s), "SD %s | %lu rows | %lu drops", app.sdReady ? "READY" : "MISSING",
+           (unsigned long)app.rows, (unsigned long)app.drops);
+  text(s, 10, 82, colors.text);
+  wrap(*app.storageError   ? app.storageError
+       : app.session.armed ? app.logPath
+                           : "Ready: start a wardrive from the face.",
+       10, 104, 49, colors.muted);
+  snprintf(s, sizeof(s), "GPS: %s", app.settings.gpsPort ? "PORT A" : "PORT C");
+  button(8, 151, 148, 34, s);
+  snprintf(s, sizeof(s), "Baud: %lu", (unsigned long)app.settings.gpsBaud);
+  button(164, 151, 148, 34, s);
+  button(8, 199, 148, 33, "RETRY SD");
+  button(164, 199, 148, 33, "HOME", true);
+}
+static bool row(int y, int top, int height = 36) {
+  return y >= top && y < top + height;
 }
 static void touch(int x, int y) {
-  if (page == 0) {
-    if (y >= 198) {
-      if (x < 186) {
+  if (page == Home) {
+    if (row(y, 201, 32)) {
+      if (x < 230) {
         if (app.session.armed)
           stopDrive();
         else
           startDrive();
-      } else
-        page = x < 250 ? 1 : 2;
-    } else if (app.alertOpen && y >= 40 && y < 150)
+      } else if (x >= 238)
+        page = Menu;
+    } else if (row(y, 159, 34) && app.alertOpen)
       buddyDismiss();
-    else if (y < 32) {
-      page = 4;
-      selectedAlert = -1;
-    } else if (y >= 40 && y < 150)
+    else if (y >= 48 && y < 155 && x >= 66 && x < 258) {
+      if (app.alertOpen)
+        buddyDismiss();
       buddyPet();
-  } else if (page == 1) {
-    if (y < 180 && y > 35) {
-      app.settings.avatar = Avatar(std::min(2, x / 107));
-      saveSettings();
-    } else if (y >= 194) {
-      if (x < 105) {
-        if (!app.session.armed)
-          startDrive();
-        page = 0;
-      } else if (x < 210)
-        buddyPet();
-      else
-        page = 0;
     }
-  } else if (page == 2) {
-    if (y < 32 && x > 250) {
-      page = 0;
-      return;
+    return;
+  }
+  if (y < 34 && x >= 250) {
+    page = page == Menu ? Home : page == Buddies ? Appearance : Menu;
+    detailOpen = false;
+    return;
+  }
+  bool right = x >= 160;
+  switch (page) {
+  case Menu:
+    if (row(y, 45, 42))
+      page = right ? Audio : Appearance;
+    else if (row(y, 97, 42))
+      page = right ? Detection : Behavior;
+    else if (row(y, 149, 42)) {
+      page = right ? Diagnostics : History;
+      detailOpen = false;
+      historyPage = 0;
     }
-    bool right = x >= 160;
-    if (y >= 39 && y < 71) {
-      if (right)
-        buddyMotion(!app.settings.motion);
-      else {
+    break;
+  case Appearance:
+    if (row(y, 44, 38))
+      page = Buddies;
+    else if (row(y, 96))
+      app.settings.theme = Theme(right ? 1 : 0);
+    else if (row(y, 141))
+      app.settings.theme = Theme(right ? 3 : 2);
+    break;
+  case Buddies:
+    if (y >= 47 && y < 168)
+      app.settings.avatar = Avatar(std::min(2, x / 106));
+    else if (row(y, 184, 40))
+      app.settings.avatar = Avatar::Custom;
+    break;
+  case Audio:
+    if (row(y, 44))
+      app.settings.tone = AlertTone((unsigned(app.settings.tone) + 1) % 5);
+    else if (row(y, 109, 30)) {
+      constexpr uint8_t levels[] = {0, 100, 170, 220, 255};
+      app.settings.volume = levels[std::min(4, std::max(0, (x - 8) / 62))];
+    } else if (row(y, 151, 34)) {
+      if (right) {
+        app.settings.voice = !app.settings.voice;
+        if (!app.settings.voice)
+          M5.Speaker.stop();
+      } else {
         app.settings.sound = !app.settings.sound;
         if (!app.settings.sound)
           M5.Speaker.stop();
       }
-    } else if (y >= 78 && y < 110) {
-      if (right)
-        app.settings.threshold = Confidence(unsigned(app.settings.threshold) % 3 + 1);
+    } else if (row(y, 198, 34)) {
+      if (right) {
+        buddyDemo();
+        page = Home;
+      } else
+        buddySoundPreview();
+    }
+    break;
+  case Behavior:
+    if (row(y, 44, 38)) {
+      if (!app.settings.motion) {
+        app.settings.motionStyle = 1;
+        buddyMotion(true);
+      } else if (app.settings.motionStyle == 1)
+        app.settings.motionStyle = 2;
       else
-        app.settings.spicy = !app.settings.spicy;
-    } else if (y >= 117 && y < 149) {
-      page = right ? 3 : 4;
-      selectedAlert = -1;
-    } else if (y >= 156 && y < 188) {
-      if (right)
-        page = 1;
-      else {
-        Alert a;
-        a.match = {Family::Axon, Confidence::Medium, "Synthetic example; no device detected"};
-        a.rssi = -45;
-        buddyAlert(a, true);
-        page = 0;
+        buddyMotion(false);
+    } else if (row(y, 94, 38))
+      app.settings.spicy = !app.settings.spicy;
+    else if (row(y, 144, 38)) {
+      buddyPet();
+      page = Home;
+    }
+    break;
+  case Detection:
+    if (row(y, 44))
+      app.settings.threshold = Confidence(unsigned(app.settings.threshold) % 3 + 1);
+    else if (row(y, 90))
+      app.settings.familyQuietMs = app.settings.familyQuietMs == 60000    ? 180000
+                                   : app.settings.familyQuietMs == 180000 ? 300000
+                                                                          : 60000;
+    else if (row(y, 136))
+      app.settings.repeatAlerts = !app.settings.repeatAlerts;
+    break;
+  case History:
+    if (detailOpen) {
+      if (row(y, 198, 34))
+        detailOpen = false;
+    } else if (row(y, 199, 33)) {
+      unsigned pages = std::max(1u, (app.historyCount + 3u) / 4);
+      if (x < 100)
+        historyPage = (historyPage + pages - 1) % pages;
+      else if (x > 220)
+        historyPage = (historyPage + 1) % pages;
+    } else if (y >= 43 && y < 187) {
+      unsigned i = historyPage * 4 + (y - 43) / 36;
+      if (i < app.historyCount) {
+        detail = app.history[i];
+        detailOpen = true;
       }
     }
-    saveSettings();
-  } else if (page == 3) {
-    if (y < 32 && x > 250)
-      page = 2;
-    else if (y >= 150 && y < 182 && !app.session.armed) {
-      if (x < 160)
+    break;
+  case Diagnostics:
+    if (row(y, 151, 34) && !app.session.armed) {
+      if (!right)
         app.settings.gpsPort ^= 1;
       else
         app.settings.gpsBaud = app.settings.gpsBaud == 9600     ? 115200
                                : app.settings.gpsBaud == 115200 ? 38400
                                                                 : 9600;
-      saveSettings();
       gpsBegin();
-    } else if (y >= 194) {
-      if (x < 160)
+    } else if (row(y, 199, 33)) {
+      if (right)
+        page = Home;
+      else if (!app.session.armed) {
         storageBegin();
-      else
-        page = 0;
+        storageLoadAvatar();
+      }
     }
-  } else if (page == 4) {
-    if (y < 32 && x > 250)
-      page = 2;
-    else if (selectedAlert >= 0 && y >= 193)
-      selectedAlert = -1;
-    else if (y >= 40 && y < 230 && selectedAlert < 0) {
-      int i = (y - 40) / 38;
-      if (i < app.historyCount)
-        selectedAlert = i;
-    }
+    break;
+  default:
+    break;
   }
+  saveSettings();
 }
 void uiBegin() {
   canvas.setColorDepth(16);
@@ -284,6 +414,17 @@ void uiBegin() {
     Serial.println("UI allocation failed");
   }
 }
+void uiBoot() {
+  if (!buffered)
+    return;
+  canvas.fillSprite(0xffff);
+  canvas.drawPng(bootBwm, sizeof(bootBwm), 21, 34);
+  canvas.drawPng(bootVts, sizeof(bootVts), 178, 34);
+  text("DASH-CHAN", 106, 187, Ink, 2);
+  text("Your tiny road buddy is waking up", 64, 216, Ink);
+  canvas.pushSprite(0, 0);
+  delay(1500);
+}
 void uiTick() {
   if (!buffered)
     return;
@@ -294,17 +435,37 @@ void uiTick() {
   if (uint32_t(now - painted) < 50)
     return;
   painted = now;
-  canvas.fillSprite(Bg);
-  if (page == 0)
+  colors = palette(app.settings.theme);
+  canvas.fillSprite(colors.bg);
+  switch (page) {
+  case Home:
     home(now);
-  else if (page == 1)
-    buddies(now);
-  else if (page == 2)
+    break;
+  case Menu:
     menu();
-  else if (page == 3)
-    diagnostics();
-  else
+    break;
+  case Appearance:
+    appearance();
+    break;
+  case Buddies:
+    buddies(now);
+    break;
+  case Audio:
+    audio();
+    break;
+  case Behavior:
+    behavior();
+    break;
+  case Detection:
+    detection();
+    break;
+  case History:
     history();
+    break;
+  case Diagnostics:
+    diagnostics();
+    break;
+  }
   canvas.pushSprite(0, 0);
 }
 void uiTap(int x, int y) {

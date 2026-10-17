@@ -2,4 +2,5 @@
 *.png binary
 *.bin binary
 include/voice.h linguist-generated
+include/boot_logos.h linguist-generated
 lib/opendroneid/** whitespace=-trailing-space

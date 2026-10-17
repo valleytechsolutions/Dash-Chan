@@ -1,5 +1,6 @@
 #include "app.h"
 #include "idle_motion.h"
+#include "petting.h"
 #include "voice.h"
 #include <M5StackChan.h>
 #include <algorithm>
@@ -7,6 +8,12 @@ namespace dash {
 static uint32_t lastMotion = 0, lastNeed = 0, lastChatter = 0, lastSave = 0, loveAt = 0,
                 lastSiren = 0;
 static Cooldown petTimer;
+static Cooldown loveVoiceTimer;
+static PetTouch headTouch;
+static uint32_t soundAt = 0, soundStepAt = 0;
+static unsigned soundStep = 0;
+static bool soundActive = false;
+static AlertTone playingTone = AlertTone::Personality;
 static IdleMotion idleMotion;
 static float gazeTarget = 0;
 static uint32_t lastGaze = 0;
@@ -34,14 +41,16 @@ void buddyMotion(bool on) {
   saveSettings();
 }
 void buddyBegin() {
+  M5StackChan.TouchSensor.setResponseCycles(5);
   M5StackChan.Motion.setAutoTorqueReleaseEnabled(true);
   buddyMotion(app.settings.motion);
   lastNeed = lastChatter = lastSave = millis();
 }
-void buddyPet() {
+void buddyPet(bool allowVoice) {
   if (!petTimer.ready(millis(), 800))
     return;
   petTimer.mark(millis());
+  ++app.pets;
   app.bond = std::min(100, int(app.bond) + 4);
   app.mood = Mood::Love;
   loveAt = millis();
@@ -49,9 +58,34 @@ void buddyPet() {
   gazeTarget = 0;
   if (app.settings.motion)
     M5StackChan.Motion.move(0, 230, 110);
-  say("Hehe. That's the good scritch.");
-  if (app.settings.sound)
-    M5.Speaker.tone(1046, 70);
+  say("i Love Your Face");
+  if (app.settings.sound && app.settings.volume) {
+    M5.Speaker.setVolume(app.settings.volume);
+    if (allowVoice && app.settings.voice && loveVoiceTimer.ready(millis(), 60000)) {
+      loveVoiceTimer.mark(millis());
+      M5.Speaker.playWav(voiceLove, sizeof(voiceLove), 1, 0, true);
+    } else if (allowVoice && !M5.Speaker.isPlaying())
+      M5.Speaker.tone(1046, 70);
+  }
+}
+static void beginTone(AlertTone tone) {
+  playingTone = tone;
+  soundStep = 0;
+  soundAt = millis();
+  soundStepAt = soundAt - 180;
+  soundActive = app.settings.sound && app.settings.volume && tone != AlertTone::Silent;
+  M5.Speaker.setVolume(app.settings.volume);
+}
+void buddySoundPreview() {
+  M5.Speaker.stop();
+  beginTone(app.settings.tone);
+}
+void buddyDemo() {
+  Alert a;
+  a.match = {Family::Axon, Confidence::Medium, "Synthetic demo; no device detected"};
+  a.rssi = -45;
+  strcpy(a.name, "Demo body-camera signal");
+  buddyAlert(a, true);
 }
 void buddyDiscovery(const uint8_t mac[6]) {
   if (!app.session.armed || !app.food.discover(mac))
@@ -83,11 +117,6 @@ void buddyAlert(const Alert &a, bool demo) {
   idleMotion.reset(millis(), 4000);
   if (!demo) {
     ++app.alerts;
-    for (size_t i = HistoryCapacity - 1; i > 0; --i)
-      app.history[i] = app.history[i - 1];
-    app.history[0] = a;
-    if (app.historyCount < HistoryCapacity)
-      ++app.historyCount;
     logAlert(a);
   }
   bool police = a.match.family == Family::Axon;
@@ -102,15 +131,17 @@ void buddyAlert(const Alert &a, bool demo) {
       : a.match.family == Family::Flipper   ? "A wild dolphin gadget appeared!"
       : a.match.family == Family::Pineapple ? "Spicy fruit on the airwaves!"
                                             : "Psst. I spotted an interesting signal!");
-  if (app.settings.sound) {
+  soundActive = false;
+  if (app.settings.sound && app.settings.volume && app.settings.tone != AlertTone::Silent) {
     M5.Speaker.stop();
-    M5.Speaker.setVolume(police && app.settings.spicy ? 220 : 170);
-    if (police && app.settings.spicy && line < 2) {
+    M5.Speaker.setVolume(app.settings.volume);
+    if (app.settings.voice && app.settings.tone == AlertTone::Personality && police &&
+        app.settings.spicy && line < 2) {
       const uint8_t *wav = line == 0 ? voicePig : voiceFuzz;
       size_t len = line == 0 ? sizeof(voicePig) : sizeof(voiceFuzz);
       M5.Speaker.playWav(wav, len, 1, 0, true);
     } else
-      M5.Speaker.tone(police ? 880 : 1174, 160);
+      beginTone(app.settings.tone);
   }
 }
 void buddyDismiss() {
@@ -118,7 +149,7 @@ void buddyDismiss() {
   app.demo = false;
   app.mood = Mood::Curious;
   M5.Speaker.stop();
-  M5.Speaker.setVolume(128);
+  soundActive = false;
   idleMotion.reset(millis(), 4500);
   gazeTarget = 0;
   if (app.settings.motion)
@@ -127,8 +158,11 @@ void buddyDismiss() {
 }
 void buddyTick() {
   uint32_t now = millis();
-  if (M5StackChan.TouchSensor.wasPressed() && !app.alertOpen)
-    buddyPet();
+  bool headPressed = false;
+  for (auto intensity : M5StackChan.TouchSensor.getIntensities())
+    headPressed |= intensity >= 2;
+  if (headTouch.update(now, headPressed) && !app.alertOpen)
+    buddyPet(false); // Sensor affection is visual; only deliberate screen pets can speak.
   if (app.alertOpen && uint32_t(now - app.alertAt) > 8500)
     buddyDismiss();
   if (app.mood == Mood::Love && uint32_t(now - loveAt) > 3000)
@@ -144,11 +178,30 @@ void buddyTick() {
     lastChatter = now;
     app.mood = app.energy < 30 ? Mood::Sleepy : Mood::Curious;
     say(app.energy < 30 ? "Let's wardrive! New networks are my snacks."
-                        : idle[unsigned(app.settings.avatar)][esp_random() % 4]);
+                        : idle[app.settings.avatar == Avatar::Custom
+                                   ? app.settings.customBase
+                                   : unsigned(app.settings.avatar)][esp_random() % 4]);
   }
-  if (app.alertOpen && app.settings.sound && app.settings.spicy &&
-      app.active.match.family == Family::Axon && !M5.Speaker.isPlaying(0) &&
-      uint32_t(now - lastSiren) > 220 && uint32_t(now - app.alertAt) < 6500) {
+  if (soundActive && (!app.settings.sound || !app.settings.volume)) {
+    soundActive = false;
+    M5.Speaker.stop();
+  }
+  if (soundActive && !M5.Speaker.isPlaying(0) && uint32_t(now - soundStepAt) >= 180) {
+    soundStepAt = now;
+    static const unsigned arcade[] = {784, 1047, 1319, 1568, 1319, 1047};
+    unsigned frequency = playingTone == AlertTone::Siren   ? (soundStep % 2 ? 1300 : 600)
+                         : playingTone == AlertTone::Chime ? (soundStep % 2 ? 1568 : 1047)
+                                                           : arcade[soundStep % 6];
+    unsigned steps = playingTone == AlertTone::Siren ? 16 : playingTone == AlertTone::Chime ? 2 : 6;
+    if (soundStep++ < steps)
+      M5.Speaker.tone(frequency, 150, 1, true);
+    else
+      soundActive = false;
+  }
+  if (app.alertOpen && app.settings.sound && app.settings.volume && app.settings.spicy &&
+      app.settings.tone == AlertTone::Personality && app.active.match.family == Family::Axon &&
+      !M5.Speaker.isPlaying(0) && uint32_t(now - lastSiren) > 220 &&
+      uint32_t(now - app.alertAt) < 6500) {
     lastSiren = now;
     M5.Speaker.tone((now / 220) % 2 ? 650 : 1150, 180, 1, true);
   }
@@ -156,7 +209,8 @@ void buddyTick() {
     lastMotion = now;
     auto cue = panicMotion(panicStep++);
     panicWait = cue.holdMs;
-    if (!app.settings.spicy || app.active.match.family != Family::Axon) {
+    if (app.settings.motionStyle == 1 || !app.settings.spicy ||
+        app.active.match.family != Family::Axon) {
       cue.yaw /= 2;
       cue.pitch = 200 + (cue.pitch - 200) / 2;
       cue.speed = 260;
@@ -166,8 +220,15 @@ void buddyTick() {
     M5StackChan.Motion.move(cue.yaw, cue.pitch, cue.speed);
   } else if (!app.alertOpen) {
     MotionCue cue;
-    if (idleMotion.tick(now, esp_random(), app.energy < 30, unsigned(app.settings.avatar),
+    if (idleMotion.tick(now, esp_random(), app.energy < 30,
+                        app.settings.avatar == Avatar::Custom ? app.settings.customBase
+                                                              : unsigned(app.settings.avatar),
                         app.session.armed, cue)) {
+      if (app.settings.motionStyle == 1) {
+        cue.yaw /= 2;
+        cue.pitch = 200 + (cue.pitch - 200) / 2;
+        cue.speed = 90;
+      }
       gazeTarget = cue.yaw / 35.0f;
       if (app.settings.motion)
         M5StackChan.Motion.move(cue.yaw, cue.pitch, cue.speed);

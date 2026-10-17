@@ -1,0 +1,7 @@
+# Copy to /dashchan/watchlist.csv and replace these examples with your own rules.
+# Up to 16 rules. Full MAC/OUI have no separators. IDs are four hex digits.
+# MAC,001122334455
+# OUI,001122
+# NAME,My test beacon
+# COMPANY,034D
+# SERVICE,FC81

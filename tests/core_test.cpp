@@ -1,6 +1,11 @@
 #include "detector.h"
+#include "encounters.h"
 #include "idle_motion.h"
 #include "nutrition.h"
+#include "petting.h"
+#include "profile.h"
+#include "traffic.h"
+#include "watchlist.h"
 #include <cstdlib>
 #include <fstream>
 #include <iostream>
@@ -35,6 +40,136 @@ static void ad(std::vector<uint8_t> &p, uint8_t type, std::initializer_list<uint
   p.insert(p.end(), d);
 }
 int main() {
+  PetTouch head;
+  CHECK(!head.update(0, false));
+  CHECK(!head.update(600, false));
+  CHECK(!head.update(700, true));
+  CHECK(!head.update(710, false));
+  CHECK(!head.update(800, true));
+  CHECK(!head.update(900, false));
+  CHECK(!head.update(1500, false));
+  CHECK(!head.update(1600, true));
+  CHECK(!head.update(1849, true));
+  CHECK(head.update(1850, true));
+  CHECK(!head.update(99999, true));
+  CHECK(!head.update(100000, false));
+  CHECK(!head.update(100600, false));
+  CHECK(!head.update(100700, true));
+  CHECK(head.update(100950, true));
+  AvatarProfile profile;
+  CHECK(parseAvatar("DCAV1 0 FFFFD0 FF88B6 1 My Mochi", profile));
+  CHECK(profile.base == 0 && profile.accessory == 1 && !strcmp(profile.name, "My Mochi"));
+  CHECK(!parseAvatar("DCAV1 3 FFFFFF FF8800 0 Nope", profile));
+  CHECK(!parseAvatar("DCAV1 0 FFFFFF FF8800 4 Nope", profile));
+  CHECK(!parseAvatar("DCAV1 0 FFFFFF FF8800 1 Name; reboot", profile));
+  CHECK(!parseAvatar("DCAV1 0 FFFFFF FF8800 1 This-name-is-much-too-long", profile));
+  CHECK(!parseAvatar("DCAV1 0 FFFFFF FF8800 1    ", profile));
+  Encounters encounters;
+  uint8_t known[] = {0, 0x25, 0xdf, 0, 0, 1};
+  auto &encounter = encounters.observe(known, true, 0, Family::Axon, 0, 300000);
+  CHECK(encounters.eligible(encounter, Confidence::Medium, 0, 60000, false));
+  encounters.announce(encounter, Confidence::Medium, 0);
+  for (uint32_t t = 1000; t <= 600000; t += 1000) {
+    auto &same = encounters.observe(known, true, 0, Family::Axon, t, 300000);
+    CHECK(!encounters.eligible(same, Confidence::Medium, t, 60000, false));
+  }
+  CHECK(encounters.eligible(encounter, Confidence::High, 600000, 60000, false));
+  CHECK(encounters.eligible(encounter, Confidence::Medium, 600000, 60000, true));
+  auto &returned = encounters.observe(known, true, 0, Family::Axon, 900001, 300000);
+  CHECK(encounters.eligible(returned, Confidence::Medium, 900001, 60000, false));
+  encounters.announce(returned, Confidence::Medium, 900001);
+  known[5] = 2;
+  auto &rotating = encounters.observe(known, true, 1, Family::Axon, 910001, 300000);
+  CHECK(!encounters.eligible(rotating, Confidence::Medium, 910001, 60000, false));
+  CHECK(encounters.eligible(rotating, Confidence::Medium, 960001, 60000, false));
+  Watchlist list;
+  CHECK(list.add("MAC,0025df000002"));
+  CHECK(list.match(known, false, "").family == Family::Watchlist);
+  CHECK(!list.add("OUI,nothex"));
+  CHECK(!list.add("NAME,"));
+  list.clear();
+  CHECK(list.add("OUI,0025DF"));
+  CHECK(list.match(known, true, "").family == Family::Watchlist);
+  CHECK(list.match(known, false, "").family == Family::None);
+  list.clear();
+  CHECK(list.add("NAME,Mochi"));
+  CHECK(list.match(known, false, "MY MOCHI").family == Family::Watchlist);
+  list.clear();
+  CHECK(list.add("COMPANY,034D"));
+  uint8_t company[] = {3, 0xff, 0x4d, 3};
+  CHECK(list.match(known, false, "", company, sizeof(company)).family == Family::Watchlist);
+  list.clear();
+  CHECK(list.add("SERVICE,FC81"));
+  uint8_t service[] = {3, 3, 0x81, 0xfc};
+  CHECK(list.match(known, false, "", service, sizeof(service)).family == Family::Watchlist);
+  uint8_t badAd[] = {5, 3, 0x81};
+  CHECK(list.match(known, false, "", badAd, sizeof(badAd)).family == Family::None);
+  uint8_t baseService[] = {17,   7, 0xfb, 0x34, 0x9b, 0x5f, 0x80, 0, 0,
+                           0x80, 0, 0x10, 0,    0,    0x81, 0xfc, 0, 0};
+  CHECK(list.match(known, false, "", baseService, sizeof(baseService)).family == Family::Watchlist);
+  baseService[2] ^= 1;
+  CHECK(list.match(known, false, "", baseService, sizeof(baseService)).family == Family::None);
+  std::vector<uint8_t> probe(26, 0);
+  probe[0] = 0x40;
+  memcpy(probe.data() + 10, known, 6);
+  auto observed = classifyWifi(probe.data(), probe.size());
+  CHECK(observed.valid && !observed.loggable && observed.match.family == Family::Axon);
+  std::vector<uint8_t> dataHeader(24, 0);
+  dataHeader[0] = 8;
+  memcpy(dataHeader.data() + 4, known, 6);
+  observed = classifyWifi(dataHeader.data(), dataHeader.size());
+  CHECK(observed.valid && !observed.loggable && observed.match.family == Family::Axon &&
+        !memcmp(observed.mac, known, 6));
+  // Wildcard probe fingerprint needs the research OUI AND the complete IE sequence.
+  std::vector<uint8_t> flockProbe(24, 0);
+  flockProbe[0] = 0x40;
+  uint8_t flockMac[] = {0x70, 0xc9, 0x4e, 1, 2, 3};
+  memcpy(flockProbe.data() + 10, flockMac, 6);
+  flockProbe.insert(flockProbe.end(),
+                    {0, 0, 2,  0, 12,  0, 127, 0, 221, 7,    0x50, 0x6f, 0x9a, 0x16, 3,
+                     1, 3, 45, 0, 191, 0, 221, 7, 0,   0x50, 0xf2, 8,    0,    0,    0});
+  observed = classifyWifi(flockProbe.data(), flockProbe.size());
+  CHECK(observed.valid && !observed.loggable && observed.match.family == Family::Flock &&
+        observed.match.confidence == Confidence::Medium);
+  flockProbe.back() = 1;
+  CHECK(classifyWifi(flockProbe.data(), flockProbe.size()).match.confidence < Confidence::Medium);
+  flockProbe.pop_back();
+  CHECK(!classifyWifi(flockProbe.data(), flockProbe.size()).valid);
+  // Multiple APs sharing an SSID are ordinary; an open/protected conflict is only a weak hint.
+  TrafficHints conflict;
+  auto openAp = beacon("Test mesh");
+  auto protectedAp = openAp;
+  protectedAp[21] = 4;
+  for (uint32_t i = 0; i < 4; ++i) {
+    CHECK(conflict.wifi(openAp.data(), openAp.size(), 100 + i).family == Family::None);
+    CHECK(conflict.wifi(protectedAp.data(), protectedAp.size(), 200 + i).family == Family::None);
+  }
+  protectedAp[34] = 0x10;
+  for (uint32_t i = 0; i < 3; ++i) {
+    auto hit = conflict.wifi(protectedAp.data(), protectedAp.size(), 300 + i);
+    CHECK((hit.family == Family::EvilTwin) == (i == 2));
+    if (i == 2)
+      CHECK(hit.confidence == Confidence::Low);
+  }
+  CHECK(conflict.wifi(protectedAp.data(), protectedAp.size(), 31000).family == Family::None);
+  TrafficHints traffic;
+  std::vector<uint8_t> disconnect(26, 0);
+  disconnect[0] = 0xc0;
+  memcpy(disconnect.data() + 10, known, 6);
+  for (unsigned i = 1; i <= 12; ++i) {
+    disconnect[22] = i;
+    auto hit = traffic.wifi(disconnect.data(), disconnect.size(), i * 30);
+    CHECK((hit.family == Family::Deauth) == (i == 12));
+  }
+  TrafficHints pairing;
+  uint8_t popup[] = {5, 0xff, 0x4c, 0, 7, 0};
+  for (unsigned i = 0; i < 23; ++i) {
+    known[5] = i;
+    CHECK(pairing.ble(popup, sizeof(popup), known, 100 + i).family == Family::None);
+  }
+  known[5] = 23;
+  CHECK(pairing.ble(popup, sizeof(popup), known, 124).family == Family::BleSpam);
+  CHECK(pairing.ble(popup, sizeof(popup), known, 6000).family == Family::None);
   uint8_t mac[] = {0x10, 0x20, 0x30, 1, 2, 3};
   auto p = beacon("Cafe, \"Mochi\"");
   auto w = classifyWifi(p.data(), p.size());
@@ -72,6 +207,10 @@ int main() {
   ad(b, 3, {0x5f, 0xfd});
   f = classifyBle(b.data(), b.size(), mac, true);
   CHECK(f.valid && f.match.family == Family::Meta);
+  CHECK(f.match.confidence == Confidence::Low);
+  ad(b, 0xff, {0x53, 0x0d});
+  f = classifyBle(b.data(), b.size(), mac, true);
+  CHECK(f.valid && f.match.family == Family::Meta && f.match.confidence == Confidence::Medium);
   b.clear();
   ad(b, 3, {0xaa, 0xfe});
   f = classifyBle(b.data(), b.size(), mac, true);

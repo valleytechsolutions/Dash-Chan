@@ -8,7 +8,9 @@ void printStatus() {
       "\"radio\":%s,\"sd\":%s,\"recording\":%s,\"gps_chars\":%lu,\"gps_fix\":%s,\"sats\":%u,"
       "\"wifi\":%lu,\"ble\":%lu,\"rows\":%lu,\"drops\":%lu,\"motion\":%s,"
       "\"fuel\":%u,\"food_progress\":%u,\"discoveries\":%lu,\"uptime\":%lu,"
-      "\"gps_good\":%lu,\"gps_bad\":%lu,\"sd_bytes\":%llu,\"storage_error\":\"%s\"}\n",
+      "\"gps_good\":%lu,\"gps_bad\":%lu,\"sd_bytes\":%llu,\"storage_error\":\"%s\","
+      "\"theme\":%u,\"volume\":%u,\"tone\":%u,\"pets\":%lu,\"recent\":%u,\"suppressed\":%lu,"
+      "\"sound\":%s,\"voice\":%s}\n",
       Version, unsigned(M5.getBoard()), M5.Display.width(), M5.Display.height(),
       (unsigned long)ESP.getPsramSize(), (unsigned long)ESP.getFreeHeap(),
       app.radioReady ? "true" : "false", app.sdReady ? "true" : "false",
@@ -17,10 +19,13 @@ void printStatus() {
       (unsigned long)app.bleSeen, (unsigned long)app.rows, (unsigned long)app.drops,
       app.settings.motion ? "true" : "false", app.energy, app.food.progress(),
       (unsigned long)app.food.discoveries(), (unsigned long)millis(), (unsigned long)app.gpsGood,
-      (unsigned long)app.gpsBad, (unsigned long long)storageCardSize(), app.storageError);
+      (unsigned long)app.gpsBad, (unsigned long long)storageCardSize(), app.storageError,
+      unsigned(app.settings.theme), app.settings.volume, unsigned(app.settings.tone),
+      (unsigned long)app.pets, app.historyCount, (unsigned long)app.suppressed,
+      app.settings.sound ? "true" : "false", app.settings.voice ? "true" : "false");
 }
 void serialTick() {
-  static char line[64];
+  static char line[128];
   static size_t used = 0;
   static bool overflow = false;
   unsigned budget = 64;
@@ -41,6 +46,16 @@ void serialTick() {
           startDrive();
         else if (!strcmp(line, "CHECK LOG"))
           storageCheckLog();
+        else if (!strcmp(line, "AVATAR GET"))
+          printAvatarConfig();
+        else if (!strncmp(line, "AVATAR SET ", 11)) {
+          Serial.println(app.session.armed              ? "AVATAR ERROR stop recording first"
+                         : applyAvatarConfig(line + 11) ? "AVATAR OK"
+                                                        : "AVATAR ERROR invalid profile");
+        } else if (!strcmp(line, "RELOAD PROFILES") && !app.session.armed)
+          storageLoadAvatar();
+        else if (!strcmp(line, "DEMO AXON"))
+          buddyDemo();
         else if (!strcmp(line, "SOUND TEST") || !strcmp(line, "SOUND STATUS")) {
           auto config = M5.Speaker.config();
           bool test = !strcmp(line, "SOUND TEST");

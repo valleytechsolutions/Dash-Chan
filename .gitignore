@@ -10,3 +10,5 @@ sdcard/events/
 __pycache__/
 .DS_Store
 .vscode/
+site/firmware/
+node_modules/

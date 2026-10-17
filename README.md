@@ -1,84 +1,118 @@
 # Dash-Chan
 
-**A tiny copilot for the invisible world.** Passive wardriving, device-signature alerts, and a pocket companion with a personality, built for the M5Stack StackChan K151.
+**A tiny copilot for the invisible world.** Passive radio awareness, GPS wardriving, and an affectionate offline companion for the official **M5Stack StackChan K151**.
 
-![Mochi the cat, Sprout the dragon, and Orbit the robot](media/companions.svg)
+## [🚀 Open the web flasher & Buddy Lab](https://valleytechsolutions.github.io/Dash-Chan/)
 
-**0.1.0 alpha — installed on an official StackChan.** Builds and host tests pass. USB diagnostics confirm the 320 × 240 display, 8 MB PSRAM, live Wi-Fi/BLE reception, and valid GPS fixes on blue Port C at 115200 baud. A 512 GB card was formatted as FAT32; a short bench session saved 37 GPS-tagged observations, reopened the WiGLE header, and earned snacks from 11 new Wi-Fi BSSIDs. Actual WiGLE upload and field detection accuracy remain unverified. The GPS model and wiring must match the selected profile.
+[First adventure](docs/QUICKSTART.md) · [Flashing & recovery](docs/FLASHING.md) · [Wiki / handbook](docs/wiki/Home.md) · [Downloads](https://github.com/valleytechsolutions/Dash-Chan/releases) · [Sources & attribution](docs/SOURCES.md)
+
+![Mochi, Sprout, and Orbit: original Dash-Chan companions](media/companions.svg)
+
+**0.2.0 beta.** Installed and checked on an official K151. A bench session saved **77 GPS-tagged Wi-Fi/BLE rows**, credited **13 new Wi-Fi discoveries**, reopened the WiGLE header, and reported **zero queue drops**. The browser installer's flashing module was also exercised against the physical robot: all four image checks passed, NVS remained unchanged, the robot rebooted, and a custom-avatar upload returned its success acknowledgement. Browser layout, profile export, refusal/error paths, and host protocol checks pass. This is a beta, not a claim of perfect detection or field-tested WiGLE server acceptance. [Validation details](docs/DEVELOPMENT.md).
 
 ## Meet your copilot
 
-- **Mochi:** a curious cream-colored cat with a serious snack habit.
-- **Sprout:** a mint dragon who collects signals for a tiny treasure hoard.
-- **Orbit:** a lilac robot whose strongest signal is friendship.
+| Buddy | Personality |
+|---|---|
+| **Mochi** | A curious cream cat with a serious snack habit. “My whiskers are on patrol.” |
+| **Sprout** | A mint dragon building a tiny signal hoard. “My wings are in airplane-ish mode.” |
+| **Orbit** | A lilac robot with excellent friendship reception. “My emotional support human is here.” |
+| **Your custom buddy** | Pick one of the three shapes, change body/accent colors, add a bow/scarf/crown, and give it a name in the web creator. |
 
-Tap their face or the head touch sensor for scritches. Choose a buddy, build bond and experience, and watch blinking, expressions, chatter, and bounded head movements. **Wardriving is the only way to feed your buddy:** every five new Wi-Fi BSSIDs saved with a valid GPS fix earns a snack (+12 fuel). Each discovery also earns experience. Background watch, BLE advertisements, petting, and demo alerts never feed it. Fuel is saved periodically and when stopping a drive; a new installation starts with 85 fuel. Personality is local and scripted; no AI service, account, microphone, or internet is required.
+Your pet stays visible on its home screen until **you** open a menu. Alerts use an expression, compact signal ribbon, and speech bubble. Idle gestures include glances, nods, curious looks, and quiet pauses. Petting gives heart eyes and affection; fuel and XP come from exploring.
 
-Food progress resets for each new drive. Repeated BSSIDs in that drive do not count again, even after the encounter cache expires. A bounded 2 KB Bloom filter can conservatively miss some new discoveries on large drives; it never awards extra food for a repeat. The food filter does not affect CSV logging.
+**Wardriving is the only way to feed Dash-Chan.** Every five new Wi-Fi BSSIDs successfully written with valid GPS in the current session earn +12 fuel. Each earns one XP. BLE, background watch, petting, and demos never feed it. Per-drive approximate deduplication prevents repeat-food farming within a session; it may conservatively miss a discovery on a very large drive. Stopping and starting creates a new food session.
 
-![Avatar chooser captured from the running StackChan framebuffer](media/device-buddies.png)
+This is a scripted personality engine, not cloud AI. No account, microphone processing, or internet connection is needed on the robot.
 
-## Two jobs, one buddy
+## Four themes, one familiar face
 
-**Keep watch:** passive Wi-Fi and BLE listening starts at boot and continues on every screen. Dragon Detector's passive classifiers identify advertised signatures associated with Axon/body cameras, Flock, ALPR vendors, camera glasses, Find My/DULT/SmartTag/Tile/Find Hub trackers, Flipper, Biscuit, WiFi Pineapple, Pwnagotchi, Nyanbox, HaleHound, camera vendors, and other supported categories.
+| Dark | Light |
+|---|---|
+| ![Dark theme](site/assets/ui-dark.png) | ![Light theme](site/assets/ui-light.png) |
+| Matrix | BWM |
+| ![Matrix theme](site/assets/ui-matrix.png) | ![BWM theme](site/assets/ui-bwm.png) |
 
-**Go wardriving:** tap **START WARDRIVE** on the face screen. GPS-tagged Wi-Fi access points and BLE advertisements are written as WiGLE 1.4 CSV to the SD card. **STOP & SAVE** closes the session and returns to background watch. No upload happens automatically.
+These are captures of the running firmware. The supplied **BWM and VTS logos** appear side by side at boot before the pet wakes up.
 
-Axon alerts can speak **“PIG DETECTED! ACT NATURAL!”** or **“Oh man, the fuzz!”**, play a short siren, and trigger a startled expression and head reaction. Choose gentle banter, quiet audio, or motion off in settings. **TRY AXON REACTION** is explicitly a demo and never writes a detection.
+## Two jobs, always together
+
+**Keep watch:** passive Wi-Fi/BLE listening begins at boot and continues on every screen, whether or not a wardrive is recording. The classifiers examine supported body-camera, ALPR/camera-vendor, camera-glasses, tracker, gadget, and Remote ID signatures. A detection is a **radio clue**, not authenticated identity, proof of police presence, or proof that recording is happening.
+
+**Go exploring:** tap **START WARDRIVE** on the face. A new SD file receives valid GPS-tagged Wi-Fi access points and BLE observations in **WiGLE 1.4 CSV**. Detection alerts still work during the drive. Tap **STOP & SAVE** to close it and continue background watching.
+
+The radio now also examines client probes, selected management/action frames, and candidate transmitter/receiver address headers for detection. Those frames are **not** written as Wi-Fi access points. It does not connect, probe, pair, deauthenticate, jam, decrypt, or save Wi-Fi data payloads.
+
+## Personality at your volume
+
+![The pet remains visible during a synthetic Axon reaction](site/assets/ui-panic.png)
+
+Spicy Axon reactions can display or speak **“PIG DETECTED! ACT NATURAL!”**, **“Oh man, the fuzz!”**, or use a siren with a panicked face and quick double-takes. Other families get captions such as “Biscuit nearby! Wait… not a snack?” and “Spicy fruit on the airwaves!” The Axon demo is synthetic and never becomes a real detection or WiGLE observation.
+
+**Speech defaults OFF.** In **MENU → Sound & Voice**:
+
+- **Voice OFF** disables every spoken clip while keeping configured electronic alert tones available.
+- **Master sound OFF** immediately silences all audio. Preferences survive reboot and firmware updates.
+- Alert tones: **Personality, Siren, Arcade, Chime, Silent**; selectable volume through 255.
+- Deliberate screen petting can say **“i Love Your Face”** only when Voice is enabled, at most once per minute.
+- Head-sensor petting gives visual affection without speech. Debounce and release-to-rearm prevent a held/noisy sensor from retriggering continuously.
+
+Choose **Off / Gentle / Lively** head motion and **Spicy / Gentle** banter under Personality. Head movement starts off on a new installation, uses the BSP's factory zero positions, and stays within bounded travel. Looking around is animation, not RF direction finding.
+
+## Alerts that know when to be quiet
+
+The same continuing encounter is announced once by default. Its recent entry continues updating RSSI, count, and last-seen time. After **five minutes absent**, it can announce again. Stronger evidence may alert again after cooldowns. A separate **60/180/300-second family quiet period** reduces repeated notifications from rotating addresses; it does not claim those addresses belong to the same device. Optional five-minute reminders are off by default.
+
+There are 128 encounter-ledger slots and 32 browsable recent entries. Very dense areas can evict older state. A default medium-or-higher confidence threshold keeps weak name/vendor clues quieter. [Exact methods, limits, and personal watchlists](docs/DETECTIONS.md).
+
+## Hardware and first use
+
+- **Official StackChan K151/CoreS3:** ESP32-S3, 16 MB flash, 8 MB Quad PSRAM, 320 × 240 landscape display. Generic DIY Stack-chan servo wiring is unsupported.
+- **Native radio:** 2.4 GHz Wi-Fi and BLE. No 5 GHz, Bluetooth Classic, LoRa, or sub-GHz reception.
+- **GPS:** M5Stack Unit GPS on blue Port C, RX G18 / TX G17, UART2. Select 9600/38400/115200 in GPS & SD. The development unit uses 115200; your unit may differ.
+- **Storage:** FAT32 microSD in the robot. No automatic formatting.
+
+Use the [web flasher](https://valleytechsolutions.github.io/Dash-Chan/#install) in desktop Chrome/Edge. It can download a full factory backup, validates the chip and flash size, checks SHA-256 downloads, writes split images without whole-chip erase, verifies written flash, and checks that NVS calibration is unchanged. The same site provides the creator, real UI images, quickstart, downloads, and attributions. [Detailed install/recovery instructions](docs/FLASHING.md).
 
 ## Controls
 
-| Control | Action |
+| Screen/control | Action |
 |---|---|
-| START WARDRIVE / STOP & SAVE | Open or close a new SD session |
-| Tap face / touch head | Pet your buddy |
-| BUDDY | Pick an avatar, pet, or FIND FOOD by starting a wardrive |
-| MENU | Sound, motion, banter, confidence threshold, history, diagnostics |
-| Tap title/status bar | Recent detection history |
-| Tap an alert | Dismiss without stopping radio collection |
-| GPS / SD STATUS | GPS fix, satellites, NMEA bytes, SD status, radio drops, GPS port/baud, SD retry |
+| Face: START / STOP & SAVE | Open or close a wardrive |
+| Face tap / top touch sensor | Affection; no food |
+| Alert speech bubble | Dismiss reaction; continue listening |
+| MENU → Look & Themes | Three original buddies, custom buddy, four themes |
+| MENU → Sound & Voice | Master mute, voice switch, tones, volume, preview/demo |
+| MENU → Personality | Motion, banter, pet |
+| MENU → Detection | Confidence, family quiet period, optional reminders |
+| MENU → Recent Signals | Paginated evidence and last-seen details |
+| MENU → GPS & SD | GPS quality, rows/drops, error text, port/baud, SD retry |
 
-Head movement defaults off for the first installation. Place the robot securely and enable **Motion** once its mechanical travel and factory calibration are checked. Reactions stay within ±32° yaw and 15–36° pitch, with no continuous spinning. The BSP uses stored factory zero positions when available.
+## Logs and GPS quality
 
-While chilling, your buddy makes soft side glances, little nods, curious upward looks, and posture adjustments, then settles facing forward for a variable rest. Eyes follow the intended glance and the avatar gently breathes. Mochi is relaxed, Sprout a little more lively, and Orbit more measured; low fuel slows everyone down. Petting brings attention back to you. Playful Axon alerts use louder, fast-paced synthesized speech, a follow-up siren, and quick double-takes with nods. Alerts interrupt idle gestures, then ease back to the forward pose. The **Motion** setting disables physical gestures while face animation continues.
+`/wardrives/dash-00000001.csv` uses the standard 11-column WiGLE format. New Start presses create new files without overwriting earlier drives. `/events/detections.csv` records emitted alert events separately. Nothing uploads automatically.
 
-## Hardware and build
+Rows require valid UTC, a fix no older than two seconds, at least four satellites, HDOP ≤ 5, finite in-range coordinates/altitude, and packet queue latency ≤ 250 ms. GPS loss pauses rows; the firmware never fills them with invented or stale positions. `AccuracyMeters` is the documented **HDOP × 5 m estimate**, not measured error. Repeat rows are rate-limited per address/transport to 30 seconds in a bounded contact cache.
 
-- Target: **official M5Stack StackChan K151/CoreS3**, ESP32-S3, 16 MB flash and 8 MB Quad PSRAM; not a generic DIY SG90 Stack-chan.
-- Native radio: **2.4 GHz Wi-Fi + BLE only**. No 5 GHz or Bluetooth Classic on this chip.
-- GPS: NMEA UART, default **Port C, RX G18 / TX G17, 9600 baud**, separate UART2; Port A and 38400/115200 are selectable. Stacked GPS modules may require different routing. [Hardware notes](docs/HARDWARE.md).
-- FAT32 microSD, installed in the StackChan slot.
+Files flush every two seconds and at Stop. Use **STOP & SAVE** before power-off or card removal. Sudden power loss can still lose buffered writes or damage FAT metadata. A write failure stops recording and reports an error while background watch continues. Keep real logs private when sharing bug reports.
+
+## Build and contribute
 
 ```sh
 python -m pip install platformio==6.2.0
 pio run -e stackchan
-# Only after identifying your board and backing up its flash:
-pio run -e stackchan -t upload --upload-port YOUR_PORT
-pio device monitor --port YOUR_PORT --baud 115200
+python tools/test.py             # g++/gcc, CXX/CC, or ziglang==0.13.0
+python tools/package.py          # release ZIP + site/firmware
+node --test tests/web_test.mjs   # Node 22+
+python -m http.server 8765 --directory site
 ```
 
-[Installation and recovery](docs/HARDWARE.md) · [Detection limits](docs/DETECTIONS.md) · [Architecture and verification](docs/DEVELOPMENT.md) · [Sources and credits](docs/SOURCES.md)
+For browser checks: `npm install`, `npx playwright install chromium`, then `node tests/browser_test.mjs` while the local site server runs. [Architecture, serial commands, and verification](docs/DEVELOPMENT.md). GitHub Actions runs host tests, builds firmware, packages images, and tests the site. The Pages workflow publishes `site/` with generated firmware.
 
-## Logs
+Report your exact board, firmware version, GPS baud, SD format, reproduction steps, and redacted status output in [Issues](https://github.com/valleytechsolutions/Dash-Chan/issues). Do not attach factory backups or unredacted wardrive files. Field testing with known emitting devices and real WiGLE uploads is welcome; neither is replaced by synthetic parser tests.
 
-- `/wardrives/dash-00000001.csv`: standard 11-column WiGLE CSV, one new file per Start. Reobservations are logged at most once per address/transport every 30 seconds in the bounded encounter cache.
-- `/events/detections.csv`: alert evidence, confidence, received signal level, and timestamp. This is a separate event log, not a WiGLE upload file.
-- Valid UTC, at least four satellites, HDOP ≤ 5, and fresh position/altitude are required for wardrive rows. Recording waits or pauses through fix loss; it never substitutes a cached location or invents coordinates. `AccuracyMeters` is an estimate of HDOP × 5 m, not measured accuracy.
-- Files flush every two seconds and when stopped. Always use **STOP & SAVE** before power-off or removing the card; sudden power loss can still lose buffered data or damage FAT metadata.
+## Credits and licensing
 
-## What an alert means
+Built with gratitude to **Dragon Detector**, **SquachWatch / skizzophrenic**, **Colonel Panic's Unified Blue / OUI Spy / Flock-You / AXEOFF**, **JustCallMeKoko's ESP32 Dual Band Wardriver / Marauder**, **Midwest Gadgets' Piglet**, **M5Stack**, **OpenDroneID**, and **Espressif**. [Pinned sources, precise reuse, and retained license notices](docs/SOURCES.md).
 
-It means a matching **radio signature was received**, not proof of a person's identity, device model, recording state, or intent. Names and addresses can be spoofed. “AirTag” signatures often identify the broader Find My network. “Biscuit” cannot passively distinguish Pro from Ultra. Motorola/Genetec prefixes do not prove an ALPR. Medium-or-higher evidence triggers alerts by default; low-confidence clues are available in settings. Silent, out-of-range, unsupported-band, or non-advertising equipment can be missed.
-
-The single radio alternates Wi-Fi channel listening and BLE windows, so background watch is continuous as a feature, not simultaneous reception on all bands. Looking around is personality animation, not direction finding.
-
-## Development
-
-```sh
-python -m pip install ziglang==0.13.0
-python tools/test.py
-```
-
-The host suite checks protocol fixtures, malformed packets, UTC/GPS gates, session boundaries, cooldown rollover, and CSV round-trip compatibility. GitHub Actions builds firmware and runs these checks. Actual WiGLE server acceptance and field detection recall remain unverified.
-
-GPL-3.0-or-later for Dash-Chan; imported components retain their original notices. This project credits **Dragon Detector**, **SquachWatch**, **JustCallMeKoko's ESP32 Dual Band Wardriver**, **Midwest Gadgets' Piglet**, and **M5Stack**. It is independently maintained, with no endorsement implied. Piglet is a behavior reference; its noncommercial source is not bundled.
+Dash-Chan is GPL-3.0-or-later; imported components retain their own notices. Mochi, Sprout, and Orbit are original code-drawn avatars. SquachWatch inspired expressive timing and a companion-led experience; its mascot/artwork was not copied. Piglet is a behavioral reference, not bundled source. Unified Blue's reviewed snapshot has no explicit license, so its code is not vendored. BWM/VTS brand rights remain with their owners. No upstream endorsement is implied.

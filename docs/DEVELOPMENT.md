@@ -1,44 +1,86 @@
 # Architecture and verification
 
-Radio callbacks only timestamp and copy bounded packets into a fixed FreeRTOS queue. They do not render, allocate unbounded strings, write SD, speak, or move servos. The main loop drains at most eight observations per pass and services GPS between them. Oversized/full-queue observations are counted as drops. Malformed lengths are rejected by the parser.
+## Runtime
 
-Wi-Fi runs in `WIFI_MODE_NULL`, listening passively for 300 ms on each US channel 1–11. BLE gets a 1.6-second passive window after each sweep. The screen refreshes at 20 Hz. Scan state is independent of recording state and UI page. A single S3 radio cannot hear all channels/transports at once.
+`radio.cpp` timestamps bounded packets into a 32-entry FreeRTOS queue. Each packet has at most 1024 captured bytes. Data frames are filtered to built-in address candidates and reduced to 24 header bytes. Callbacks never render, write SD, speak, or move servos. The main loop drains at most eight observations per pass and services GPS between them. Oversized/full-queue frames increment the drop counter; parsers reject malformed lengths.
 
-Recording has a monotonic session generation copied into each received packet. This prevents an observation queued before Start or in an earlier session from appearing in a newly opened file. Logging requires a fresh, quality-gated UTC GPS fix and queue latency ≤250 ms. Stale-fix packets are skipped, not backfilled with a later location. Files are separate from the event CSV. SD write failure stops recording and reports the error; background radio watch continues.
+Wi-Fi uses `WIFI_MODE_NULL`. US channels 1–11 are visited in the order **1,6,11,2,7,3,8,4,9,5,10**. Dwell is 140 ms while recording and 180 ms while watching; the following BLE passive window is 850/1100 ms respectively. BLE interval/window are 80/70 ms. This shortens the sweep compared with the alpha's 300 ms × 11 + 1600 ms schedule. It is an explicit coverage/latency tradeoff, not simultaneous reception or proof of an optimal dwell for every environment. Current channel policy is US; other regional channel plans need a code change.
 
-Servo work uses the official BSP's asynchronous motion task and a narrow application travel range. UI, pet needs, randomized chatter, siren timing, and scan windows use elapsed milliseconds. No cloud AI or credentials are involved.
+Screen refresh is capped at 20 Hz. Idle motion uses a nonblocking two/three-pose sequence and the BSP spring controller, followed by variable rests. Relaxed travel stays within ±20° yaw and 14.5–31° pitch; panic cues within ±32° yaw and 15–36° pitch. Gentle motion halves excursions. The BSP preserves factory zero positions. Motion off disables servo torque/power; animation continues.
 
-Idle motion is a nonblocking gesture sequencer with two or three eased poses and variable rests depending on activity, gesture, and fuel. Relaxed travel stays within ±20° yaw and 14.5–31° pitch; alert travel uses the wider limits described in the README. Eye gaze eases toward each intended turn. Alert dismissal cancels the previous idle sequence and returns toward center. Host checks exercise every avatar across randomized gestures, verify idle and panic travel/speed bounds and return-to-center, and cross the millisecond-counter wrap.
+Speech is optional and defaults off. The global voice gate covers every WAV playback path. Master sound additionally gates all tones. Turning either relevant switch off stops current audio. Head-sensor affection is visual only and has a 250 ms hold / 600 ms release gate. Deliberate face-tap love speech is rate-limited to 60 seconds. Sensor debounce is also increased through the official BSP. No microphone processing is used.
 
-Nutrition is credited only after a Wi-Fi row passes the session/fix checks and is successfully written. The per-drive BSSID filter is independent of the expiring contact cache. Every five new discoveries add 12 fuel; duplicate sightings cannot add fuel. Petting only changes bond. Fuel persists in NVS alongside experience.
+## Storage and food
 
-## Build verification
+Recording has a monotonic session generation copied into each packet. Pre-start and previous-session packets cannot enter the new file. Rows require fresh valid UTC/position/altitude, at least four satellites, HDOP in (0,5], and queue latency ≤250 ms. Wi-Fi rows are only AP observations. `AccuracyMeters` is the HDOP × 5 m estimate. Reobservations are limited to 30 seconds in the bounded 256-contact cache; very dense-area eviction can permit earlier repeats.
 
-`pio run -e stackchan` produces `.pio/build/stackchan/firmware.bin` and `firmware.elf`. The ELF is useful for debugging; publish only the intended artifacts. Dependency versions and the BSP commit are pinned in `platformio.ini`.
+Files flush every two seconds and on Stop. A failed row write stops recording and records an error message while watching continues. Sudden power loss is not transactional FAT storage. No-fix observations are skipped, not backfilled with a later position. Event CSV is separate from WiGLE. SD formatting is never automatic or exposed as a casual menu action.
 
-`python tools/test.py` uses a system GNU compiler, `CXX`/`CC`, or `ziglang==0.13.0`. It compiles the actual protocol/CSV headers, checks supported signatures and false-positive guard cases, exercises malformed lengths and 50,000 deterministic random inputs, verifies fresh GPS gating and session/cooldown behavior, and round-trips the emitted 11-column CSV with Python's CSV reader. Random-input checks are smoke fuzzing, not a proof of parser correctness.
+Food is credited only after successful Wi-Fi row writes. A per-session 2 KB Bloom filter prevents duplicate BSSIDs from earning repeat food, independent of the contact cache. Five discoveries add 12 fuel; each adds XP. Petting only affects bond. Fuel/preferences persist in NVS.
 
-`tools/render_avatars.cpp` generates the preview from the firmware drawing routine. It is a design preview, not a photograph of the physical LCD.
+## Web installer
 
-## Bench evidence and remaining acceptance checks
+`site/flasher.mjs` contains the tested installation policy. It validates the manifest, exact file names, offsets, sizes, sector-rounded bounds, SHA-256 downloads, chip/flash size, post-write MD5 values, and the before/after NVS digest. `eraseAll` is always false. There are no image slots for `0x9000–0xDFFF`. The packaged bootloader is DIO/80 MHz/16 MB.
 
-The target identifies as board 27 (StackChan), ESP32-S3 with 16 MB flash and 8 MB PSRAM. A complete factory flash backup was retained locally before installation. USB status has confirmed sustained Wi-Fi/BLE reception, a 320 × 240 landscape display, and valid fixes on Port C at 115200 baud. The user confirmed that the display orientation is correct. Host tests include duplicate-food protection, session reset, five-network snack boundaries, and CSV round trips.
+The self-hosted esptool-js 0.7.0 bundle is unmodified. Its `HardReset` implementation omits asserting RTS; Dash-Chan uses its documented custom-reset mechanism with `D0|R1|W100|R0|W100`. This was verified on the actual K151 USB Serial/JTAG interface. Vendor tracing is disabled. UI logs contain progress and device information, not firmware/NVS byte dumps.
 
-An explicitly selected card reporting 511,868,665,856 bytes (512 GB nominal) was successfully quick-formatted as FAT32 through the device. In an approximately 19-second bench session with eight satellites, Dash-Chan saved 37 Wi-Fi/BLE observations and credited 11 distinct Wi-Fi discoveries, taking fuel from 77 to 100. After Stop, the 4,004-byte file reopened with the expected WiGLE header; eight seconds of background watch awarded no further food. The radio queue reported zero drops. GPS diagnostics showed 2,185 valid sentences and one checksum failure after the format and recording sequence. These results do not establish full-card capacity integrity, WiGLE server acceptance, outdoor-drive performance, or field detection accuracy.
+`site/app.mjs` handles connect/cancel/disconnect, backup downloads, progress, failure messages, unsupported browsers, and mutually exclusive installer/avatar serial access. An install button never bypasses the hardware checkbox or chip-size checks. Download hashes are integrity checks against the published manifest, not independent cryptographic signing.
 
-After installing the final application build and resetting the device, the same card mounted automatically, fuel persisted at 100, and GPS reacquired a valid fix. No card reinsertion or format was needed after that reset.
+The avatar creator uses a bounded `DCAV1` text profile. USB checks `STATUS`, refuses during recording, validates the profile on both ends, and waits for `AVATAR OK`. It does not reset or flash. SD profiles override the saved custom appearance on boot. The web renderer mirrors the firmware's original primitive shapes and RGB565 quantization; LCD and browser antialiasing differ.
 
-The user confirmed head movement during the Axon demo and audible speaker output at the raised volume. Subsequent tuning increases playful alert volume, speech emphasis, and movement intensity. The demo always selects the first spoken phrase for repeatable checks; actual alerts select among the three reactions.
+## Build, package, and test
 
-Remaining physical checks:
+```sh
+python -m pip install platformio==6.2.0
+pio run -e stackchan
+python tools/test.py
+python tools/package.py
+node --test tests/web_test.mjs
+```
 
-- Correct board/flash/PSRAM detected; boot without reset loop; no unintended servo movement.
-- Touch coordinates, display orientation, head touch, three avatars, all menus.
-- Speaker clarity, quiet mode, playful versus gentle banter, demo versus real alert separation.
-- Servo travel, factory zero positions, motion-off behavior, stationary installation.
-- GPS unit wiring, baud, NMEA reception, outdoor fix, loss/reacquisition, no-fix start.
-- SD absent/full/removal, session numbering, repeated Stop/Start, valid CSV upload to WiGLE.
-- Simultaneous UI, GPS, SD, radio and audio during a long drive; queue drops and memory stability.
-- Compare known emitting devices against signatures; document false positives and missed detections.
+Host tests use GNU compilers, `CXX`/`CC`, or `ziglang==0.13.0`. They cover WiGLE CSV escaping and 11-column round trips, GPS quality, session boundaries, duplicate-food protection, cooldown rollover, encounter absence/repeat/family rules, custom profiles/watchlists, probe/header separation from AP logs, traffic hints, head-touch debounce, motion travel, and 50,000 deterministic malformed-packet inputs. Random testing is smoke fuzzing, not a correctness proof.
 
-Do not mark these as passed based on a successful compile or host fixtures.
+Browser tests use the dev dependency in `package.json`:
+
+```sh
+npm install
+npx playwright install chromium
+python -m http.server 8765 --directory site
+# In another terminal:
+node tests/browser_test.mjs
+```
+
+`DASH_SITE_URL` selects a deployed site; `DASH_BROWSER` optionally supplies a local Chromium executable. Checks cover desktop and 320/390/768 px layouts, all images, creator download content, invalid names, unsupported-browser messaging, and page/network errors. `web_test.mjs` additionally exercises chip/size refusal, unsafe manifests, corrupt downloads, failed written checks, changed calibration, and avatar recording lockout.
+
+`tools/package.py` writes the flash ZIP and `site/firmware/` from a built application, checks boot mode and protected ranges, and includes source/license notices. `tools/vendor_web.py` refreshes exact pinned browser dependencies and verifies npm tarball integrity before retaining bundle/notices. `tools/pack_logos.py` encodes the supplied artwork at LCD resolution; original PNGs remain in `assets/brands`. Voice regeneration is optional Windows SAPI synthesis in `tools/generate_voice.ps1`; it is not needed to build committed clips.
+
+## USB diagnostics
+
+Use `python tools/device.py --port YOUR_PORT STATUS`. The utility does not intentionally reset the board. Commands:
+
+| Command | Result |
+|---|---|
+| `STATUS` | Version, board, memory, radio/SD/GPS, rows/drops, fuel/discoveries, sound/voice, recent/suppressed counts |
+| `START` / `STOP` | Same recording operations as the face buttons |
+| `CHECK LOG` | Reopen last drive and verify header/byte count |
+| `SCREEN` | Current RGB888 framebuffer; use `--output path.png` |
+| `TAP x y` | Execute a touch at a valid 320×240 coordinate |
+| `AVATAR GET` / `AVATAR SET DCAV1 …` | Inspect/apply custom profile; Set refuses during recording |
+| `RELOAD PROFILES` | Reload SD avatar/watchlist while stopped |
+| `DEMO AXON` | Synthetic reaction, no real detection/log/food |
+| `SOUND STATUS` | Speaker/amp diagnostics |
+| `SOUND TEST` | Explicit diagnostic beep; intentionally bypasses normal mute for hardware testing |
+
+The development-only `FORMAT SD expected_bytes` command erases the inserted card only after matching its reported capacity and while recording is stopped. It is not part of the web flasher or normal UI. Never send it without intentional authorization for that exact card.
+
+## Measured evidence and remaining work
+
+Hardware: board 27, ESP32-S3 revision 0.2, 16 MB flash, 8 MB PSRAM, 320×240 display. The user confirmed correct orientation, servo motion, and audible output. A private full factory backup was retained. GPS on blue Port C at 115200 has produced valid 6–8 satellite fixes during beta checks. The installed card reports 511,868,665,856 bytes and mounts as FAT32; that does not verify its entire advertised capacity.
+
+A beta bench drive saved 77 rows, credited 13 new Wi-Fi discoveries, and raised fuel from 70 to 93 (including ongoing passive fuel decay). After Stop, the 8,196-byte file reopened with the expected WiGLE header. Queue drops were zero. Watching afterward did not add food. A prior no-fix session wrote only its header. Heap was approximately 70–79 KB with active radios; PSRAM supplies display buffers.
+
+The web flashing module and pinned esptool-js were exercised against COM60 through a local Web Serial-compatible development bridge: four image verification checks, unchanged NVS, explicit reset, and an acknowledged custom-avatar transfer passed. This tests the actual serial/flashing code on hardware; the browser's native port chooser itself was not automated. Headless browser UI checks and protocol failure tests complement this, not replace it.
+
+The user's repeated-love-speech report led to a global voice switch, silent-by-default speech, visual-only head affection, stronger touch gating, and one-minute face-speech spacing. The flashed device confirmed `sound:false` and `voice:false`; those user preferences are preserved.
+
+Still unverified: actual WiGLE server upload acceptance, long outdoor-drive stability and GPS loss/reacquisition under movement, full/removed/failing SD behavior across cards, speaker clarity in the enclosure at each volume, and detection recall/false positives against known real devices. Do not turn a successful build or synthetic fixture into a claim that these field checks passed.

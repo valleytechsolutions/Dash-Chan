@@ -25,7 +25,12 @@ enum class Family : uint8_t {
   Skimmer,
   Raven,
   Drone,
-  Camera
+  Camera,
+  Beacon,
+  Deauth,
+  EvilTwin,
+  BleSpam,
+  Watchlist
 };
 enum class Confidence : uint8_t { None, Low, Medium, High };
 struct Match {
@@ -38,7 +43,9 @@ inline const char *familyName(Family f) {
       "Unclassified",     "Axon / body camera", "Flock camera",    "ALPR vendor",
       "Camera glasses",   "Find My / tracker",  "Flipper Zero",    "Biscuit family",
       "WiFi Pineapple",   "Pwnagotchi",         "Nyanbox",         "HaleHound",
-      "Serial / skimmer", "Raven candidate",    "Remote ID drone", "Camera / Ring vendor"};
+      "Serial / skimmer", "Raven candidate",    "Remote ID drone", "Camera / Ring vendor",
+      "Proximity beacon", "Disconnect burst",   "SSID conflict",   "BLE advert burst",
+      "My watchlist"};
   return names[static_cast<unsigned>(f)];
 }
 inline const char *confidenceName(Confidence c) {
@@ -79,6 +86,7 @@ inline void promote(Match &a, Match b) {
 }
 struct WifiFrame {
   bool valid = false;
+  bool loggable = false;
   uint8_t mac[6]{}, channel = 0;
   char name[33]{};
   char auth[64] = "[UNKNOWN][ESS]";
@@ -159,6 +167,7 @@ inline WifiFrame parseWifi(const uint8_t *p, size_t n) {
     auth = "[WEP][ESS]";
   snprintf(f.auth, sizeof(f.auth), "%s", auth);
   f.valid = true;
+  f.loggable = !(f.mac[0] & 1);
   return f;
 }
 struct Fix {
@@ -183,7 +192,7 @@ inline std::string csv(const char *s) {
   return r + '\"';
 }
 inline const char *wigleHeader() {
-  return "WigleWifi-1.4,appRelease=0.1.0-alpha,model=StackChan,release=Dash-Chan,device=ESP32-S3,"
+  return "WigleWifi-1.4,appRelease=0.2.0-beta,model=StackChan,release=Dash-Chan,device=ESP32-S3,"
          "display=ILI9342,board=K151,brand=M5Stack\nMAC,SSID,AuthMode,FirstSeen,Channel,RSSI,"
          "CurrentLatitude,CurrentLongitude,AltitudeMeters,AccuracyMeters,Type\n";
 }
