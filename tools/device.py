@@ -7,7 +7,7 @@ p.add_argument('--port',required=True)
 p.add_argument('command',nargs='?',default='STATUS')
 p.add_argument('--output',default='build/device-screen.png')
 a=p.parse_args()
-s=serial.Serial();s.port=a.port;s.baudrate=115200;s.timeout=.2;s.dtr=False;s.rts=False
+s=serial.Serial();s.port=a.port;s.baudrate=115200;s.timeout=.2;s.write_timeout=2;s.dtr=True;s.rts=False
 with s:
     s.reset_input_buffer();s.write((a.command+'\n').encode())
     if a.command=='SCREEN':
