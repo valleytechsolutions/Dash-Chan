@@ -321,7 +321,14 @@ void uiScreenshot() {
       row[x * 3 + 1] = (((c >> 5) & 63) * 255 + 31) / 63;
       row[x * 3 + 2] = ((c & 31) * 255 + 15) / 31;
     }
-    Serial.write(row, sizeof(row));
+    size_t sent = 0;
+    uint32_t started = millis();
+    while (sent < sizeof(row)) {
+      sent += Serial.write(row + sent, sizeof(row) - sent);
+      if (uint32_t(millis() - started) > 2000)
+        return;
+      delay(1);
+    }
   }
   Serial.println("\nFRAME_END");
 }

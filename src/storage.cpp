@@ -103,7 +103,12 @@ void storageBegin() {
     return;
   SPI.begin(SdSck, SdMiso, SdMosi, SdCs);
   card.end();
-  app.sdReady = card.begin(SdCs, SPI, 10000000) && card.cardType() != CARD_NONE;
+  app.sdReady = card.begin(SdCs, SPI, 4000000) && card.cardType() != CARD_NONE;
+  if (!app.sdReady) {
+    card.end();
+    delay(50);
+    app.sdReady = card.begin(SdCs, SPI, 1000000) && card.cardType() != CARD_NONE;
+  }
   if (app.sdReady)
     app.sdReady = (card.exists("/wardrives") || card.mkdir("/wardrives")) &&
                   (card.exists("/events") || card.mkdir("/events"));

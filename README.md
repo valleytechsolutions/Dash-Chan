@@ -4,7 +4,7 @@
 
 ![Mochi the cat, Sprout the dragon, and Orbit the robot](media/companions.svg)
 
-**0.1.0 alpha — builds and host tests pass; installed on an official StackChan.** USB diagnostics confirm board detection, 8 MB PSRAM, live Wi-Fi/BLE reception, and SD mounting. Outdoor GPS, actual WiGLE upload, and field detection accuracy remain unverified. The GPS model and wiring must match the selected profile.
+**0.1.0 alpha — installed on an official StackChan.** Builds and host tests pass. USB diagnostics confirm the 320 × 240 display, 8 MB PSRAM, live Wi-Fi/BLE reception, and a valid GPS fix with 9–10 satellites on blue Port C at 115200 baud. Actual WiGLE upload and field detection accuracy remain unverified. The GPS model and wiring must match the selected profile.
 
 ## Meet your copilot
 
@@ -15,6 +15,8 @@
 Tap their face or the head touch sensor for scritches. Choose a buddy, build bond and experience, and watch blinking, expressions, chatter, and bounded head movements. **Wardriving is the only way to feed your buddy:** every five new Wi-Fi BSSIDs saved with a valid GPS fix earns a snack (+12 fuel). Each discovery also earns experience. Background watch, BLE advertisements, petting, and demo alerts never feed it. Fuel is saved periodically and when stopping a drive; a new installation starts with 85 fuel. Personality is local and scripted; no AI service, account, microphone, or internet is required.
 
 Food progress resets for each new drive. Repeated BSSIDs in that drive do not count again, even after the encounter cache expires. A bounded 2 KB Bloom filter can conservatively miss some new discoveries on large drives; it never awards extra food for a repeat. The food filter does not affect CSV logging.
+
+![Avatar chooser captured from the running StackChan framebuffer](media/device-buddies.png)
 
 ## Two jobs, one buddy
 

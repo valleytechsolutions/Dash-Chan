@@ -20,7 +20,7 @@ Nutrition is credited only after a Wi-Fi row passes the session/fix checks and i
 
 ## Bench evidence and remaining acceptance checks
 
-The target identifies as board 27 (StackChan), ESP32-S3 with 16 MB flash and 8 MB PSRAM. A complete factory flash backup was retained locally before installation. USB status has confirmed sustained Wi-Fi/BLE reception and a mounted microSD. Host tests include duplicate-food protection, session reset, five-network snack boundaries, and CSV round trips. These results do not establish outdoor GPS or field detection performance.
+The target identifies as board 27 (StackChan), ESP32-S3 with 16 MB flash and 8 MB PSRAM. A complete factory flash backup was retained locally before installation. USB status has confirmed sustained Wi-Fi/BLE reception, a 320 × 240 landscape display, and a valid fix with 9–10 satellites on Port C at 115200 baud. GPS checksum counters show valid sentences with no failures during the bench capture. Host tests include duplicate-food protection, session reset, five-network snack boundaries, and CSV round trips. These results do not establish performance during an outdoor drive or field detection accuracy.
 
 Remaining physical checks:
 
