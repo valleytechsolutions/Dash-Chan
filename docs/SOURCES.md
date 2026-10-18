@@ -30,3 +30,11 @@ Runtime libraries are fetched with their original licenses: M5Unified/M5GFX/Stac
 ## GPS preset research (0.4)
 
 The [GPS compatibility table](GPS.md) links each M5Stack receiver's official product documentation, the K151 pin map, and the ZhongKe ATGM336H-5N/-6N manufacturer manuals. Presets are original baud/connection metadata; the bounded NMEA framing and search implementation are original Dash-Chan code. No manufacturer firmware or manual artwork is bundled. The reviewed modules are UART/NMEA compatible with appropriate adapters; only Unit GPS v1.1 has been bench tested on this robot. Wisp and Ember are original vector characters rendered in firmware and the web studio.
+
+## Arcade Scout (0.5)
+
+The smiling one-antenna radar-head mark in `site/assets/dashchan.svg`, firmware mark primitives, four environments, Recon/Face layouts, and website console shell are original Dash-Chan artwork. The virtual-pet aesthetic is a design direction; no Tamagotchi branding, characters or graphics are copied. Avatar Studio remains original code-drawn art, with all customization available immediately.
+
+Hardware references: [official K151 specifications](https://docs.m5stack.com/en/StackChan), the pinned StackChan BSP's touch/RGB/NFC examples, and the manufacturer's LTR-553ALS register definitions. NFC uses [M5Unit-NFC 0.1.2](https://github.com/m5stack/M5Unit-NFC) under its MIT license; the original notice is included in flash packages. Outfit UID mapping, settings, UI and reaction logic are original code. Tag contents are not read.
+
+Upload integration references, checked 2026-10-17: [WiGLE API specification](https://api.wigle.net/swagger.json) and [WDGWars developer documentation](https://www.wdgwars.pl/press). Dash-Chan implements multipart transport, preview, conversion and receipt handling independently. No service firmware source or logos were imported. HTTPS uses the ESP-IDF certificate bundle and HTTP client from the pinned Arduino/IDF runtime. Reference and integration do not imply endorsement.

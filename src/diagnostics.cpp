@@ -1,4 +1,5 @@
 #include "app.h"
+#include "uploads.h"
 #include <M5StackChan.h>
 #include <esp_system.h>
 namespace dash {
@@ -13,7 +14,10 @@ void printStatus() {
       "\"theme\":%u,\"volume\":%u,\"tone\":%u,\"pets\":%lu,\"recent\":%u,\"suppressed\":%lu,"
       "\"sound\":%s,\"voice\":%s,\"avatar_schema\":2,\"moving\":%s,\"speed_kph\":%.1f,"
       "\"reset_reason\":%u,\"avatar_bases\":5,\"gps_profile\":%u,\"gps_port\":%u,"
-      "\"gps_rx\":%d,\"gps_baud\":%lu,\"gps_active_baud\":%lu,\"gps_searching\":%s}\n",
+      "\"gps_rx\":%d,\"gps_baud\":%lu,\"gps_active_baud\":%lu,\"gps_searching\":%s,"
+      "\"view\":%u,\"backdrop\":%u,\"xp\":%lu,\"level\":%lu,\"upload_busy\":%s,"
+      "\"nfc_ready\":%s,\"proximity_ready\":%s,\"ble_saved\":%lu,\"setup_schema\":1,\"upload_"
+      "configured\":%s}\n",
       Version, unsigned(M5.getBoard()), M5.Display.width(), M5.Display.height(),
       (unsigned long)ESP.getPsramSize(), (unsigned long)ESP.getFreeHeap(),
       app.radioReady ? "true" : "false", app.sdReady ? "true" : "false",
@@ -29,7 +33,11 @@ void printStatus() {
       app.moving ? "true" : "false", app.speedKph, unsigned(esp_reset_reason()),
       app.settings.gpsProfile, app.settings.gpsPort, gpsRxPin(gpsConfig()),
       (unsigned long)app.settings.gpsBaud, (unsigned long)app.gpsActiveBaud,
-      app.gpsSearching ? "true" : "false");
+      app.gpsSearching ? "true" : "false", app.settings.view, app.settings.backdrop,
+      (unsigned long)app.settings.xp, (unsigned long)petLevel(app.settings.xp),
+      uploadBusy() ? "true" : "false", app.nfcReady ? "true" : "false",
+      app.proximityReady ? "true" : "false", (unsigned long)app.bleCollection.discoveries(),
+      uploads.configured ? "true" : "false");
 }
 void serialTick() {
   static char line[128];
@@ -43,7 +51,8 @@ void serialTick() {
     if (c == '\n') {
       line[used] = 0;
       if (!overflow) {
-        if (!strcmp(line, "STATUS"))
+        if (uploadSetupCommand(line)) {
+        } else if (!strcmp(line, "STATUS"))
           printStatus();
         else if (!strcmp(line, "SCREEN"))
           uiScreenshot();
@@ -58,7 +67,7 @@ void serialTick() {
         else if (!strcmp(line, "GPS CANCEL"))
           gpsCancelSearch();
         else if (!strcmp(line, "RESTART")) {
-          if (app.session.armed)
+          if (app.session.armed || uploadBusy())
             Serial.println("RESTART ERROR stop recording first");
           else {
             Serial.println("RESTART OK");

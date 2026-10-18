@@ -4,6 +4,7 @@
 #include "traffic.h"
 #include <NimBLEDevice.h>
 #include <algorithm>
+#include <esp_heap_caps.h>
 #include <esp_wifi.h>
 namespace dash {
 struct Packet {
@@ -14,6 +15,7 @@ struct Packet {
   uint8_t data[1024];
 };
 static QueueHandle_t packets;
+static StaticQueue_t packetControl;
 static NimBLEScan *scan;
 static std::atomic<uint32_t> lost{0};
 static uint32_t phaseAt = 0, hopAt = 0;
@@ -22,12 +24,36 @@ static TrafficHints traffic;
 static unsigned hopIndex = 0;
 static constexpr uint8_t channelOrder[] = {1, 6, 11, 2, 7, 3, 8, 4, 9, 5, 10};
 static uint32_t bleWindow = BleWatchMs;
+static std::atomic<bool> paused{false};
+static bool beginBle();
+void radioPause(bool pause) {
+  if (!app.radioReady || pause == paused)
+    return;
+  paused = pause;
+  if (pause) {
+    esp_wifi_set_promiscuous(false);
+    if (scan)
+      scan->stop();
+    xQueueReset(packets);
+  } else {
+    xQueueReset(packets);
+    app.blePhase = false;
+    app.channel = 1;
+    hopIndex = 0;
+    phaseAt = hopAt = millis();
+    esp_wifi_set_channel(1, WIFI_SECOND_CHAN_NONE);
+    if (esp_wifi_set_promiscuous(true) != ESP_OK) {
+      app.radioReady = false;
+      say("Radio restart failed. Restart Dash-Chan.");
+    }
+  }
+}
 static bool addressCandidate(const uint8_t *mac) {
   return dragon::addressHint(mac, true, {dragon::Family::Wifi, dragon::Confidence::None, ""})
              .confidence != dragon::Confidence::None;
 }
 static void onWifi(void *buffer, wifi_promiscuous_pkt_type_t type) {
-  if (type != WIFI_PKT_MGMT && type != WIFI_PKT_DATA)
+  if (paused || (type != WIFI_PKT_MGMT && type != WIFI_PKT_DATA))
     return;
   auto *p = static_cast<wifi_promiscuous_pkt_t *>(buffer);
   if (p->rx_ctrl.rx_state || p->rx_ctrl.sig_len < 28)
@@ -59,6 +85,8 @@ static void onWifi(void *buffer, wifi_promiscuous_pkt_type_t type) {
 }
 class Callbacks : public NimBLEScanCallbacks {
   void onResult(const NimBLEAdvertisedDevice *d) override {
+    if (paused)
+      return;
     const auto &payload = d->getPayload();
     if (payload.size() > sizeof(Packet::data)) {
       ++lost;
@@ -193,8 +221,24 @@ static void process(const Packet &p) {
       ++app.suppressed;
   }
 }
+static bool beginBle() {
+  if (!NimBLEDevice::init("")) {
+    say("BLE initialization failed");
+    return false;
+  }
+  scan = NimBLEDevice::getScan();
+  scan->setScanCallbacks(&callbacks, true);
+  scan->setActiveScan(false);
+  scan->setInterval(80);
+  scan->setWindow(70);
+  scan->setMaxResults(0);
+  return true;
+}
 void radioBegin() {
-  packets = xQueueCreate(32, sizeof(Packet));
+  auto memory = static_cast<uint8_t *>(
+      heap_caps_malloc(32 * sizeof(Packet), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+  packets = memory ? xQueueCreateStatic(32, sizeof(Packet), memory, &packetControl)
+                   : xQueueCreate(32, sizeof(Packet));
   if (!packets) {
     say("Radio queue allocation failed");
     return;
@@ -222,21 +266,13 @@ void radioBegin() {
     Serial.printf("RADIO error %s\n", esp_err_to_name(err));
     return;
   }
-  if (!NimBLEDevice::init("")) {
-    say("BLE initialization failed");
+  if (!beginBle())
     return;
-  }
-  scan = NimBLEDevice::getScan();
-  scan->setScanCallbacks(&callbacks, true);
-  scan->setActiveScan(false);
-  scan->setInterval(80);
-  scan->setWindow(70);
-  scan->setMaxResults(0);
   app.radioReady = esp_wifi_set_promiscuous(true) == ESP_OK;
   phaseAt = hopAt = millis();
 }
 void radioTick() {
-  if (!app.radioReady)
+  if (!app.radioReady || paused)
     return;
   uint32_t now = millis();
   Packet p;

@@ -3,6 +3,7 @@
 #include "core.h"
 #include "gps_support.h"
 #include "nutrition.h"
+#include "progression.h"
 #include "themes.h"
 #include "watchlist.h"
 #include <Arduino.h>
@@ -35,7 +36,10 @@ struct Settings {
   uint16_t customBody = 0xff7a, customAccent = 0xfbb2;
   uint8_t customEyes = 0, customHeadwear = 0, customEyewear = 0, customNeckwear = 0;
   uint16_t customEye = 0x1085;
-  uint8_t fieldKit = 0; // Auto / Always / Off; cosmetic, never controls the radios.
+  uint8_t fieldKit = 0;           // Auto / Always / Off; cosmetic, never controls the radios.
+  uint8_t view = 0, backdrop = 0; // Recon / Face; Radar / Sunset / Orbit / Tiles.
+  bool rgb = true, tilt = true, gestures = true, proximity = false, autoDim = false, nfc = false;
+  uint8_t ledBrightness = 32;
   char customName[17] = "My buddy";
 };
 struct Contact {
@@ -61,6 +65,7 @@ struct State {
   Settings settings;
   Session session;
   WardriveFood food;
+  WardriveFood bleCollection;
   Fix fix;
   bool sdReady = false, radioReady = false, blePhase = false, alertOpen = false;
   uint8_t channel = 1;
@@ -80,6 +85,10 @@ struct State {
   uint32_t suppressed = 0;
   bool moving = false;
   double speedKph = -1;
+  uint32_t wifiRows = 0, bleRows = 0, levelUpAt = 0, greetAt = 0, discoveryAt = 0;
+  float tiltX = 0, tiltY = 0;
+  bool nfcReady = false, proximityReady = false;
+  char nfcMessage[64] = "NFC cards are off";
   bool gpsSearching = false;
   uint32_t gpsActiveBaud = GpsBaud;
   char gpsMessage[64] = "Waiting for NMEA";
@@ -123,6 +132,12 @@ void uiTick();
 void say(const char *);
 void uiTap(int x, int y);
 void uiScreenshot();
+void uiSwitchView();
+void hardwareBegin();
+void hardwareTick();
+void nfcRememberOutfit();
+void nfcCancelEnrollment();
+void radioPause(bool);
 void serialTick();
 void printStatus();
 bool applyAvatarConfig(const char *line);

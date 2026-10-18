@@ -1,4 +1,5 @@
 #include "app.h"
+#include "uploads.h"
 #include <M5StackChan.h>
 #include <Preferences.h>
 #include <algorithm>
@@ -43,6 +44,15 @@ void loadSettings() {
   app.settings.customEyewear = p.getUChar("eyewear", 0) % 4;
   app.settings.customNeckwear = p.getUChar("neckwear", legacy == 2 ? 1 : 0) % 4;
   app.settings.fieldKit = p.getUChar("fieldkit", 0) % 3;
+  app.settings.view = p.getUChar("view", 0) % 2;
+  app.settings.backdrop = p.getUChar("scene", 0) % 4;
+  app.settings.rgb = p.getBool("rgb", true);
+  app.settings.tilt = p.getBool("tilt", true);
+  app.settings.gestures = p.getBool("gestures", true);
+  app.settings.proximity = p.getBool("proximity", false);
+  app.settings.autoDim = p.getBool("autodim", false);
+  app.settings.nfc = p.getBool("nfc", false);
+  app.settings.ledBrightness = p.getUChar("ledbright", 32);
   p.getString("petname", app.settings.customName, sizeof(app.settings.customName));
   if (!*app.settings.customName)
     strcpy(app.settings.customName, "My buddy");
@@ -79,6 +89,15 @@ void saveSettings() {
   p.putUChar("eyewear", app.settings.customEyewear);
   p.putUChar("neckwear", app.settings.customNeckwear);
   p.putUChar("fieldkit", app.settings.fieldKit);
+  p.putUChar("view", app.settings.view);
+  p.putUChar("scene", app.settings.backdrop);
+  p.putBool("rgb", app.settings.rgb);
+  p.putBool("tilt", app.settings.tilt);
+  p.putBool("gestures", app.settings.gestures);
+  p.putBool("proximity", app.settings.proximity);
+  p.putBool("autodim", app.settings.autoDim);
+  p.putBool("nfc", app.settings.nfc);
+  p.putUChar("ledbright", app.settings.ledBrightness);
   p.putString("petname", app.settings.customName);
   p.end();
 }
@@ -100,9 +119,11 @@ void setup() {
   dash::uiBegin();
   dash::uiBoot();
   dash::buddyBegin();
+  dash::hardwareBegin();
   dash::gpsBegin();
   dash::storageBegin();
   dash::storageLoadAvatar();
+  dash::uploadRefresh();
   dash::radioBegin();
   Serial.printf("DASHCHAN %s ready\n", dash::Version);
   dash::printStatus();
@@ -112,7 +133,9 @@ void loop() {
   dash::gpsTick();
   dash::radioTick();
   dash::storageTick();
+  dash::uploadTick();
   dash::buddyTick();
+  dash::hardwareTick();
   dash::uiTick();
   dash::serialTick();
   delay(2);

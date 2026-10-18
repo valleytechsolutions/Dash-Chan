@@ -13,7 +13,7 @@ shutil.copytree(root/'docs/licenses', dest/'licenses', dirs_exist_ok=True)
 shutil.copy2(root/'lib/opendroneid/LICENSE', dest/'licenses/OPENDRONEID-APACHE-2.0.txt')
 shutil.copy2(root/'lib/DashChanSD/LICENSE', dest/'licenses/SD-APACHE-2.0.txt')
 dependencies=root/'.pio/libdeps/stackchan'
-for library in ['StackChan-BSP','M5Unified','M5GFX','M5HAL','M5UnitUnified','M5Utility','NimBLE-Arduino']:
+for library in ['StackChan-BSP','M5Unified','M5GFX','M5HAL','M5UnitUnified','M5Utility','M5Unit-NFC','NimBLE-Arduino']:
     for notice in ['LICENSE','NOTICE']:
         source=dependencies/library/notice
         if source.is_file():

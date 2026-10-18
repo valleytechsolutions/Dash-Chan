@@ -94,7 +94,15 @@ void buddyDemo() {
 void buddyDiscovery(const uint8_t mac[6]) {
   if (!app.session.armed || !app.food.discover(mac))
     return;
-  ++app.settings.xp;
+  app.discoveryAt = millis();
+  auto oldLevel = petLevel(app.settings.xp);
+  earnDiscoveryXp(app.settings.xp);
+  if (petLevel(app.settings.xp) != oldLevel) {
+    app.levelUpAt = millis();
+    if (!app.alertOpen)
+      say("Level up! Tiny buddy. Bigger adventures.");
+    saveSettings();
+  }
   if (app.food.progress() != 0)
     return;
   app.energy = std::min(100, int(app.energy) + 12);
@@ -183,7 +191,7 @@ void buddyTick() {
     app.mood = app.energy < 30 ? Mood::Sleepy : Mood::Curious;
     const char *road[] = {
         "Antenna up. Snack radar online!", "You drive. I'll watch the invisible stuff.",
-        "Tiny paws, serious listening gear.", "Are we there yet? My snacks say no."};
+        "Side quest: find the invisible snacks.", "Are we there yet? My snacks say no."};
     say((app.moving || app.session.armed) ? road[esp_random() % 4]
         : app.energy < 30
             ? "Let's wardrive! New networks are my snacks."

@@ -2,6 +2,7 @@
 #include "avatars.h"
 #include "boot_logos.h"
 #include "travel.h"
+#include "uploads.h"
 #include <M5StackChan.h>
 #include <algorithm>
 namespace dash {
@@ -21,11 +22,16 @@ enum Page {
   Diagnostics,
   GpsSetup,
   GpsModels,
-  GpsWiring
+  GpsWiring,
+  DisplaySetup,
+  Reactions,
+  NfcCards,
+  Uploads
 };
 static Page page = Home;
 static uint8_t historyPage = 0;
 static bool detailOpen = false;
+static bool confirmUpload = false;
 static Alert detail;
 static Palette colors;
 static const char *names[] = {"Mochi", "Sprout", "Orbit", "Wisp", "Ember"};
@@ -84,81 +90,340 @@ static void heart(int x, int y) {
   canvas.fillCircle(x + 3, y - 2, 4, colors.heart);
   canvas.fillTriangle(x - 7, y, x + 7, y, x, y + 8, colors.heart);
 }
-static void home(uint32_t now) {
-  char s[80];
-  snprintf(s, sizeof(s), "%s  Lv.%lu", petName(), (unsigned long)(1 + app.settings.xp / 25));
-  text(s, 12, 10, colors.accent);
-  text(!app.radioReady      ? "RADIO ERROR"
-       : !app.sdReady       ? "NO SD"
-       : usableFix(app.fix) ? "GPS READY"
-                            : "GPS WAIT",
-       247, 10, colors.muted);
-  if (app.alertOpen) {
-    snprintf(s, sizeof(s), "%s %s | %s",
-             app.demo ? "DEMO:" : "SIGNAL:", familyName(app.active.match.family),
-             confidenceName(app.active.match.confidence));
-    text(s, 12, 31, colors.danger);
-  } else {
-    snprintf(s, sizeof(s), "%s  %lu rows | %u recent",
-             app.session.armed
-                 ? (usableFix(app.fix) ? (app.moving ? "CRUISING + LOG" : "RECORDING") : "WAIT GPS")
-                 : (app.moving ? "MOVING + WATCH" : "WATCHING"),
-             (unsigned long)app.rows, app.historyCount);
-    text(s, 12, 31, colors.muted);
+static uint16_t blend(uint16_t a, uint16_t b, unsigned n, unsigned d) {
+  unsigned r = (((a >> 11) & 31) * (d - n) + ((b >> 11) & 31) * n) / d;
+  unsigned g = (((a >> 5) & 63) * (d - n) + ((b >> 5) & 63) * n) / d;
+  unsigned blue = ((a & 31) * (d - n) + (b & 31) * n) / d;
+  return (r << 11) | (g << 5) | blue;
+}
+static void mark(int x, int y, int scale = 1) {
+  canvas.drawLine(x + 12 * scale, y + 3 * scale, x + 15 * scale, y - 2 * scale, colors.accent);
+  canvas.fillCircle(x + 15 * scale, y - 2 * scale, 2 * scale, colors.danger);
+  canvas.fillRoundRect(x, y + 2 * scale, 18 * scale, 15 * scale, 5 * scale, colors.accent);
+  canvas.fillRect(x + 4 * scale, y + 6 * scale, 2 * scale, 4 * scale, Ink);
+  canvas.fillRect(x + 11 * scale, y + 6 * scale, 2 * scale, 4 * scale, Ink);
+  canvas.drawLine(x + 7 * scale, y + 13 * scale, x + 10 * scale, y + 13 * scale, Ink);
+}
+// These scenes are decorative worlds, never a map or a signal direction.
+static void pixelStar(int x, int y, uint16_t c, int size = 2) {
+  canvas.fillRect(x - size * 2, y - size / 2, size * 5, size, c);
+  canvas.fillRect(x, y - size * 2, size, size * 5, c);
+}
+static void cloud(int x, int y, uint16_t c) {
+  canvas.fillRoundRect(x, y, 39, 9, 4, c);
+  canvas.fillRoundRect(x + 8, y - 8, 17, 16, 5, c);
+  canvas.fillRoundRect(x + 22, y - 4, 12, 11, 4, c);
+}
+static void scene(uint32_t now) {
+  const uint32_t skies[][3] = {{0x25236b, 0x6553c6, 0x24dfd0},
+                               {0x812e92, 0xf78b78, 0xffd75e},
+                               {0x17275d, 0x4e3fa1, 0x87d5ff},
+                               {0x137e91, 0x69c5b5, 0xe0ff91}};
+  unsigned world = app.settings.backdrop;
+  uint16_t a = rgb565(skies[world][0]), b = rgb565(skies[world][1]);
+  uint16_t pop = rgb565(skies[world][2]), pink = rgb565(0xff79c6);
+  uint16_t floor = rgb565(0x2a2859), rail = rgb565(0x68f9d0);
+  if (app.settings.theme == Theme::Light) {
+    a = blend(a, 0xffff, 2, 5);
+    b = blend(b, 0xffff, 1, 5);
   }
-  if (app.settings.theme == Theme::Matrix)
-    for (int x = 75; x < 250; x += 20)
-      for (int y = 56; y < 151; y += 19)
-        text(((x / 20 + y / 19 + now / 1200) % 2) ? "1" : "0", x, y, colors.grid);
-  int scene = fieldScene(app.settings.fieldKit, app.session.armed, app.moving);
-  canvas.setClipRect(70, 42, 182, 115);
-  if (scene == 2 && !app.alertOpen) {
-    for (int i = 0; i < 4; ++i) {
-      int x = 78 + (int(now / 25) + i * 47) % 164;
-      canvas.drawLine(x, 149, std::min(247, x + 9), 149, colors.grid);
+  if (app.settings.theme == Theme::Matrix) {
+    a = rgb565(0x061a11);
+    b = rgb565(0x125333);
+    pop = rgb565(0x88ff94);
+    pink = rgb565(0x33bb70);
+    floor = rgb565(0x082a19);
+  }
+  if (app.settings.theme == Theme::Bwm) {
+    a = rgb565(0x351537);
+    b = rgb565(0x9d2948);
+    pop = rgb565(0xffbc6d);
+    pink = rgb565(0xff5d79);
+    rail = rgb565(0xff6f82);
+  }
+  for (int y = 24; y < 240; y += 2)
+    canvas.fillRect(0, y, 320, 2, blend(a, b, y - 24, 216));
+  canvas.setClipRect(0, 24, 182, 151);
+  int scroll = app.moving ? (now / 100) % 182 : 0;
+  if (world == 0) {
+    // Neon rooftops and a tiny listening tower.
+    canvas.fillCircle(137, 56, 19, pink);
+    for (int i = 0; i < 10; ++i) {
+      int x = (i * 25 + 182 - scroll) % 250 - 30, y = 86 + i * 13 % 37;
+      canvas.fillRect(x, y, 21, 49, blend(a, floor, 2, 3));
+      canvas.fillRect(x, y, 21, 2, i % 2 ? pop : pink);
+      for (int k = 0; k < 3; ++k)
+        for (int j = 0; j < 2; ++j)
+          canvas.fillRect(x + 4 + j * 9, y + 7 + k * 11, 4, 4,
+                          (i + j + k) % 3 ? blend(a, pop, 2, 5) : pop);
+    }
+    for (int r : {8, 17, 26})
+      canvas.drawCircle(30, 51, r, blend(a, pop, 1, 2));
+    canvas.drawLine(30, 52, 30, 84, pop);
+    canvas.fillCircle(30, 51, 3, pop);
+    pixelStar(101, 39, pop, 1);
+  } else if (world == 1) {
+    canvas.fillCircle(132, 60, 27, pop);
+    for (int y = 63; y < 88; y += 6)
+      canvas.fillRect(103, y, 58, 2, b);
+    cloud(11 + int(now / 1500 % 15), 48, blend(b, 0xffff, 1, 2));
+    canvas.fillTriangle(-20, 130, 41, 70, 106, 130, rgb565(0x8143a7));
+    canvas.fillTriangle(71, 132, 143, 91, 216, 132, rgb565(0xb65baf));
+    canvas.fillTriangle(27, 84, 41, 70, 57, 85, pink);
+    canvas.fillRect(0, 123, 182, 20, blend(a, pop, 1, 3));
+    for (int i = 0; i < 6; ++i)
+      canvas.fillRect((i * 37 + now / 180) % 180, 126 + i % 3 * 5, 14, 1, pop);
+  } else if (world == 2) {
+    for (int i = 0; i < 16; ++i) {
+      int x = (i * 47 + 21) % 174 + 4, y = (i * 29 + 9) % 103 + 30;
+      uint16_t c = (i + now / 1300) % 4 ? blend(a, pop, 1, 2) : pop;
+      if (i % 4)
+        canvas.fillRect(x, y, 2, 2, c);
+      else
+        pixelStar(x, y, c, 1);
+    }
+    canvas.drawEllipse(139, 56, 30, 9, pink);
+    canvas.fillCircle(139, 54, 18, pink);
+    canvas.fillEllipse(133, 48, 9, 5, blend(pink, 0xffff, 1, 2));
+    canvas.fillCircle(146, 62, 5, blend(pink, a, 1, 3));
+    canvas.drawLine(110, 60, 165, 52, pop);
+    canvas.fillCircle(22, 119, 23, blend(a, pop, 1, 3));
+    canvas.fillCircle(15, 110, 5, blend(a, pop, 1, 5));
+  } else {
+    cloud(111 - int(now / 1700 % 14), 49, rgb565(0xe4ffe1));
+    cloud(9, 66, blend(pop, 0xffff, 1, 2));
+    canvas.fillCircle(31, 39, 13, rgb565(0xffe878));
+    canvas.fillCircle(42, 140, 48, rgb565(0x2caa89));
+    canvas.fillCircle(135, 145, 52, rgb565(0x4ec599));
+    for (int x : {12, 164}) {
+      canvas.fillRect(x, 109, 3, 25, rgb565(0x1e735d));
+      canvas.fillEllipse(x - 4, 118, 6, 3, pop);
+      canvas.fillRoundRect(x - 8, 102, 19, 11, 3, pink);
+      canvas.fillRect(x - 3, 99, 9, 17, pink);
+      canvas.fillRect(x - 1, 106, 5, 5, rgb565(0xffeb91));
     }
   }
-  int shake = app.alertOpen ? int(sin(now / 65.0) * 4) : 0;
-  int bob = app.alertOpen ? int(cos(now / 90.0) * 4)
-                          : int(sin(now / (app.energy < 30 ? 1600.0 : 650.0)) * 2);
-  pet(canvas, unsigned(app.settings.avatar), 160 + shake, 104, int(app.mood),
-      app.alertOpen ? int(sin(now / 100.0) * 5) : int(round(app.gaze)),
-      !app.alertOpen && (now % 4100) < 130, bob, scene, now / 150);
-  if (app.mood == Mood::Love) {
-    heart(91, 88 - int(now / 100 % 18));
-    heart(229, 90 - int((now / 100 + 9) % 18));
+  canvas.fillRect(0, 137, 182, 38, floor);
+  canvas.fillRect(0, 137, 182, 3, rail);
+  for (int x = -15; x < 192; x += 24) {
+    int offset = app.moving ? now / 80 % 24 : 0;
+    canvas.drawLine(x - offset, 141, x - offset - 12, 175, blend(floor, pop, 1, 4));
   }
-  if (app.alertOpen) {
-    text("!", 83, 59, colors.danger, 2);
-    text("!", 230, 70, colors.danger, 2);
-  }
+  canvas.drawLine(0, 157, 182, 157, blend(floor, pop, 1, 4));
   canvas.clearClipRect();
-  text("FUEL", 12, 71, colors.muted);
-  canvas.fillRoundRect(12, 85, 44, 5, 2, colors.panel);
-  canvas.fillRoundRect(12, 85, std::max(2, int(app.energy) * 44 / 100), 5, 2, colors.accent);
-  snprintf(s, sizeof(s), "%u%%", app.energy);
-  text(s, 12, 99, colors.text);
-  snprintf(s, sizeof(s), "%u/5", app.food.progress());
-  text(s, 12, 115, colors.accent);
-  text("snack", 12, 127, colors.muted);
-  text("BOND", 270, 71, colors.muted);
-  canvas.fillRoundRect(266, 85, 42, 5, 2, colors.panel);
-  canvas.fillRoundRect(266, 85, std::max(2, int(app.bond) * 42 / 100), 5, 2, colors.heart);
-  text("pet me", 266, 102, colors.muted);
-  canvas.fillRoundRect(8, 159, 304, 34, 9, colors.panel);
-  wrap(app.message, 17, 166, 47, app.alertOpen ? colors.danger : colors.text, 2);
-  button(8, 201, 222, 32, app.session.armed ? "STOP & SAVE" : "START WARDRIVE", true);
-  button(238, 201, 74, 32, "MENU");
+}
+static void celebration(uint32_t now, bool level, int width) {
+  uint32_t elapsed = now - (level ? app.levelUpAt : app.discoveryAt);
+  const uint16_t candy[] = {rgb565(0xffd569), rgb565(0x79f8dd), rgb565(0xff7ebd), rgb565(0xbca0ff)};
+  for (int i = 0; i < (level ? 16 : 7); ++i) {
+    int x = 10 + (i * 37 + 17) % (width - 20);
+    int y = 35 + (i * 23 + elapsed / 35) % 94;
+    if (i % 3)
+      canvas.fillRect(x, y, 3, 4, candy[i % 4]);
+    else
+      pixelStar(x, y, candy[i % 4], 1);
+  }
+}
+static void meter(int x, int y, int w, unsigned value, unsigned max, uint16_t color) {
+  canvas.fillRoundRect(x, y, w, 4, 2, colors.panel);
+  if (value)
+    canvas.fillRoundRect(x, y, std::min(w, int(uint64_t(value) * w / max)), 4, 2, color);
+}
+static void home(uint32_t now) {
+  char s[96];
+  scene(now);
+  bool face = app.settings.view == 1;
+  int sceneId = fieldScene(app.settings.fieldKit, app.session.armed, app.moving);
+  bool cheering = !app.alertOpen && app.discoveryAt && uint32_t(now - app.discoveryAt) < 1100;
+  bool level = !app.alertOpen && app.levelUpAt && uint32_t(now - app.levelUpAt) < 5000;
+  int expression = cheering ? 5 : int(app.mood);
+  int bob = app.alertOpen ? int(cos(now / 90.0) * 3) : int(sin(now / 820.0) * 2);
+  if (cheering)
+    bob -= int(fabs(sin((now - app.discoveryAt) / 180.0)) * 5);
+  int gaze = app.alertOpen ? int(sin(now / 100.0) * 5) : int(round(app.gaze + app.tiltX));
+  bool blink = !app.alertOpen && now % 4100 < 130;
+  if (face && thumbReady) {
+    unsigned base = avatarBase(app.settings.avatar, app.settings.customBase);
+    uint16_t body = app.settings.avatar == Avatar::Custom ? app.settings.customBody
+                    : base == 0                           ? Paper
+                    : base == 1                           ? Mint
+                    : base == 2                           ? Lilac
+                    : base == 3                           ? 0
+                                                          : 0xfa64;
+    thumb.fillSprite(body);
+    pet(thumb, unsigned(app.settings.avatar), 80, 64, expression, gaze, blink, bob);
+    canvas.setClipRect(0, 24, 320, 216);
+    thumb.pushRotateZoom(&canvas, 160, 99, 0, 3.1, 2.4);
+    canvas.clearClipRect();
+    for (int i = 0; i < 2; ++i) {
+      int x = 8 + i * 160;
+      canvas.fillRoundRect(x, 30, 144, 20, 6, colors.bg);
+      snprintf(s, sizeof(s), "%s ~%lu", i ? "BLE saved" : "WiFi saved",
+               (unsigned long)(i ? app.bleCollection.discoveries() : app.food.discoveries()));
+      text(s, x + 8, 36, i ? colors.heart : colors.accent);
+    }
+  } else {
+    canvas.setClipRect(3, 29, 176, 116);
+    pet(canvas, unsigned(app.settings.avatar), 91, 91 + int(app.tiltY), expression, gaze, blink,
+        bob, sceneId, now / 150);
+    if (app.mood == Mood::Love) {
+      heart(32, 63 - now / 120 % 12);
+      heart(150, 71 - now / 140 % 13);
+    }
+    canvas.clearClipRect();
+    if (app.alertOpen) {
+      canvas.fillRoundRect(151, 37, 21, 25, 5, colors.danger);
+      text("!", 156, 42, Ink, 2);
+    } else if (cheering || level) {
+      celebration(now, level, 180);
+      canvas.fillRoundRect(7, 31, level ? 69 : 49, 16, 4, colors.accent);
+      text(level ? "LEVEL UP!" : "+1 XP", 12, 36, Ink);
+    } else if (app.mood == Mood::Curious) {
+      pixelStar(21, 48, colors.accent, 1);
+      pixelStar(160, 75, colors.heart, 1);
+    }
+    for (int i = 0; i < 2; ++i) {
+      int x = 8 + i * 86;
+      canvas.fillRoundRect(x, 144, 80, 29, 7, colors.bg);
+      snprintf(s, sizeof(s), "~%lu",
+               (unsigned long)(i ? app.bleCollection.discoveries() : app.food.discoveries()));
+      text(i ? "BLE SAVED" : "WIFI SAVED", x + 5, 148, i ? colors.heart : colors.accent);
+      text(s, x + 5, 158, colors.text);
+      canvas.fillRect(x + 68, 158, 3, 7, i ? colors.heart : colors.accent);
+      canvas.fillRect(x + 73, 155, 3, 10, i ? colors.heart : colors.accent);
+    }
+    canvas.fillRoundRect(184, 31, 128, 142, 10, colors.bg);
+    text("NEARBY", 193, 39, colors.accent);
+    canvas.fillCircle(298, 42, 3, colors.accent);
+    if (!app.historyCount) {
+      for (int r : {12, 22, 31})
+        canvas.drawCircle(247, 94, r, colors.panel);
+      float sweep = now / 1800.0;
+      canvas.drawLine(247, 94, 247 + int(cos(sweep) * 29), 94 + int(sin(sweep) * 29),
+                      colors.accent);
+      text("Listening...", 211, 135, colors.text);
+      text("Tap for clues", 208, 153, colors.muted);
+    }
+    for (unsigned i = 0; i < std::min(3u, unsigned(app.historyCount)); ++i) {
+      auto &a = app.history[i];
+      int y = 55 + i * 37;
+      bool fresh = uint32_t(now - a.at) < 300000;
+      canvas.fillRoundRect(189, y, 118, 33, 5, colors.panel);
+      snprintf(s, sizeof(s), "%.18s", familyName(a.match.family));
+      text(s, 194, y + 5, fresh ? colors.text : colors.muted);
+      snprintf(s, sizeof(s), "%s %ddB %s", a.ble ? "BLE" : "WiFi", a.rssi,
+               fresh ? (a.match.confidence == Confidence::High     ? "HIGH"
+                        : a.match.confidence == Confidence::Medium ? "MED"
+                                                                   : "LOW")
+                     : "OLD");
+      text(s, 194, y + 19, fresh ? colors.danger : colors.muted);
+      canvas.fillRect(189, y + 6, 2, 21,
+                      fresh ? (a.ble ? colors.heart : colors.accent) : colors.muted);
+    }
+  }
+  if (face && (cheering || level))
+    celebration(now, level, 320);
+  canvas.fillRect(0, 0, 320, 24, colors.bg);
+  mark(8, 4);
+  snprintf(s, sizeof(s), "%.16s  L%lu", petName(), (unsigned long)petLevel(app.settings.xp));
+  text(s, 33, 8, colors.text);
+  const char *state = uploadBusy()        ? "UPLOAD"
+                      : !app.radioReady   ? "RADIO!"
+                      : !app.sdReady      ? "NO SD"
+                      : app.session.armed ? (usableFix(app.fix) ? "REC" : "GPS WAIT")
+                                          : "WATCH";
+  text(state, 254, 8, app.session.armed ? colors.danger : colors.accent);
+  canvas.fillRoundRect(8, 178, 304, 25, 6, colors.bg);
+  if (app.alertOpen) {
+    snprintf(s, sizeof(s), "%s %.20s / %s", app.demo ? "DEMO" : "CLUE",
+             familyName(app.active.match.family), confidenceName(app.active.match.confidence));
+    text(s, 15, 181, colors.danger);
+    snprintf(s, sizeof(s), "%.48s", app.message);
+    text(s, 15, 192, colors.text);
+  } else if (app.levelUpAt && now - app.levelUpAt < 5000) {
+    snprintf(s, sizeof(s), "LEVEL %lu!  +1 tiny adventure expert",
+             (unsigned long)petLevel(app.settings.xp));
+    text(s, 15, 182, colors.accent);
+    text("All looks are always yours.", 15, 193, colors.text);
+  } else {
+    if (uint32_t(now - app.messageAt) < 6500)
+      snprintf(s, sizeof(s), "%.47s", app.message);
+    else
+      snprintf(s, sizeof(s), "XP %u/25   Fuel %u%%   Love %u%%", levelProgress(app.settings.xp),
+               app.energy, app.bond);
+    text(s, 15, 181, colors.muted);
+    meter(15, 195, 284, levelProgress(app.settings.xp), 25, colors.accent);
+  }
+  button(8, 208, 154, 28, app.session.armed ? "STOP + SAVE" : "START DRIVE", true);
+  button(168, 208, 70, 28, face ? "RECON" : "FACE");
+  button(244, 208, 68, 28, "MENU");
 }
 static void menu() {
-  heading("YOUR LITTLE COPILOT");
-  button(8, 45, 148, 42, "LOOK & THEMES");
-  button(164, 45, 148, 42, "SOUND & VOICE");
-  button(8, 97, 148, 42, "PERSONALITY");
-  button(164, 97, 148, 42, "DETECTION");
-  button(8, 149, 148, 42, "RECENT SIGNALS");
-  button(164, 149, 148, 42, "GPS & SD");
-  text("Watching continues on every screen.", 12, 212, colors.muted);
+  heading("DASH-CHAN");
+  const char *labels[] = {"BUDDY + LOOK", "SOUND + VOICE", "PERSONALITY",   "DETECTION",
+                          "RECENT CLUES", "GPS + SD",      "DISPLAY + FUN", "UPLOAD DRIVES"};
+  for (int i = 0; i < 8; ++i) {
+    int x = 8 + i % 2 * 156, y = 42 + i / 2 * 47;
+    button(x, y, 148, 39, labels[i]);
+    canvas.fillRoundRect(x + 5, y + 9, 3, 21, 1,
+                         i % 3 == 0   ? colors.accent
+                         : i % 3 == 1 ? colors.heart
+                                      : colors.danger);
+  }
+}
+static void displaySetup() {
+  heading("DISPLAY + FUN");
+  button(8, 43, 304, 34, app.settings.view ? "Home: FULL FACE" : "Home: RECON + BUDDY");
+  static const char *scenes[] = {"Signal City", "Sunset Run", "Star Patrol", "Pixel Garden"};
+  button(8, 84, 304, 34, (std::string("Background: ") + scenes[app.settings.backdrop]).c_str());
+  button(8, 125, 304, 34, "LIGHTS + SENSOR REACTIONS");
+  button(8, 166, 304, 34, "NFC OUTFIT CARDS");
+  text("All looks unlocked. 25 discoveries = 1 level.", 12, 216, colors.muted);
+}
+static void reactions() {
+  heading("SENSOR REACTIONS");
+  const bool states[] = {app.settings.rgb, app.settings.tilt, app.settings.gestures,
+                         app.settings.proximity, app.settings.autoDim};
+  const char *names[] = {"Mood lights", "Tilt + gaze", "Head swipe", "Wave hello",
+                         "Auto brightness"};
+  for (int i = 0; i < 5; ++i) {
+    char label[40];
+    snprintf(label, sizeof(label), "%s: %s", names[i], states[i] ? "ON" : "OFF");
+    button(8, 42 + i * 38, 304, 32, label);
+  }
+}
+static void nfcCards() {
+  heading("NFC OUTFIT CARDS");
+  button(8, 44, 304, 36, app.settings.nfc ? "NFC cards: ON" : "NFC cards: OFF");
+  button(8, 91, 304, 36, "LINK NEXT CARD TO THIS OUTFIT", true);
+  button(8, 138, 304, 32, "CANCEL LINKING");
+  wrap(app.nfcMessage, 12, 184, 47, colors.accent, 3);
+  text("Own tags only. Cards do not earn food/XP.", 12, 226, colors.muted);
+}
+static void uploadScreen() {
+  heading("UPLOAD DRIVES");
+  char label[80];
+  snprintf(label, sizeof(label), "%s%s%s", uploads.wigle ? "WiGLE" : "",
+           uploads.wigle && uploads.wdg ? " + " : "", uploads.wdg ? "WDGWars" : "");
+  text(uploads.configured ? label : "Set up at the Dash-Chan website", 12, 43, colors.accent);
+  text(uploads.automatic ? "Auto-send after Stop + Save is ON" : "Auto-send is OFF", 12, 58,
+       colors.muted);
+  button(8, 77, 50, 32, "<");
+  button(262, 77, 50, 32, ">");
+  if (uploads.count)
+    text(uploads.files[uploads.selected], 66, 88, colors.text);
+  else
+    text("No drive selected", 66, 88, colors.muted);
+  wrap(uploads.message, 12, 120, 48, colors.text, 3);
+  text(uploadBusy() ? "WATCHING PAUSED during Wi-Fi upload" : "Shares GPS, SSIDs and MAC addresses",
+       12, 163, colors.danger);
+  button(8, 182, 210, 36,
+         uploadBusy()    ? "CANCEL UPLOAD"
+         : confirmUpload ? "CONFIRM SEND TO SERVICES"
+                         : "UPLOAD SELECTED DRIVE",
+         true);
+  button(224, 182, 88, 36, "REFRESH");
+  text("Original files stay on SD. HTTPS verified.", 12, 228, colors.muted);
 }
 static void appearance() {
   heading("LOOK & THEMES");
@@ -378,20 +643,31 @@ static bool row(int y, int top, int height = 36) {
 }
 static void touch(int x, int y) {
   if (page == Home) {
-    if (row(y, 201, 32)) {
-      if (x < 230) {
+    if (row(y, 208, 28)) {
+      if (x >= 244)
+        page = Menu;
+      else if (x >= 168)
+        uiSwitchView();
+      else if (x >= 8 && x < 162) {
         if (app.session.armed)
           stopDrive();
         else
           startDrive();
-      } else if (x >= 238)
-        page = Menu;
-    } else if (row(y, 159, 34) && app.alertOpen)
+      }
+    } else if (!app.settings.view && x >= 184 && y >= 55 && y < 166) {
+      unsigned i = (y - 55) / 37;
+      if (i < app.historyCount) {
+        detail = app.history[i];
+        detailOpen = true;
+        page = History;
+      }
+    } else if (y >= 178 && app.alertOpen)
       buddyDismiss();
-    else if (y >= 48 && y < 155 && x >= 66 && x < 258) {
+    else if (y >= 50 && y < 174 && (app.settings.view || x < 182)) {
       if (app.alertOpen)
         buddyDismiss();
-      buddyPet();
+      else
+        buddyPet();
     }
     return;
   }
@@ -399,6 +675,7 @@ static void touch(int x, int y) {
     page = page == Menu                               ? Home
            : (page == Buddies || page == Studio)      ? Appearance
            : (page == GpsModels || page == GpsWiring) ? GpsSetup
+           : (page == Reactions || page == NfcCards)  ? DisplaySetup
            : page == GpsSetup                         ? Diagnostics
                                                       : Menu;
     detailOpen = false;
@@ -407,15 +684,69 @@ static void touch(int x, int y) {
   bool right = x >= 160;
   switch (page) {
   case Menu:
-    if (row(y, 45, 42))
-      page = right ? Audio : Appearance;
-    else if (row(y, 97, 42))
-      page = right ? Detection : Behavior;
-    else if (row(y, 149, 42)) {
-      page = right ? Diagnostics : History;
-      detailOpen = false;
-      historyPage = 0;
+    if (y >= 42 && y < 230) {
+      static const Page pages[] = {Appearance, Audio,       Behavior,     Detection,
+                                   History,    Diagnostics, DisplaySetup, Uploads};
+      unsigned n = (y - 42) / 47 * 2 + unsigned(right);
+      if (n < 8 && (y - 42) % 47 < 39) {
+        page = pages[n];
+        detailOpen = false;
+        historyPage = 0;
+        confirmUpload = false;
+        if (page == Uploads)
+          uploadRefresh();
+      }
     }
+    break;
+  case Uploads:
+    if (uploadBusy()) {
+      if (row(y, 182, 36) && x < 218)
+        uploadCancel();
+    } else if (row(y, 77, 32) && uploads.count) {
+      if (x < 58)
+        uploads.selected = (uploads.selected + uploads.count - 1) % uploads.count;
+      else if (x >= 262)
+        uploads.selected = (uploads.selected + 1) % uploads.count;
+      confirmUpload = false;
+    } else if (row(y, 182, 36)) {
+      if (x >= 224) {
+        uploadRefresh();
+        confirmUpload = false;
+      } else if (uploads.configured && uploads.count) {
+        if (confirmUpload) {
+          uploadStart();
+          confirmUpload = false;
+        } else
+          confirmUpload = true;
+      }
+    }
+    break;
+  case DisplaySetup:
+    if (row(y, 43, 34))
+      app.settings.view ^= 1;
+    else if (row(y, 84, 34))
+      app.settings.backdrop = (app.settings.backdrop + 1) % 4;
+    else if (row(y, 125, 34))
+      page = Reactions;
+    else if (row(y, 166, 34))
+      page = NfcCards;
+    break;
+  case Reactions:
+    if (y >= 42 && y < 232 && (y - 42) % 38 < 32) {
+      bool *flags[] = {&app.settings.rgb, &app.settings.tilt, &app.settings.gestures,
+                       &app.settings.proximity, &app.settings.autoDim};
+      *flags[(y - 42) / 38] = !*flags[(y - 42) / 38];
+    }
+    break;
+  case NfcCards:
+    if (row(y, 44, 36)) {
+      app.settings.nfc = !app.settings.nfc;
+      if (!app.settings.nfc)
+        nfcCancelEnrollment();
+    } else if (row(y, 91, 36))
+      nfcRememberOutfit();
+    else if (row(y, 138, 32))
+      nfcCancelEnrollment();
     break;
   case Appearance:
     if (row(y, 44, 38))
@@ -618,10 +949,12 @@ void uiBegin() {
 void uiBoot() {
   if (!buffered)
     return;
+  colors = palette(app.settings.theme);
   canvas.fillSprite(0xffff);
   canvas.drawPng(bootBwm, sizeof(bootBwm), 21, 34);
   canvas.drawPng(bootVts, sizeof(bootVts), 178, 34);
-  text("DASH-CHAN", 106, 187, Ink, 2);
+  mark(67, 183, 2);
+  text("DASH-CHAN", 112, 187, Ink, 2);
   text("Your tiny road buddy is waking up", 64, 216, Ink);
   canvas.pushSprite(0, 0);
   delay(1500);
@@ -644,6 +977,18 @@ void uiTick() {
   switch (page) {
   case Home:
     home(now);
+    break;
+  case DisplaySetup:
+    displaySetup();
+    break;
+  case Reactions:
+    reactions();
+    break;
+  case NfcCards:
+    nfcCards();
+    break;
+  case Uploads:
+    uploadScreen();
     break;
   case Menu:
     menu();
@@ -683,6 +1028,10 @@ void uiTick() {
     break;
   }
   canvas.pushSprite(0, 0);
+}
+void uiSwitchView() {
+  app.settings.view ^= 1;
+  saveSettings();
 }
 void uiTap(int x, int y) {
   if (x >= 0 && x < 320 && y >= 0 && y < 240)

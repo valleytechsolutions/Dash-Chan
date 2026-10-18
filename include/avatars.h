@@ -76,6 +76,17 @@ void drawBuddy(G &g, int avatar, int cx, int cy, int mood, int gaze, bool blink,
     for (int side : {-1, 1})
       g.fillCircle(cx + side * 56, cy - 10 - int((phase + side + 8) % 8) * 3, 2, blush);
   }
+  // Small highlights and paw pads make each silhouette feel like a toy.
+  if (avatar != 2 && avatar != 3) {
+    g.fillEllipse(cx - 24, cy - 24, 9, 3, avatar == 4 ? Peach : 0xffff);
+    g.fillEllipse(cx - 26, cy + 39, 6, 3, blush);
+    g.fillEllipse(cx + 26, cy + 39, 6, 3, blush);
+  }
+  if (avatar == 3) {
+    g.fillEllipse(cx - 25, cy - 23, 8, 3, 0x420a);
+    g.fillEllipse(cx - 33, cy + 15, 6, 3, blush);
+    g.fillEllipse(cx + 33, cy + 15, 6, 3, blush);
+  }
   uint16_t eye = custom ? eyeColor : avatar == 2 ? Mint : avatar == 3 ? 0xefff : Ink;
   int ey = cy - 4, ex = cx + gaze;
   if (mood == 3) {
@@ -85,6 +96,14 @@ void drawBuddy(G &g, int avatar, int cx, int cy, int mood, int gaze, bool blink,
       g.fillCircle(x + 4, ey - 3, 6, blush);
       g.fillTriangle(x - 10, ey, x + 10, ey, x, ey + 12, blush);
     }
+  } else if (mood == 5) { // A quick cheer for a real, saved discovery.
+    for (int side : {-1, 1}) {
+      int x = ex + side * 21;
+      for (int n = 0; n < 3; ++n) {
+        g.drawLine(x - 10, ey + 3 + n, x, ey - 5 + n, eye);
+        g.drawLine(x, ey - 5 + n, x + 10, ey + 3 + n, eye);
+      }
+    }
   } else if (blink || mood == 2) {
     g.fillRoundRect(ex - 30, ey, 18, 4, 2, eye);
     g.fillRoundRect(ex + 12, ey, 18, 4, 2, eye);
@@ -92,8 +111,9 @@ void drawBuddy(G &g, int avatar, int cx, int cy, int mood, int gaze, bool blink,
     for (int side : {-1, 1}) {
       int x = ex + side * 21;
       if (mood == 4 || eyeStyle == 0 || (eyeStyle == 5 && side < 0)) {
-        g.fillEllipse(x, ey, 8, mood == 4 ? 16 : 12, eye);
+        g.fillEllipse(x, ey, 8, mood == 4 ? 16 : mood == 1 && side > 0 ? 14 : 12, eye);
         g.fillCircle(x - 2, ey - 5, 3, 0xffff);
+        g.fillCircle(x + 3, ey + 5, 1, 0xffff);
       } else if (eyeStyle == 1) { // Four-point sparkle.
         g.fillTriangle(x, ey - 14, x - 10, ey, x + 10, ey, eye);
         g.fillTriangle(x - 10, ey, x + 10, ey, x, ey + 14, eye);
@@ -118,9 +138,18 @@ void drawBuddy(G &g, int avatar, int cx, int cy, int mood, int gaze, bool blink,
     g.fillEllipse(cx - 36, cy + 12, 8, 4, blush);
     g.fillEllipse(cx + 36, cy + 12, 8, 4, blush);
   }
+  if (mood == 1) {
+    g.drawLine(ex + 13, ey - 22, ex + 27, ey - 25, eye);
+  }
   if (mood == 4) {
     g.fillEllipse(cx, cy + 22, 7, 10, eye);
+    g.drawLine(ex - 31, ey - 24, ex - 16, ey - 29, eye);
+    g.drawLine(ex + 16, ey - 29, ex + 31, ey - 24, eye);
     g.fillTriangle(cx + 58, cy - 26, cx + 64, cy - 11, cx + 52, cy - 11, 0x55ff);
+  } else if (mood == 5 || mood == 3) {
+    g.fillEllipse(cx, cy + 20, 10, 8, eye);
+    g.fillEllipse(cx, cy + 24, 6, 3, blush);
+    g.fillRoundRect(cx - 5, cy + 13, 10, 3, 1, 0xffff);
   } else {
     g.drawLine(cx - 8, cy + 17, cx - 4, cy + 21, eye);
     g.drawLine(cx - 4, cy + 21, cx, cy + 18, eye);
@@ -132,7 +161,7 @@ void drawBuddy(G &g, int avatar, int cx, int cy, int mood, int gaze, bool blink,
   if (neckwear < 0)
     neckwear = accessory == 2 ? 1 : 0;
   // Cosmetic glasses lift onto the forehead for panic/love so emotions stay readable.
-  int glassesY = cy + ((mood == 3 || mood == 4) ? -25 : -4);
+  int glassesY = cy + ((mood == 3 || mood == 4 || mood == 5) ? -25 : -4);
   if (eyewear == 1) {
     for (int side : {-1, 1}) {
       int x = cx + side * 21;

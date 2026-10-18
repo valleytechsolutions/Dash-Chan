@@ -1,3 +1,5 @@
+<p align="center"><img src="site/assets/dashchan.svg" width="88" alt="Dash-Chan smiling radar head"></p>
+
 # Dash-Chan
 
 **A tiny copilot for the invisible world.** Passive radio awareness, GPS wardriving, and an affectionate offline companion for the official **M5Stack StackChan K151**.
@@ -8,9 +10,27 @@
 
 ![Mochi, Sprout, Orbit, Wisp, and Ember: original Dash-Chan companions](media/companions.svg)
 
-**0.4.0 beta — Wisp, Ember & GPS setup.** Adopt a cute black ghost or a tiny fire buddy, customize all five shapes in Avatar Studio, and connect a wider range of UART GPS receivers. Named M5Stack/ATGM336H presets, Grove receive-pin selection, and a one-shot baud finder are now on the robot. [GPS compatibility and wiring](docs/GPS.md).
+**0.5.0 beta — Arcade Scout.** A colorful virtual-pet console with **Recon + Buddy** and **Full Face** views, four illustrated backdrops, a visible level/XP bar, and every outfit unlocked. Avatar Studio keeps all five buddies and layered accessories. The simpler web workspace adds drive previews, browser WiGLE uploads, WDGWars exports, and USB/SD setup for direct device uploads. [Upload guide](docs/UPLOADS.md) · [Views and hardware play](docs/PLAY.md).
 
 This remains a beta: outdoor movement, detection performance, and WiGLE server acceptance need field validation. [Measured checks and limits](docs/DEVELOPMENT.md).
+
+## Two ways to hang out
+
+| Recon + Buddy | Full Face |
+|---|---|
+| ![Recon view: pet beside nearby clues](site/assets/ui-recon.png) | ![Full Face view with Wi-Fi and BLE collection counters](site/assets/ui-face.png) |
+
+Tap **FACE / RECON** on the home screen. Recon keeps three recent clues beside the pet; tap a clue for evidence, confidence and age. Both views show approximate distinct Wi-Fi/BLE addresses saved **during the current drive**, not raw packets. `~` marks conservative Bloom-filter counting; BLE address rotation can represent the same physical device more than once. Background watch still detects clues but does not collect a drive or feed the pet.
+
+Every 25 eligible Wi-Fi discoveries advances one level. XP continues across restarts. Saved discoveries get a quick happy bounce and pixel sparks; each level earns a confetti celebration. Alerts take visual priority. **All buddies, eyes, colors and outfits are available immediately.** Petting builds affection, and only wardriving earns food.
+
+**Display + Fun** chooses Signal City, Sunset Run, Star Patrol or Pixel Garden. Separate switches control mood lights, tilt/gaze, head-swipe view switching, wave hello and automatic brightness. Optional NFC outfit cards recall a saved look from one of your own ISO14443A tags. The camera and microphone are unused. [Hardware play guide](docs/PLAY.md).
+
+## Upload when you get home
+
+Open **[Upload drives](https://valleytechsolutions.github.io/Dash-Chan/#uploads)** to preview a CSV, send it directly to WiGLE, or export a WiGLE 1.6 copy for WDGWars. Browser credentials remain in memory for that visit. WDGWars currently disallows the browser's cross-origin request, so its browser path is an export, not a pretend upload.
+
+For the robot, enter your 2.4 GHz network and selected service API credentials, then **Send setup over USB** or download `/dashchan/upload.json`. On StackChan, **Menu → Upload drives** lets you choose a saved drive and confirm sending. Optional **auto-send after Stop + Save** starts off. HTTPS verifies certificates; accepted/uncertain receipts prevent blind automatic resubmission. Original CSVs remain on SD. The setup file contains readable credentials and must stay private. [Setup, limits and recovery](docs/UPLOADS.md).
 
 ## Meet your copilot
 
@@ -27,7 +47,7 @@ This remains a beta: outdoor movement, detection performance, and WiGLE server a
 |---|---|
 | ![Wisp](site/assets/ui-wisp.png) | ![Ember](site/assets/ui-ember.png) |
 
-Your pet stays visible on its home screen until **you** open a menu. Alerts use an expression, compact signal ribbon, and speech bubble. Idle gestures include glances, nods, curious looks, and quiet pauses. Petting gives heart eyes and affection; fuel and XP come from exploring.
+Curious brows, bright eye highlights, paw pads, heart reactions, and open-mouth cheers give the five buddies a little more character. Your pet stays visible on its home screen until **you** open a menu. Alerts use an expression, compact signal ribbon, and speech bubble. Idle gestures include glances, nods, curious looks, and quiet pauses. Petting gives heart eyes and affection; fuel and XP come from exploring.
 
 **Wardriving is the only way to feed Dash-Chan.** Every five new Wi-Fi BSSIDs successfully written with valid GPS in the current session earn +12 fuel. Each earns one XP. BLE, background watch, petting, and demos never feed it. Per-drive approximate deduplication prevents repeat-food farming within a session; it may conservatively miss a discovery on a very large drive. Stopping and starting creates a new food session.
 
@@ -35,9 +55,9 @@ This is a scripted personality engine, not cloud AI. No account, microphone proc
 
 ## Make a buddy that looks like yours
 
-Open **[Avatar Studio](https://valleytechsolutions.github.io/Dash-Chan/#creator)** and start with Wisp, Ember, Signal Scout, Neon Listener, Petal Patrol, or Mochi Royale. Mix **six eye styles**, **six headwear choices**, **four eyewear choices**, and **four neckwear choices**, including None. Change body, accent, and eye colors. Preview love, alert, listening, and cruising poses; save a portrait or an avatar file. Your draft stays in your browser.
+Open **[Avatar Studio](https://valleytechsolutions.github.io/Dash-Chan/#creator)** and start with Wisp, Ember, Signal Scout, Neon Listener, Petal Patrol, or Mochi Royale. Mix **six eye styles**, **six headwear choices**, **four eyewear choices**, and **four neckwear choices**, including None. Change body, accent, and eye colors. Preview love, alert, discovery cheers, listening, and cruising poses in four arcade worlds; save a portrait or an avatar file. Your draft stays in your browser.
 
-**Send to StackChan** applies the design over USB without reflashing. Install 0.4 or newer for all five shapes. Earlier `DCAV1` avatar files still import. On the robot, **MENU → Look & Themes → Avatar Studio** cycles styles without a computer. [Full studio guide and profile format](docs/AVATAR-STUDIO.md).
+**Send to StackChan** applies the design over USB without reflashing. Install 0.4 or newer for all five shapes. Earlier `DCAV1` avatar files still import. On the robot, **MENU → Buddy + Look → Avatar Studio** cycles styles without a computer. [Full studio guide and profile format](docs/AVATAR-STUDIO.md).
 
 In **Auto** field-kit mode, the pet holds a radar-style antenna and pocket receiver while recording or when fresh GPS speed confirms movement. **Always** keeps the gear visible; **Off** hides it. Cruising adds a subtle bob and travel streaks. These are personality animations: the receiver does not process audio, and the antenna does not indicate signal direction. Alerts, muting, logging, and food rules work independently of the outfit.
 
@@ -55,11 +75,11 @@ These are captures of the running firmware. The supplied **BWM and VTS logos** a
 
 ## Two jobs, always together
 
-**Keep watch:** passive Wi-Fi/BLE listening begins at boot and continues on every screen, whether or not a wardrive is recording. The classifiers examine supported body-camera, ALPR/camera-vendor, camera-glasses, tracker, gadget, and Remote ID signatures. A detection is a **radio clue**, not authenticated identity, proof of police presence, or proof that recording is happening.
+**Keep watch:** passive Wi-Fi/BLE listening begins at boot and continues on every screen, whether or not a wardrive is recording. A configured upload temporarily pauses both radios, then restores watching. The classifiers examine supported body-camera, ALPR/camera-vendor, camera-glasses, tracker, gadget, and Remote ID signatures. A detection is a **radio clue**, not authenticated identity, proof of police presence, or proof that recording is happening.
 
-**Go exploring:** tap **START WARDRIVE** on the face. A new SD file receives valid GPS-tagged Wi-Fi access points and BLE observations in **WiGLE 1.4 CSV**. Detection alerts still work during the drive. Tap **STOP & SAVE** to close it and continue background watching.
+**Go exploring:** tap **START DRIVE** on the face. A new SD file receives valid GPS-tagged Wi-Fi access points and BLE observations in **WiGLE 1.4 CSV**. Detection alerts still work during the drive. Tap **STOP + SAVE** to close it and continue background watching.
 
-The radio now also examines client probes, selected management/action frames, and candidate transmitter/receiver address headers for detection. Those frames are **not** written as Wi-Fi access points. It does not connect, probe, pair, deauthenticate, jam, decrypt, or save Wi-Fi data payloads.
+The radio now also examines client probes, selected management/action frames, and candidate transmitter/receiver address headers for detection. Those frames are **not** written as Wi-Fi access points. Watching does not connect, probe, pair, deauthenticate, jam, decrypt, or save Wi-Fi data payloads. Only the optional upload activity joins your configured Wi-Fi.
 
 ## Personality at your volume
 
@@ -99,7 +119,7 @@ Use the [web flasher](https://valleytechsolutions.github.io/Dash-Chan/#install) 
 | Face: START / STOP & SAVE | Open or close a wardrive |
 | Face tap / top touch sensor | Affection; no food |
 | Alert speech bubble | Dismiss reaction; continue listening |
-| MENU → Look & Themes | Five original buddies, custom buddy, four themes, Avatar Studio and field-kit preference |
+| MENU → Buddy + Look | Five original buddies, custom buddy, four themes, Avatar Studio and field-kit preference |
 | MENU → Sound & Voice | Master mute, voice switch, tones, volume, preview/demo |
 | MENU → Personality | Motion, banter, pet |
 | MENU → Detection | Confidence, family quiet period, optional reminders |
@@ -108,11 +128,11 @@ Use the [web flasher](https://valleytechsolutions.github.io/Dash-Chan/#install) 
 
 ## Logs and GPS quality
 
-`/wardrives/dash-00000001.csv` uses the standard 11-column WiGLE format. New Start presses create new files without overwriting earlier drives. `/events/detections.csv` records emitted alert events separately. Nothing uploads automatically.
+`/wardrives/dash-00000001.csv` uses the standard 11-column WiGLE format. New Start presses create new files without overwriting earlier drives. `/events/detections.csv` records emitted alert events separately. Uploads are disabled until configured; automatic sending requires an explicit opt-in.
 
 Rows require valid UTC, a fix no older than two seconds, at least four satellites, HDOP ≤ 5, finite in-range coordinates/altitude, and packet queue latency ≤ 250 ms. GPS loss pauses rows; the firmware never fills them with invented or stale positions. `AccuracyMeters` is the documented **HDOP × 5 m estimate**, not measured error. Repeat rows are rate-limited per address/transport to 30 seconds in a bounded contact cache.
 
-Files flush every two seconds and at Stop. Use **STOP & SAVE** before power-off or card removal. Sudden power loss can still lose buffered writes or damage FAT metadata. A write failure stops recording and reports an error while background watch continues. Keep real logs private when sharing bug reports.
+Files flush every two seconds and at Stop. Use **STOP + SAVE** before power-off or card removal. Sudden power loss can still lose buffered writes or damage FAT metadata. A write failure stops recording and reports an error while background watch continues. Keep real logs private when sharing bug reports.
 
 ## Build and contribute
 

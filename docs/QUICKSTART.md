@@ -8,36 +8,39 @@ Dash-Chan turns the official M5Stack StackChan K151 into an offline companion fo
 2. Insert a FAT32 microSD card. Connect your M5Stack Unit GPS to **blue Port C**. GPS uses receive-only UART2 on G18; servos use their own UART. For other modules, see the [compatibility table and wiring guide](GPS.md).
 3. Open **MENU → GPS & SD → GPS SETUP**. Select your module preset and actual port. Tap **APPLY SETTINGS**, or **APPLY + FIND BAUD** if its speed is unknown. The finder saves a rate after two valid NMEA sentences, or restores the applied rate after cancellation/timeout. Stop recording before changing GPS settings.
 4. Go outside with a clear view of the sky. **GPS READY** means a fresh fix, valid UTC, four or more satellites, and HDOP no greater than 5. Acquiring satellites alone is not enough.
-5. Choose **Look & Themes** for your buddy and theme. Under **Personality**, enable gentle or lively head motion if desired. Motion is off on a new installation; existing preferences persist.
+5. Choose **Buddy + Look** for your buddy and theme. Under **Personality**, enable gentle or lively head motion if desired. Motion is off on a new installation; existing preferences persist.
 6. Under **Sound & Voice**, choose your volume and alert tone. **Voice starts OFF**. Enable it only if you want speech. **Master sound OFF** silences both speech and tones immediately. Your pet keeps animating and collecting signals when muted.
 
 ## The face is home
 
 The pet remains visible during alerts and recording. No event automatically opens a different page. A compact signal ribbon shows the family and confidence; the face reacts, and the speech bubble shows its personality.
 
-- **START WARDRIVE:** creates a new SD file and begins waiting for usable GPS observations.
+- **START DRIVE:** creates a new SD file and begins waiting for usable GPS observations.
 - **STOP & SAVE:** flushes and closes the file. Listening continues.
 - **Tap the face:** affection, heart eyes, and bond. If Voice is on, deliberate screen pets may say “i Love Your Face,” at most once a minute.
 - **Stroke/hold the top sensor:** visual affection. Head-sensor events never trigger speech. The sensor must settle released for 600 ms, then hold a meaningful touch for 250 ms; a held or noisy sensor cannot repeatedly fire.
 - **Tap the alert bubble:** dismiss the reaction. Listening and logging continue.
-- **MENU:** opens the six main controls. BACK returns through the menu to the face.
+- **FACE / RECON:** switch between a screen-filling expression and pet-with-nearby-clues. Tap a nearby clue for detail.
+- **MENU:** opens the eight main controls. BACK returns through the menu to the face.
 
 ## Settings map
 
 | Menu | Controls |
 |---|---|
-| Look & Themes | Mochi, Sprout, Orbit, Wisp, Ember, or a custom buddy; Dark, Light, Matrix, BWM; Avatar Studio with eyes, layered outfits, and Auto/Always/Off field gear |
+| Buddy + Look | Mochi, Sprout, Orbit, Wisp, Ember, or a custom buddy; Dark, Light, Matrix, BWM; Avatar Studio with eyes, layered outfits, and Auto/Always/Off field gear |
 | Sound & Voice | Personality, Siren, Arcade, Chime, Silent; volume 0/100/170/220/255; Master sound; Voice; preview; synthetic Axon demo |
 | Personality | Head motion Off/Gentle/Lively; Spicy panic/Gentle lookout; pet button |
 | Detection | Confidence filter; same-family quiet period 60/180/300 seconds; optional five-minute reminders |
-| Recent Signals | Up to 32 entries, four per page; transport, RSSI, name/address, evidence, count, last-seen age |
+| Recent Clues | Up to 32 entries, four per page; transport, RSSI, name/address, evidence, count, last-seen age |
+| Display + Fun | Recon/Face, four backgrounds, mood lights, tilt, head swipe, wave hello, auto brightness, NFC outfit cards |
+| Upload drives | Latest 24 drive files, configured destinations, explicit confirmation, cancel, refresh; [setup guide](UPLOADS.md) |
 | GPS & SD | Fix/satellites/HDOP, received NMEA characters, rows, queue drops, storage errors, module presets, port/RX, baud finder, wiring help, SD retry |
 
 **Silent** is a detection-tone choice. **Voice OFF** disables every spoken clip. **Master sound OFF** disables all audio. With Voice OFF, Personality uses electronic sounds instead of speech. Spicy captions can remain on-screen independently of voice.
 
 ## Dinner is earned
 
-Only **new Wi-Fi BSSIDs successfully saved with valid GPS during a wardrive** count as discoveries. Each earns one XP; five earn +12 fuel. BLE, watch mode, head touches, face taps, and synthetic demos award no food.
+Only **new Wi-Fi BSSIDs successfully saved with valid GPS during a wardrive** count as discoveries. Each earns one XP; five earn +12 fuel. Every 25 XP adds one level; all looks remain unlocked from level 1. BLE, watch mode, head touches, face taps, and synthetic demos award no food.
 
 Food progress resets on each new drive. A 2 KB approximate per-drive filter prevents repeated BSSIDs from earning food again in that session. On very large drives it can conservatively miss a new discovery. Food deduplication does not remove otherwise eligible CSV rows. Fuel drains slowly to a floor of 10 and is saved with experience.
 
@@ -46,9 +49,10 @@ Food progress resets on each new drive. A 2 KB approximate per-drive filter prev
 - `/wardrives/dash-00000001.csv` and subsequent numbers: WiGLE 1.4 CSV, ready for your own WiGLE upload.
 - `/events/detections.csv`: emitted detection events, separate from WiGLE.
 - `/dashchan/avatar.cfg`: optional custom appearance, loaded at boot or SD retry.
+- `/dashchan/upload.json`: optional private Wi-Fi/API setup; [upload guide](UPLOADS.md).
 - `/dashchan/watchlist.csv`: optional [personal signature rules](DETECTIONS.md#personal-watchlist).
 
-Tap STOP & SAVE before ejecting the card or powering off. A sudden power loss can still lose the last buffered writes or corrupt FAT metadata. Nothing uploads automatically. Keep real observation files and factory backups private when reporting issues.
+Tap STOP & SAVE before ejecting the card or powering off. A sudden power loss can still lose the last buffered writes or corrupt FAT metadata. Uploads are off until configured. Optional auto-send after Stop + Save requires an explicit setup choice. Keep real observation files and factory backups private when reporting issues.
 
 ## Custom buddy
 
@@ -64,7 +68,7 @@ The original `DCAV1` files still work. New exports use `DCAV2`:
 DCAV2 0 FFF3D2 FFAD73 1 101029 5 0 2 Signal scout
 ```
 
-The [studio guide](AVATAR-STUDIO.md) documents every field and style. RGB colors are quantized to the LCD's RGB565 format. On-device, use **Look & Themes → Avatar Studio** to cycle eyes and accessories, then **Show my buddy** to return home.
+The [studio guide](AVATAR-STUDIO.md) documents every field and style. RGB colors are quantized to the LCD's RGB565 format. On-device, use **Buddy + Look → Avatar Studio** to cycle eyes and accessories, then **Show my buddy** to return home.
 
 **Field kit: Auto** shows the antenna and listening receiver while recording or moving. Fresh usable GPS speed must stay at least 5 km/h for three seconds to start cruising; speed at most 2 km/h for five seconds stops it. Invalid/stale GPS clears cruising immediately. **Always** keeps the kit visible; **Off** hides it. The illustrated receiver is decorative and does not process microphone audio or determine a signal's bearing.
 

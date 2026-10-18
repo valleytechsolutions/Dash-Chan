@@ -22,7 +22,7 @@ jobs:
       - run: pio run -e stackchan
       - run: python tools/test_gps.py
       - run: python tools/package.py
-      - run: node --test tests/web_test.mjs tests/studio_test.mjs
+      - run: node --test tests/web_test.mjs tests/studio_test.mjs tests/uploads_test.mjs
       - run: npm ci
       - run: npx playwright install --with-deps chromium
       - name: Check browser layouts and creator
@@ -33,7 +33,7 @@ jobs:
         with:
           name: Dash-Chan-stackchan-beta
           path: |
-            build/Dash-Chan-0.4.0-beta.zip
+            build/Dash-Chan-0.5.0-beta.zip
             build/test-wigle.csv
             build/web/
       - uses: actions/upload-pages-artifact@v3

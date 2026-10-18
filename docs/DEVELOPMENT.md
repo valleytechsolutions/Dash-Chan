@@ -2,11 +2,11 @@
 
 ## Runtime
 
-`radio.cpp` timestamps bounded packets into a 32-entry FreeRTOS queue. Each packet has at most 1024 captured bytes. Data frames are filtered to built-in address candidates and reduced to 24 header bytes. Callbacks never render, write SD, speak, or move servos. The main loop drains at most eight observations per pass and services GPS between them. Oversized/full-queue frames increment the drop counter; parsers reject malformed lengths.
+`radio.cpp` timestamps bounded packets into a 32-entry FreeRTOS queue. Queue storage prefers PSRAM with an internal-RAM fallback. Each packet has at most 1024 captured bytes. Data frames are filtered to built-in address candidates and reduced to 24 header bytes. Callbacks never render, write SD, speak, or move servos. The main loop drains at most eight observations per pass and services GPS between them. Oversized/full-queue frames increment the drop counter; parsers reject malformed lengths.
 
 Wi-Fi uses `WIFI_MODE_NULL`. US channels 1–11 are visited in the order **1,6,11,2,7,3,8,4,9,5,10**. Dwell is 140 ms while recording and 180 ms while watching; the following BLE passive window is 850/1100 ms respectively. BLE interval/window are 80/70 ms. This shortens the sweep compared with the alpha's 300 ms × 11 + 1600 ms schedule. It is an explicit coverage/latency tradeoff, not simultaneous reception or proof of an optimal dwell for every environment. Current channel policy is US; other regional channel plans need a code change.
 
-Screen refresh is capped at 20 Hz. Idle motion uses a nonblocking two/three-pose sequence and the BSP spring controller, followed by variable rests. Relaxed travel stays within ±20° yaw and 14.5–31° pitch; panic cues within ±32° yaw and 15–36° pitch. Gentle motion halves excursions. The BSP preserves factory zero positions. Motion off disables servo torque/power; animation continues.
+Screen refresh is capped at 20 Hz. Original primitive arcade habitats, particles and expressive poses render in the buffered canvas without image decoding or per-frame heap allocation. Scrolling uses the existing validated GPS movement flag. A discovery timestamp starts a short cheer only after a new Wi-Fi row was saved; active alerts override it. Idle motion uses a nonblocking two/three-pose sequence and the BSP spring controller, followed by variable rests. Relaxed travel stays within ±20° yaw and 14.5–31° pitch; panic cues within ±32° yaw and 15–36° pitch. Gentle motion halves excursions. The BSP preserves factory zero positions. Motion off disables servo torque/power; animation continues.
 
 Speech is optional and defaults off. The global voice gate covers every WAV playback path. Master sound additionally gates all tones. Turning either relevant switch off stops current audio. Head-sensor affection is visual only and has a 250 ms hold / 600 ms release gate. Deliberate face-tap love speech is rate-limited to 60 seconds. Sensor debounce is also increased through the official BSP. No microphone processing is used.
 
@@ -40,7 +40,7 @@ pio run -e stackchan
 python tools/test_gps.py
 python tools/test.py
 python tools/package.py
-node --test tests/web_test.mjs tests/studio_test.mjs
+node --test tests/web_test.mjs tests/studio_test.mjs tests/uploads_test.mjs
 ```
 
 Host tests use GNU compilers, `CXX`/`CC`, or `ziglang==0.13.0`. They cover WiGLE CSV escaping and 11-column round trips, GPS quality, session boundaries, duplicate-food protection, cooldown rollover, encounter absence/repeat/family rules, custom profiles/watchlists, probe/header separation from AP logs, traffic hints, head-touch debounce, motion travel, and 50,000 deterministic malformed-packet inputs. Random testing is smoke fuzzing, not a correctness proof.
@@ -59,6 +59,12 @@ node tests/browser_test.mjs
 
 `tools/package.py` writes the flash ZIP and `site/firmware/` from a built application, checks boot mode and protected ranges, and includes source/license notices. `tools/vendor_web.py` refreshes exact pinned browser dependencies and verifies npm tarball integrity before retaining bundle/notices. `tools/pack_logos.py` encodes the supplied artwork at LCD resolution; original PNGs remain in `assets/brands`. Voice regeneration is optional Windows SAPI synthesis in `tools/generate_voice.ps1`; it is not needed to build committed clips.
 
+## Upload implementation
+
+`src/uploads.cpp` uses a bounded worker task, CA-verified ESP-IDF HTTPS, fixed service destinations, streamed multipart requests, and per-file SHA-256 receipts. CSV parsing and 1.4-to-1.6 conversion are bounded and buffered. Larger TLS allocations prefer PSRAM; scanning pauses during uploads, but the NimBLE host stays initialized. Tearing that host down while its event loop was active caused a development panic; removing teardown fixed the reproduced path. Repeated unavailable-network and cancel tests now restore Wi-Fi/BLE without resetting. No blind network retries are used.
+
+`SETUP BEGIN / DATA / END` transfers at most 2 KiB and verifies SD contents before acknowledgement, with a backup rename for interrupted replacement. Sensitive values are not printed. The web setup protocol retries only the read-only STATUS handshake because USB CDC may miss the first command after DTR; mutating chunks are never replayed automatically. Installer, avatar and setup operations share a UI lock. [Uploads and remaining service-test limits](UPLOADS.md).
+
 ## USB diagnostics
 
 Use `python tools/device.py --port YOUR_PORT STATUS`. The utility does not intentionally reset the board. Commands:
@@ -72,7 +78,9 @@ Use `python tools/device.py --port YOUR_PORT STATUS`. The utility does not inten
 | `SCREEN` | Current RGB888 framebuffer; use `--output path.png` |
 | `TAP x y` | Execute a touch at a valid 320×240 coordinate |
 | `AVATAR GET` / `AVATAR SET DCAV2 …` | Inspect/apply custom profile; legacy DCAV1 accepted; Set refuses during recording |
-| `RESTART` | Software restart; refuses during recording |
+| `RESTART` | Software restart; refuses during recording or upload |
+| `SETUP BEGIN / DATA / END` | Private bounded USB setup transfer; use the web companion instead of typing secrets in a shell |
+| `SETUP CLEAR` | Remove private upload configuration/transfer backups; never removes drives |
 | `RELOAD PROFILES` | Reload SD avatar/watchlist while stopped |
 | `DEMO AXON` | Synthetic reaction, no real detection/log/food |
 | `SOUND STATUS` | Speaker/amp diagnostics |
@@ -99,3 +107,16 @@ For 0.4, the connected Unit GPS v1.1 was acquired by the baud finder at 115200 w
 The actual web uploader module acknowledged Wisp and Ember profiles on the K151, then restored the previous custom appearance. A software restart retained GPS profile/port/baud, theme and both mute switches. Native screenshots cover the new buddies, model settings and wiring help. USB TX buffering was increased to hold a complete expanded STATUS response when host reads lag. Automated tests additionally decode synthetic fixes through the pinned TinyGPSPlus library for all eight supported GNSS talkers, and round-trip 2,880 style combinations. Other GPS models, custom wiring and alternate ports have **not** been physically tested; see the [manufacturer-based compatibility table](GPS.md).
 
 Still unverified: actual WiGLE server upload acceptance, long outdoor-drive stability and GPS loss/reacquisition under movement, full/removed/failing SD behavior across cards, speaker clarity in the enclosure at each volume, and detection recall/false positives against known real devices. Do not turn a successful build or synthetic fixture into a claim that these field checks passed.
+
+
+### 0.5 Arcade Scout verification
+
+The actual web flasher installed the four packaged images on K151 and verified the before/after NVS digest unchanged. Original servo calibration, SD files, GPS settings and both user mute switches remained intact. New screenshots are native 320×240 framebuffer captures. The web preview is explicitly labeled as an illustration.
+
+The first new bench drive saved 57 observations, with 15 Wi-Fi food/XP discoveries and 34 approximate BLE addresses saved. It had zero queue drops during the drive. Watching afterward left XP unchanged. Separate framebuffer capture/export sessions can delay packet processing and did increment drops; this is not a claim of zero-loss reception.
+
+The actual browser USB setup module saved a synthetic unavailable network on SD. Failed-network and cancel cases both restored radio counters without a reset, preserved XP and mute settings, and the synthetic configuration was then removed. NFC and proximity devices initialized successfully; NFC tag enrollment and human gesture/proximity behavior still require physical field checks. NFC was returned to off.
+
+Browser checks cover all four website sections at 320, 390, 768 and 1440 pixels, draft import/export, every outfit field, all four habitat previews, keyboard affection, discovery-cheer preview, PNG export, synthetic/mocked WiGLE upload and config download. Host tests cover XP boundaries/saturation and CSV 1.6 conversion. USB tests also exercise a lost initial STATUS reply. No real account credentials or drive submissions were used. Live WiGLE/WDGWars acceptance, TLS under a long upload, and long outdoor recording remain unverified.
+
+A separate 45-second timed bench with the arcade artwork running saved **104 rows / 19 Wi-Fi discoveries / 34 approximate BLE addresses**, reopened its **10,717-byte** file with the expected header, and had **zero additional queue drops**. XP matched credited discoveries and stopped increasing after Stop. No framebuffer transfer was performed during that timed interval. This is a stationary bench sample, not an outdoor coverage result.

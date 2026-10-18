@@ -1,11 +1,27 @@
 import {loadManifest,loadImages,checkBoard,installImages,restartBoard,sendAvatar,sha256} from './flasher.mjs';
 import {initStudio} from './studio.mjs';
+import {initUploads} from './uploads.mjs';
+import {sendUploadConfig} from './device_setup.mjs';
+function route(){
+  const hash=location.hash.slice(1),page=['creator','uploads','guide'].includes(hash)?hash:['credits','looks'].includes(hash)?'guide':'install';
+  document.querySelectorAll('[data-page]').forEach(el=>el.hidden=el.dataset.page!==page);
+  document.querySelectorAll('.tabs a').forEach(a=>{if(a.hash==='#'+page)a.setAttribute('aria-current','page');else a.removeAttribute('aria-current');});
+  if(['credits','looks','installer'].includes(hash))document.getElementById(hash)?.scrollIntoView();
+  else window.scrollTo(0,0);
+}
+window.addEventListener('hashchange',route);route();
+initUploads({upload:async(config,onStatus)=>{
+  if(busy||loader||uploading)throw Error('Disconnect the installer before sending setup.');
+  uploading=true;controls();
+  try{const port=await navigator.serial.requestPort({filters:[{usbVendorId:0x303a}]});await sendUploadConfig(port,config,onStatus);}
+  finally{uploading=false;controls();}
+}});
 const $=id=>document.getElementById(id);
 let manifest,loader,transport,busy=false,uploading=false;
 const supported=!!navigator.serial&&window.isSecureContext;
 function log(message){const el=$('flash-log');el.textContent=(el.textContent+String(message)+'\n').slice(-16000);el.scrollTop=el.scrollHeight;}
 function status(message,error=false){$('flash-status').textContent=message;$('flash-status').className=error?'error':'';}
-function controls(){const linked=!!loader;const locked=busy||uploading;$('connect').disabled=!supported||!manifest||linked||locked||!$('hardware-confirm').checked;$('disconnect').disabled=!linked||locked;$('backup').disabled=!linked||locked;$('flash').disabled=!linked||locked;$('hardware-confirm').disabled=linked||locked;$('upload-avatar').disabled=!supported||linked||locked;$('connection-badge').textContent=linked?'CONNECTED · ESP32-S3':'NOT CONNECTED';}
+function controls(){const linked=!!loader;const locked=busy||uploading;$('connect').disabled=!supported||!manifest||linked||locked||!$('hardware-confirm').checked;$('disconnect').disabled=!linked||locked;$('backup').disabled=!linked||locked;$('flash').disabled=!linked||locked;$('hardware-confirm').disabled=linked||locked;$('upload-avatar').disabled=!supported||linked||locked;$('send-setup').disabled=!supported||linked||locked;$('connection-badge').textContent=linked?'CONNECTED · ESP32-S3':'NOT CONNECTED';}
 function download(bytes,name,type='application/octet-stream'){const url=URL.createObjectURL(new Blob([bytes],{type}));const a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),30000);}
 async function closeConnection(){const t=transport;loader=undefined;transport=undefined;if(t)await t.disconnect().catch(e=>log(`Port cleanup: ${e.message}`));controls();}
 $('hardware-confirm').addEventListener('change',controls);

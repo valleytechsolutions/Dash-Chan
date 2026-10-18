@@ -4,13 +4,13 @@ Build a companion with its own eyes and outfit in **[the web studio](https://val
 
 ## Create and send
 
-1. Start with Signal Scout, Neon Listener, Petal Patrol, or Mochi Royale, or make your own combination.
-2. Choose a cat, dragon, or robot shape. Pick an eye style and body, accent, and eye colors.
+1. Start with Wisp, Ember, Signal Scout, Neon Listener, Petal Patrol, or Mochi Royale, or make your own combination.
+2. Choose a cat, dragon, robot, ghost, or flame shape. Pick an eye style and body, accent, and eye colors.
 3. Combine headwear, eyewear, and neckwear independently. Name your buddy using 1–16 ASCII letters, digits, spaces, hyphens, or underscores.
-4. Preview happy, love, and alert moods; switch between chilling, listening, and cruising. Tap the preview for hearts. Glasses lift during love and panic so the expression stays visible.
+4. Preview happy, love, alert, and discovery-cheer moods; switch between chilling, listening, and cruising. Tap the preview for hearts. Glasses lift during love, panic, and cheers so the expression stays visible.
 5. Stop any recording and disconnect the installer. Click **Send to StackChan**, choose the robot's USB port, and wait for the acknowledgement. The custom buddy becomes active immediately. Audio preferences remain unchanged.
 
-The web preview does not scan radios or move the robot. Its scene selector is for previewing artwork; the device chooses its scene using recording state, GPS, and its Field kit setting.
+The web preview does not scan radios or move the robot. The world selector previews Signal City, Sunset Run, Star Patrol, and Pixel Garden. Set the robot’s world separately in Display + Fun. The adventure selector previews chilling, listening or cruising; the robot chooses its field gear using recording state, GPS, and its Field kit setting. World/mood previews are not included in avatar.cfg. The transparent portrait export contains the buddy and props, without the habitat.
 
 ## Your design stays yours
 
@@ -30,13 +30,13 @@ USB profiles are saved in device NVS. Alternatively, place `avatar.cfg` at `/das
 | Eyewear | None, Round glasses, Shades, Cyber visor |
 | Neckwear | None, Scarf, Bandana, Bow tie |
 
-That is **2,880 combinations** before colors and names. Love, blinking, sleep, and panic temporarily override the chosen resting eyes. LCD RGB565 colors and browser antialiasing differ slightly.
+That is **2,880 combinations** before colors and names. Love, blinking, sleep, panic, and short discovery cheers temporarily override the chosen resting eyes. LCD RGB565 colors and browser antialiasing differ slightly.
 
-Wisp is an all-black ghost with bright eyes, a charcoal edge and drifting wisps. Ember has flickering flame tips and rising sparks. Both support every outfit layer, affection, panic, and field gear. Choose their web presets for the default colors, or customize them freely. On the robot, **Look & Themes → Choose buddy → WISP/EMBER** opens their adoption page.
+Wisp is an all-black ghost with bright eyes, a charcoal edge and drifting wisps. Ember has flickering flame tips and rising sparks. Both support every outfit layer, affection, panic, and field gear. Choose their web presets for the default colors, or customize them freely. On the robot, **Buddy + Look → Choose buddy → WISP/EMBER** opens their adoption page.
 
 ## Change styles on the robot
 
-Open **MENU → Look & Themes → Avatar Studio**. Tap Eyes, Head, Glasses, Neck, or Shape to cycle a choice and activate the custom buddy. Tap **Show my buddy** to return home. Names and colors are edited in the web studio.
+Open **MENU → Buddy + Look → Avatar Studio**. Tap Eyes, Head, Glasses, Neck, or Shape to cycle a choice and activate the custom buddy. Tap **Show my buddy** to return home. Names and colors are edited in the web studio.
 
 ![The running on-device studio](../site/assets/ui-studio.png)
 

@@ -16,12 +16,17 @@ try{
   await page.goto(url);await page.locator('#flash-status').filter({hasText:'Ready.'}).waitFor();
   assert.equal(await page.locator('#connect').isDisabled(),true);
   await page.locator('#hardware-confirm').check();assert.equal(await page.locator('#connect').isDisabled(),false);
+  await page.locator('[data-demo="1"]').click();assert.match(await page.locator('#hero-line').textContent(),/Love Your Face/);
+  await page.locator('[data-demo="2"]').click();
+  await page.locator('.tabs a[href="#creator"]').click();
   await page.locator('input[name=name]').fill('Captain Mochi');
   await page.getByRole('radio',{name:'Sparkle',exact:true}).check();
   await page.locator('select[name=headwear]').selectOption('5');
   await page.locator('select[name=eyewear]').selectOption('1');
   await page.locator('select[name=neckwear]').selectOption('2');
   await page.locator('#preview-scene').selectOption('2');
+  for(const world of ['0','1','2','3'])await page.locator('#preview-world').selectOption(world);
+  await page.getByRole('button',{name:'Cheer',exact:true}).click();assert.equal(await page.getByRole('button',{name:'Cheer',exact:true}).getAttribute('aria-pressed'),'true');
   await page.getByRole('button',{name:'Alert',exact:true}).click();
   const downloadEvent=page.waitForEvent('download');await page.locator('#save-avatar').click();
   await (await downloadEvent).saveAs('build/web/avatar.cfg');
@@ -62,13 +67,31 @@ try{
     assert.match(await readFile(`build/web/${name}.cfg`,'utf8'),new RegExp(`^DCAV2 ${base} `));
     await page.locator('#avatar-preview').screenshot({path:`build/web/${name}.png`});
   }
-  const badImages=await page.locator('img').evaluateAll(imgs=>imgs.filter(i=>!i.complete||!i.naturalWidth).map(i=>i.src));assert.deepEqual(badImages,[]);
-  await page.evaluate(()=>window.scrollTo(0,0));await page.screenshot({path:'build/web/desktop.png',fullPage:true});
+  const badImages=await page.locator('img').evaluateAll(imgs=>imgs.filter(i=>i.getBoundingClientRect().width&&(!i.complete||!i.naturalWidth)).map(i=>i.src));assert.deepEqual(badImages,[]);
+  await page.locator('.tabs a[href="#install"]').click();await page.screenshot({path:'build/web/desktop.png',fullPage:true});
   for(const width of [390,320,768]){
-    await page.setViewportSize({width,height:844});await page.locator('#avatar-preview').scrollIntoViewIfNeeded();
+    await page.setViewportSize({width,height:844});await page.locator('.tabs a[href="#creator"]').click();await page.locator('#avatar-preview').scrollIntoViewIfNeeded();
     await page.locator('#creator').screenshot({path:`build/web/studio-${width}.png`});
     const overflow=await page.evaluate(()=>[...document.querySelectorAll('body *')].filter(e=>e.getBoundingClientRect().right>innerWidth+1).map(e=>[e.tagName,e.className,Math.round(e.getBoundingClientRect().right)]));
     assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true,`Overflow at ${width}px: ${JSON.stringify(overflow)}`);
+  }
+  await page.locator('.tabs a[href="#uploads"]').click();
+  const sample=await readFile('build/test-wigle.csv');
+  await page.locator('#drive-file').setInputFiles({name:'synthetic.csv',mimeType:'text/csv',buffer:sample});
+  await page.locator('#drive-summary').filter({hasText:'2 observations'}).waitFor();
+  assert(await page.locator('#send-drive').isDisabled());
+  await page.locator('#browser-wigle-name').fill('synthetic-api');await page.locator('#browser-wigle-token').fill('synthetic-token');
+  let requests=0;await page.route('https://api.wigle.net/api/v2/file/upload',async route=>{requests++;await route.fulfill({status:200,contentType:'application/json',body:'{"success":true}'});});
+  await page.locator('#share-confirm').check();await page.locator('#send-drive').click();
+  await page.locator('#upload-status').filter({hasText:'accepted'}).waitFor();assert.equal(requests,1);assert(await page.locator('#send-drive').isDisabled());
+  const form=page.locator('#upload-config-form');await form.locator('[name=ssid]').fill('Synthetic-network');await form.locator('[name=password]').fill('synthetic-password');await form.locator('[name=wigle]').check();await form.locator('[name=wigleName]').fill('synthetic-api');await form.locator('[name=wigleToken]').fill('synthetic-token');
+  const cfgDownload=page.waitForEvent('download');await form.locator('button[type=submit]').click();await(await cfgDownload).saveAs('build/web/upload-synthetic.json');
+  const cfg=JSON.parse(await readFile('build/web/upload-synthetic.json','utf8'));assert.equal(cfg.automatic,false);assert.equal(cfg.donate,false);assert.equal(cfg.ssid,'Synthetic-network');
+  for(const view of ['install','creator','uploads','guide'])for(const width of [1440,390,320,768]){
+    await page.setViewportSize({width,height:1000});await page.locator('.tabs a[href="#'+view+'"]').click();
+    assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),`${view} overflow at ${width}`);
+    if(view==='guide'){await page.locator('#credits').scrollIntoViewIfNeeded();await page.evaluate(()=>window.scrollTo(0,0));}
+    await page.screenshot({path:`build/web/${view}-${width}.png`,fullPage:true});
   }
   const unsupported=await browser.newPage();await unsupported.addInitScript(()=>Object.defineProperty(navigator,'serial',{value:undefined}));await unsupported.goto(url);await unsupported.locator('#hardware-confirm').check();
   assert(await unsupported.locator('#connect').isDisabled());assert(await unsupported.locator('#upload-avatar').isDisabled());assert.match(await unsupported.locator('#browser-help').textContent(),/Chrome or Edge/);

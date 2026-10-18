@@ -12,3 +12,9 @@ __pycache__/
 .vscode/
 site/firmware/
 node_modules/
+
+# Upload setup contains readable credentials, including interrupted-transfer copies.
+sdcard/dashchan/upload*.json
+upload.json
+upload-new.json
+upload-backup.json

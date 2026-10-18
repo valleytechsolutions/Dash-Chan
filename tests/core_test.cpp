@@ -5,8 +5,10 @@
 #include "nutrition.h"
 #include "petting.h"
 #include "profile.h"
+#include "progression.h"
 #include "traffic.h"
 #include "travel.h"
+#include "upload_csv.h"
 #include "watchlist.h"
 #include <cstdlib>
 #include <fstream>
@@ -454,6 +456,30 @@ int main() {
       CHECK(idle.tick(now + 4500, seed, false, avatar, false, cue));
     }
   }
+  CHECK(petLevel(0) == 1 && petLevel(24) == 1 && petLevel(25) == 2);
+  CHECK(levelProgress(24) == 24 && levelProgress(25) == 0);
+  uint32_t xp = UINT32_MAX;
+  earnDiscoveryXp(xp);
+  CHECK(xp == UINT32_MAX);
+  xp = 24;
+  earnDiscoveryXp(xp);
+  CHECK(xp == 25 && petLevel(xp) == 2);
+  std::vector<std::string> csvFields;
+  std::string upgrade;
+  CHECK(upgradeCsvRow(
+      "02:00:00:00:00:01,\"Cafe, \"\"Mochi\"\"\",[WPA2],2026-10-17 12:00:00,6,-40,40,-75,12,5,WIFI",
+      upgrade));
+  CHECK(parseCsvLine(upgrade.substr(0, upgrade.size() - 1), csvFields));
+  CHECK(csvFields.size() == 14 && csvFields[1] == "Cafe, \"Mochi\"" && csvFields[5] == "2437" &&
+        csvFields[11].empty() && csvFields[12] == "0");
+  CHECK(
+      !upgradeCsvRow("02:00:00:00:00:01,b,c,2026-10-17 12:00:00,6,-40,NaN,-75,12,5,WIFI", upgrade));
+  CHECK(
+      !upgradeCsvRow("02:00:00:00:00:01,b,c,2026-10-17 12:00:00,6,-40,91,-75,12,5,WIFI", upgrade));
+  CHECK(
+      !upgradeCsvRow("02:00:00:00:00:01,b,c,2026-10-17 12:00:00,99,-40,40,-75,12,5,WIFI", upgrade));
+  CHECK(!parseCsvLine("\"broken", csvFields));
+  CHECK(!parseCsvLine("\"closed\"junk", csvFields));
   for (int i = 0; i < 50000; ++i) {
     size_t n = random() % 768;
     std::vector<uint8_t> q(n);

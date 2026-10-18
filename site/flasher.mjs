@@ -47,9 +47,12 @@ export async function sendAvatar(port,line,onStatus=()=>{}){
     const encoder=new TextEncoder(),decoder=new TextDecoder();
     async function command(command,pattern){
       received='';await writer.write(encoder.encode(command+'\n'));
+      const retry=command==='STATUS'?setInterval(()=>{writer.write(encoder.encode('STATUS\n')).catch(()=>{});},750):null;
+      try {
       const deadline=Date.now()+8000;
       while(Date.now()<deadline){const remaining=deadline-Date.now();const chunk=await Promise.race([reader.read(),new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error('No USB reply. Use Dash-Chan 0.2+ in normal running mode.')),remaining);})]);clearTimeout(timer);if(chunk.done)throw Error('USB connection closed.');received+=decoder.decode(chunk.value,{stream:true});if(received.length>16384)received=received.slice(-8192);const found=received.match(pattern);if(found)return found;}
       throw Error('USB response timed out.');
+      }finally{clearInterval(retry);}
     }
     onStatus('Checking the running Dash-Chan firmware…');
     const match=await command('STATUS',/STATUS (\{[^\r\n]+\})/);const status=JSON.parse(match[1]);

@@ -4,7 +4,7 @@ import {DEFAULT_PROFILE,OPTIONS,PRESETS,avatarLine,parseAvatarLine,validateProfi
 export function initStudio({upload}) {
   const $=id=>document.getElementById(id),form=$('avatar-form');
   const draftKey='dashchan-studio-v2';
-  let mood=0,field=0,lastFrame=0;
+  let mood=0,field=0,world=0,lastFrame=0,heroMood=1,heroUntil=0,heroWorld=0;
   const eyeGlyphs=['● ●','✦ ✦','– –','◉ ◉','▪ ▪','● ⌣'];
   function notice(message,error=false){$('avatar-status').textContent=message;$('avatar-status').className=error?'error':'';}
   function download(data,name,type){
@@ -54,6 +54,7 @@ export function initStudio({upload}) {
   document.querySelectorAll('[data-mood]').forEach(b=>b.addEventListener('click',()=>setMood(Number(b.dataset.mood))));
   $('avatar-preview').addEventListener('click',()=>setMood(3));
   $('avatar-preview').addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();setMood(3);}});
+  $('preview-world').addEventListener('change',e=>{world=Number(e.target.value);});
   $('preview-scene').addEventListener('change',e=>{
     field=Number(e.target.value);
     $('scene-caption').textContent=['Tiny paws. Big curiosity.','Antenna up. Snack radar online.','You drive. I’ll watch the invisible stuff.'][field];
@@ -85,10 +86,18 @@ export function initStudio({upload}) {
     catch(error){notice(error.name==='NotFoundError'?'Port selection canceled.':error.message,error.name!=='NotFoundError');}
   });
   const reduced=matchMedia('(prefers-reduced-motion: reduce)');
+  const heroLines=['You drive. I will keep watch.','i Love Your Face','Side quest: invisible snacks!','Discovery dance! Tiny paws up!'];
+  document.querySelectorAll('[data-demo]').forEach(button=>button.addEventListener('click',()=>{
+    const action=Number(button.dataset.demo);heroMood=action===1?3:action===3?5:1;heroUntil=performance.now()+3200;
+    if(action===2)heroWorld=(heroWorld+1)%4;
+    $('hero-line').textContent=heroLines[action];
+  }));
+  drawPet($('hero-pet'),{field:2,mood:1},600);
   function animate(now){
     if(!document.hidden&&now-lastFrame>70){
-      lastFrame=now;const time=reduced.matches?600:now;
-      for(const [id,p] of [['hero-pet',{field:2}],['avatar-preview',{...profile(),custom:true,mood,field}]]){
+      lastFrame=now;const time=reduced.matches?600:now;if(heroUntil&&now>heroUntil){heroMood=1;heroUntil=0;$('hero-line').textContent=heroLines[0];}
+      $('hero-world').dataset.world=String(heroWorld);
+      for(const [id,p] of [['hero-pet',{field:2,mood:heroMood}],['avatar-preview',{...profile(),custom:true,mood,field,world}]]){
         const canvas=$(id),rect=canvas.getBoundingClientRect();
         if(rect.bottom>0&&rect.top<innerHeight)drawPet(canvas,p,time);
       }

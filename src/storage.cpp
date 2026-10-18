@@ -1,4 +1,5 @@
 #include "app.h"
+#include "uploads.h"
 #include <Preferences.h>
 #include <SD.h>
 #include <SPI.h>
@@ -64,9 +65,24 @@ public:
 };
 static DashSD card;
 static File drive;
+File storageOpen(const char *path, const char *mode) {
+  return card.open(path, mode);
+}
+bool storageExists(const char *path) {
+  return app.sdReady && card.exists(path);
+}
+bool storageRemove(const char *path) {
+  return card.remove(path);
+}
+bool storageMakeDir(const char *path) {
+  return card.exists(path) || card.mkdir(path);
+}
+bool storageRename(const char *from, const char *to) {
+  return card.rename(from, to);
+}
 static uint32_t lastFlush = 0;
 void storageLoadAvatar() {
-  if (!app.sdReady)
+  if (!app.sdReady || uploadBusy())
     return;
   File config = card.open("/dashchan/avatar.cfg", FILE_READ);
   if (config) {
@@ -101,7 +117,8 @@ uint64_t storageCardSize() {
   return card.cardSize();
 }
 bool storageFormat(uint64_t expectedBytes) {
-  if (app.session.armed || !expectedBytes || (app.sdReady && expectedBytes != card.cardSize())) {
+  if (uploadBusy() || app.session.armed || !expectedBytes ||
+      (app.sdReady && expectedBytes != card.cardSize())) {
     Serial.println("FORMAT refused: stop recording and supply the card's exact size");
     return false;
   }
@@ -135,7 +152,7 @@ static void storageFail(const char *reason) {
   say(reason);
 }
 void storageBegin() {
-  if (app.session.armed)
+  if (app.session.armed || uploadBusy())
     return;
   SPI.begin(SdSck, SdMiso, SdMosi, SdCs);
   card.end();
@@ -152,6 +169,10 @@ void storageBegin() {
            app.sdReady ? "" : "Insert FAT32 SD; tap Retry SD");
 }
 bool startDrive() {
+  if (uploadBusy()) {
+    say("Finish the upload before starting a drive.");
+    return false;
+  }
   if (app.gpsSearching) {
     say("Finish GPS baud search before recording.");
     return false;
@@ -196,6 +217,8 @@ bool startDrive() {
   drive.flush();
   app.rows = app.skippedFix = 0;
   app.food.reset();
+  app.bleCollection.reset();
+  app.wifiRows = app.bleRows = 0;
   app.sessionAt = millis();
   app.session.start();
   captureGeneration.store(app.session.generation);
@@ -205,6 +228,7 @@ bool startDrive() {
   return true;
 }
 void stopDrive() {
+  bool wasRecording = app.session.armed;
   app.session.stop();
   captureGeneration.store(0);
   if (drive) {
@@ -213,6 +237,8 @@ void stopDrive() {
   }
   saveSettings();
   say("Drive saved. I'm still keeping watch.");
+  if (wasRecording && app.rows)
+    uploadAfterDrive();
 }
 void storageTick() {
   if (drive && uint32_t(millis() - lastFlush) >= 2000) {
@@ -223,7 +249,7 @@ void storageTick() {
   }
 }
 void storageCheckLog() {
-  if (!app.sdReady || app.session.armed || !*app.logPath) {
+  if (uploadBusy() || !app.sdReady || app.session.armed || !*app.logPath) {
     Serial.println("LOGCHECK unavailable: stop a recorded session first");
     return;
   }
@@ -260,12 +286,17 @@ void logObservation(Contact &c, const char *auth, uint32_t captureGen, uint32_t 
   c.logGeneration = captureGen;
   c.logged.mark(at);
   ++app.rows;
+  if (c.ble) {
+    ++app.bleRows;
+    app.bleCollection.discover(c.mac);
+  } else
+    ++app.wifiRows;
   // Only a fresh Wi-Fi network actually written with a valid fix can feed us.
   if (!c.ble)
     buddyDiscovery(c.mac);
 }
 void logAlert(const Alert &a) {
-  if (!app.sdReady)
+  if (!app.sdReady || uploadBusy())
     return;
   const char *path = "/events/detections.csv";
   bool fresh = !card.exists(path);

@@ -2,7 +2,7 @@
 #include <stddef.h>
 #include <stdint.h>
 namespace dash {
-constexpr const char *Version = "0.4.0-beta";
+constexpr const char *Version = "0.5.0-beta";
 // K151 StackChan. Its servos own UART1/G6/G7. GPS uses UART2.
 // Port C is RX G18 / TX G17; change only after checking your GPS wiring.
 constexpr uint32_t GpsBaud = 9600;

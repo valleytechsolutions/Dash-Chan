@@ -5,6 +5,8 @@ Welcome to your tiny road buddy: passive Wi-Fi/BLE awareness, GPS wardriving, SD
 **[Open the web flasher and Avatar Studio](https://valleytechsolutions.github.io/Dash-Chan/)**
 
 - [First adventure and every setting](https://github.com/valleytechsolutions/Dash-Chan/blob/main/docs/QUICKSTART.md)
+- [Uploads: WiGLE, WDGWars, USB setup, and receipts](https://github.com/valleytechsolutions/Dash-Chan/blob/main/docs/UPLOADS.md)
+- [Views, levels, sensor play, and NFC outfit cards](https://github.com/valleytechsolutions/Dash-Chan/blob/main/docs/PLAY.md)
 - [Avatar Studio: eyes, outfits, and field gear](https://github.com/valleytechsolutions/Dash-Chan/blob/main/docs/AVATAR-STUDIO.md)
 - [Flash, update, factory backup, and recovery](https://github.com/valleytechsolutions/Dash-Chan/blob/main/docs/FLASHING.md)
 - [Detection methods, confidence, quiet encounters, and watchlists](https://github.com/valleytechsolutions/Dash-Chan/blob/main/docs/DETECTIONS.md)
@@ -16,7 +18,7 @@ Welcome to your tiny road buddy: passive Wi-Fi/BLE awareness, GPS wardriving, SD
 
 ## The short version
 
-Install, connect GPS to blue Port C, insert FAT32 microSD, and wait for GPS READY. Tap START WARDRIVE on the pet. Five new Wi-Fi networks successfully logged with a usable fix earn one snack. Tap STOP & SAVE before removing the card.
+Install, connect GPS to blue Port C, insert FAT32 microSD, and wait for GPS READY. Tap START DRIVE on the pet. Five new Wi-Fi networks successfully logged with a usable fix earn one snack. Tap STOP & SAVE before removing the card.
 
 Tap the face or touch the head for affection. Head touches are visual only. Speech starts off; enable **MENU → Sound & Voice → Voice** if desired. **Master sound OFF** silences everything. You can keep tones with speech off.
 
