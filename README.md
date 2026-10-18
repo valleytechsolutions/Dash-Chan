@@ -4,7 +4,9 @@
 
 **A tiny copilot for the invisible world.** Passive radio awareness, GPS wardriving, and an affectionate offline companion for the official **M5Stack StackChan K151**.
 
-## [🚀 Open the web flasher & Avatar Studio](https://valleytechsolutions.github.io/Dash-Chan/)
+## [🚀 Open the web flasher & Avatar Studio](https://valleytech-dash-chan.pages.dev/)
+
+**Independent hosting:** the installer, Avatar Studio, firmware downloads, source archive, and guides are available without GitHub. The original [GitHub Pages address](https://valleytechsolutions.github.io/Dash-Chan/) remains configured but is currently affected by an account-level GitHub restriction.
 
 [First adventure](docs/QUICKSTART.md) · [Flashing & recovery](docs/FLASHING.md) · [M5Burner factory-image guide](docs/M5BURNER.md) · [Wiki / handbook](docs/wiki/Home.md) · [Downloads](https://github.com/valleytechsolutions/Dash-Chan/releases) · [Sources & attribution](docs/SOURCES.md)
 
@@ -28,7 +30,7 @@ Every 25 eligible Wi-Fi discoveries advances one level. XP continues across rest
 
 ## Upload when you get home
 
-Open **[Upload drives](https://valleytechsolutions.github.io/Dash-Chan/#uploads)** to preview a CSV, send it directly to WiGLE, or export a WiGLE 1.6 copy for WDGWars. Browser credentials remain in memory for that visit. WDGWars currently disallows the browser's cross-origin request, so its browser path is an export, not a pretend upload.
+Open **[Upload drives](https://valleytech-dash-chan.pages.dev/#uploads)** to preview a CSV, send it directly to WiGLE, or export a WiGLE 1.6 copy for WDGWars. Browser credentials remain in memory for that visit. WDGWars currently disallows the browser's cross-origin request, so its browser path is an export, not a pretend upload.
 
 For the robot, enter your 2.4 GHz network and selected service API credentials, then **Send setup over USB** or download `/dashchan/upload.json`. On StackChan, **Menu → Upload drives** lets you choose a saved drive and confirm sending. Optional **auto-send after Stop + Save** starts off. HTTPS verifies certificates; accepted/uncertain receipts prevent blind automatic resubmission. Original CSVs remain on SD. The setup file contains readable credentials and must stay private. [Setup, limits and recovery](docs/UPLOADS.md).
 
@@ -55,7 +57,7 @@ This is a scripted personality engine, not cloud AI. No account, microphone proc
 
 ## Make a buddy that looks like yours
 
-Open **[Avatar Studio](https://valleytechsolutions.github.io/Dash-Chan/#creator)** and start with Wisp, Ember, Signal Scout, Neon Listener, Petal Patrol, or Mochi Royale. Mix **six eye styles**, **six headwear choices**, **four eyewear choices**, and **four neckwear choices**, including None. Change body, accent, and eye colors. Preview love, alert, discovery cheers, listening, and cruising poses in four arcade worlds; save a portrait or an avatar file. Your draft stays in your browser.
+Open **[Avatar Studio](https://valleytech-dash-chan.pages.dev/#creator)** and start with Wisp, Ember, Signal Scout, Neon Listener, Petal Patrol, or Mochi Royale. Mix **six eye styles**, **six headwear choices**, **four eyewear choices**, and **four neckwear choices**, including None. Change body, accent, and eye colors. Preview love, alert, discovery cheers, listening, and cruising poses in four arcade worlds; save a portrait or an avatar file. Your draft stays in your browser.
 
 **Send to StackChan** applies the design over USB without reflashing. Install 0.4 or newer for all five shapes. Earlier `DCAV1` avatar files still import. On the robot, **MENU → Buddy + Look → Avatar Studio** cycles styles without a computer. [Full studio guide and profile format](docs/AVATAR-STUDIO.md).
 
@@ -110,7 +112,7 @@ There are 128 encounter-ledger slots and 32 browsable recent entries. Very dense
 - **GPS:** UART NMEA on blue Port C by default (host RX G18), with A/B/custom Grove RX options. **GPS & SD → GPS SETUP** has M5Stack and ATGM336H presets plus baud search. Stack/Atom/Cap receivers need adapters; bare ATGM modules need regulated 3.3 V power. [Compatibility table and wiring](docs/GPS.md).
 - **Storage:** FAT32 microSD in the robot. No automatic formatting.
 
-Use the [web flasher](https://valleytechsolutions.github.io/Dash-Chan/#install) in desktop Chrome/Edge. It can download a full factory backup, validates the chip and flash size, checks SHA-256 downloads, writes split images without whole-chip erase, verifies written flash, and checks that NVS calibration is unchanged. The same site provides the creator, real UI images, quickstart, downloads, and attributions. [Detailed install/recovery instructions](docs/FLASHING.md).
+Use the [web flasher](https://valleytech-dash-chan.pages.dev/#install) in desktop Chrome/Edge. It can download a full factory backup, validates the chip and flash size, checks SHA-256 downloads, writes split images without whole-chip erase, verifies written flash, and checks that NVS calibration is unchanged. The same site provides the creator, real UI images, quickstart, downloads, and attributions. [Detailed install/recovery instructions](docs/FLASHING.md).
 
 ## Controls
 

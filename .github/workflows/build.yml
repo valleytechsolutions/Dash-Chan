@@ -17,11 +17,12 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
-      - run: pip install platformio==6.2.0
+      - run: pip install platformio==6.2.0 markdown-it-py==4.2.0
       - run: python tools/test.py
       - run: pio run -e stackchan
       - run: python tools/test_gps.py
       - run: python tools/package.py
+      - run: python tools/site_docs.py
       - run: node --test tests/web_test.mjs tests/studio_test.mjs tests/uploads_test.mjs
       - run: npm ci
       - run: npx playwright install --with-deps chromium

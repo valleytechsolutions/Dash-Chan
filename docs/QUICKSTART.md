@@ -4,7 +4,7 @@ Dash-Chan turns the official M5Stack StackChan K151 into an offline companion fo
 
 ## Set up
 
-1. [Install with the web flasher](https://valleytechsolutions.github.io/Dash-Chan/#install), or follow [manual flashing and recovery](FLASHING.md). Use the official K151, not a DIY servo Stack-chan.
+1. [Install with the web flasher](https://valleytech-dash-chan.pages.dev/#install), or follow [manual flashing and recovery](FLASHING.md). Use the official K151, not a DIY servo Stack-chan.
 2. Insert a FAT32 microSD card. Connect your M5Stack Unit GPS to **blue Port C**. GPS uses receive-only UART2 on G18; servos use their own UART. For other modules, see the [compatibility table and wiring guide](GPS.md).
 3. Open **MENU → GPS & SD → GPS SETUP**. Select your module preset and actual port. Tap **APPLY SETTINGS**, or **APPLY + FIND BAUD** if its speed is unknown. The finder saves a rate after two valid NMEA sentences, or restores the applied rate after cancellation/timeout. Stop recording before changing GPS settings.
 4. Go outside with a clear view of the sky. **GPS READY** means a fresh fix, valid UTC, four or more satellites, and HDOP no greater than 5. Acquiring satellites alone is not enough.
@@ -56,7 +56,7 @@ Tap STOP & SAVE before ejecting the card or powering off. A sudden power loss ca
 
 ## Custom buddy
 
-Open [Avatar Studio](https://valleytechsolutions.github.io/Dash-Chan/#creator). Choose a preset or mix a base shape, six eye styles, three colors, headwear, glasses, and neckwear. Names allow up to 16 ASCII letters, digits, spaces, hyphens, or underscores. Your browser keeps a local draft. Preview different moods and travel poses before sending it.
+Open [Avatar Studio](https://valleytech-dash-chan.pages.dev/#creator). Choose a preset or mix a base shape, six eye styles, three colors, headwear, glasses, and neckwear. Names allow up to 16 ASCII letters, digits, spaces, hyphens, or underscores. Your browser keeps a local draft. Preview different moods and travel poses before sending it.
 
 **USB:** install firmware **0.4 or newer**, disconnect the installer, leave Dash-Chan running normally, stop any recording, and select **Send to StackChan**. The uploader checks the running firmware, sends the profile, and waits for `AVATAR OK`. It does not reflash the robot or change mute settings. An older firmware receives a clear upgrade message before a new profile is sent.
 

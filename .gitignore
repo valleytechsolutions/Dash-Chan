@@ -18,3 +18,7 @@ sdcard/dashchan/upload*.json
 upload.json
 upload-new.json
 upload-backup.json
+
+# Generated public guides and tracked-source archive
+site/guide/
+site/source.zip

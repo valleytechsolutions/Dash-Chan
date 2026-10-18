@@ -4,7 +4,7 @@
 
 ## Recommended installation
 
-Use the [Dash-Chan web installer](https://valleytechsolutions.github.io/Dash-Chan/#install). It backs up the robot and writes four separate firmware images while verifying that the existing NVS/servo-calibration range is unchanged. It is also the recommended way to update.
+Use the [Dash-Chan web installer](https://valleytech-dash-chan.pages.dev/#install). It backs up the robot and writes four separate firmware images while verifying that the existing NVS/servo-calibration range is unchanged. It is also the recommended way to update.
 
 ## M5Burner factory-reset image
 
@@ -46,4 +46,4 @@ The corresponding split-image release was built by CI and installed on the devel
 Source: [v0.4.0-beta](https://github.com/valleytechsolutions/Dash-Chan/tree/v0.4.0-beta). License: GPL-3.0-or-later, with dependency notices retained in the [release ZIP](https://github.com/valleytechsolutions/Dash-Chan/releases/tag/v0.4.0-beta). See [SOURCES.md](SOURCES.md) for full credits.
 
 
-The current 0.5 Arcade Scout update is available through the [web flasher](https://valleytechsolutions.github.io/Dash-Chan/) and [GitHub releases](https://github.com/valleytechsolutions/Dash-Chan/releases). The M5Burner submission described here is the earlier 0.4 factory image; its listing/approval status is separate.
+The current 0.5 Arcade Scout update is available through the [web flasher](https://valleytech-dash-chan.pages.dev/) and [GitHub releases](https://github.com/valleytechsolutions/Dash-Chan/releases). The M5Burner submission described here is the earlier 0.4 factory image; its listing/approval status is separate.

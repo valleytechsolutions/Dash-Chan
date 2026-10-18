@@ -1,6 +1,6 @@
 **Dash-Chan**
 
-- [Web flasher / Buddy Lab](https://valleytechsolutions.github.io/Dash-Chan/)
+- [Web flasher / Buddy Lab](https://valleytech-dash-chan.pages.dev/)
 - [Home](https://github.com/valleytechsolutions/Dash-Chan/blob/main/docs/wiki/Home.md)
 - [Getting started](https://github.com/valleytechsolutions/Dash-Chan/blob/main/docs/QUICKSTART.md)
 - [Flashing](https://github.com/valleytechsolutions/Dash-Chan/blob/main/docs/FLASHING.md)

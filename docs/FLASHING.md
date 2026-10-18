@@ -4,7 +4,7 @@
 
 ## Browser installer
 
-Open **[Dash-Chan Web Flasher](https://valleytechsolutions.github.io/Dash-Chan/#install)** in desktop Chrome or Edge on HTTPS. Firefox/Safari and phone flashing are not supported by this interface.
+Open **[Dash-Chan Web Flasher](https://valleytech-dash-chan.pages.dev/#install)** in desktop Chrome or Edge on HTTPS. Firefox/Safari and phone flashing are not supported by this interface.
 
 1. Connect a USB **data** cable. Close PlatformIO monitors, other browser serial sessions, and desktop serial tools. Stop any wardrive.
 2. Confirm the official K151 checkbox and click **Connect StackChan**. Choose its Espressif USB serial port. The flasher validates ESP32-S3 and 16 MB; these checks cannot distinguish a K151 from another board with the same chip.

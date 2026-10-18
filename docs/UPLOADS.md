@@ -4,7 +4,7 @@ Dash-Chan 0.5 supports browser WiGLE uploads, a WDGWars-compatible export, and o
 
 ## Browser
 
-1. Open [Upload drives](https://valleytechsolutions.github.io/Dash-Chan/#uploads).
+1. Open [Upload drives](https://valleytech-dash-chan.pages.dev/#uploads).
 2. Choose a CSV from `/wardrives/` on your SD card. Review Wi-Fi/BLE observation counts, coordinate bounds and the first five rows. Counts are observations, not unique devices.
 3. For WiGLE, enter the **API name and API token** from [your account](https://wigle.net/account), not your login password. Check the sharing box and choose **Send to WiGLE**. Commercial-use donation is a separate choice, off by default.
 4. For WDGWars, **Download WDGWars CSV** converts Dash-Chan's original 11-column WiGLE 1.4 output to the documented 14-column WiGLE 1.6 layout. Use the file on the [WDGWars profile upload page](https://wdgwars.pl/profile), or configure direct device upload below.

@@ -1,6 +1,6 @@
 # Avatar Studio
 
-Build a companion with its own eyes and outfit in **[the web studio](https://valleytechsolutions.github.io/Dash-Chan/#creator)**. The robot needs **Dash-Chan 0.4 or newer** for the new style fields. No account is needed.
+Build a companion with its own eyes and outfit in **[the web studio](https://valleytech-dash-chan.pages.dev/#creator)**. The robot needs **Dash-Chan 0.4 or newer** for the new style fields. No account is needed.
 
 ## Create and send
 
