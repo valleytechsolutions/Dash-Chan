@@ -6,6 +6,8 @@
 
 ## [🚀 Open the web flasher & Avatar Studio](https://valleytech-dash-chan.pages.dev/)
 
+**SD-card upload setup (firmware 0.8.1+):** Edit `/dashchan/config.json` with your home Wi-Fi SSID/password, WiGLE API name/token, WDGWars key and Wardrift device key. The website is optional. [Step-by-step setup guide](docs/UPLOADS.md#sd-card-setup-step-by-step) · [Blank config template](sdcard/dashchan/config.example.json) · [Current firmware and matching source](https://valleytech-dash-chan.pages.dev/firmware/Dash-Chan.zip). Existing `upload.json` files remain supported. Manual Send selected, Upload all and optional uploads after Stop + Save are explained in the guide. The guide describes the current web release; older source snapshots/releases do not include every current feature.
+
 **Independent hosting:** the installer, Avatar Studio, firmware downloads, source archive, and guides are available without GitHub. The original [GitHub Pages address](https://valleytechsolutions.github.io/Dash-Chan/) remains configured but is currently affected by an account-level GitHub restriction.
 
 [First adventure](docs/QUICKSTART.md) · [Flashing & recovery](docs/FLASHING.md) · [M5Burner factory-image guide](docs/M5BURNER.md) · [Wiki / handbook](docs/wiki/Home.md) · [Downloads](https://github.com/valleytechsolutions/Dash-Chan/releases) · [Sources & attribution](docs/SOURCES.md)

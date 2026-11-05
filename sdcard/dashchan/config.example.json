@@ -1,0 +1,14 @@
+{
+  "schema": 2,
+  "ssid": "YOUR_2.4_GHZ_WIFI_NAME",
+  "password": "YOUR_WIFI_PASSWORD",
+  "wigle": false,
+  "wigleName": "",
+  "wigleToken": "",
+  "wdg": false,
+  "wdgKey": "",
+  "wardrift": false,
+  "wardriftToken": "",
+  "automatic": false,
+  "donate": false
+}
