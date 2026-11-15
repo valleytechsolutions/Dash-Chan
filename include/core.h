@@ -30,8 +30,14 @@ enum class Family : uint8_t {
   Deauth,
   EvilTwin,
   BleSpam,
-  Watchlist
+  Watchlist,
+  SamsungTag,
+  GoogleTag,
+  Tile,
+  Ring
 };
+// Per-family tables are indexed by these values, so new families go at the end.
+constexpr unsigned FamilyCount = unsigned(Family::Ring) + 1;
 enum class Confidence : uint8_t { None, Low, Medium, High };
 struct Match {
   Family family = Family::None;
@@ -39,14 +45,45 @@ struct Match {
   const char *evidence = "No specific signature";
 };
 inline const char *familyName(Family f) {
-  const char *names[] = {
-      "Unclassified",     "Axon / body camera", "Flock camera",    "ALPR vendor",
-      "Camera glasses",   "Find My / tracker",  "Flipper Zero",    "Biscuit family",
-      "WiFi Pineapple",   "Pwnagotchi",         "Nyanbox",         "HaleHound",
-      "Serial / skimmer", "Raven candidate",    "Remote ID drone", "Camera / Ring vendor",
-      "Proximity beacon", "Disconnect burst",   "SSID conflict",   "BLE advert burst",
-      "My watchlist"};
-  return names[static_cast<unsigned>(f)];
+  static const char *const names[] = {"Unclassified",
+                                      "Axon / body camera",
+                                      "Flock camera",
+                                      "ALPR vendor",
+                                      "Camera glasses",
+                                      "Find My / tracker",
+                                      "Flipper Zero",
+                                      "Biscuit family",
+                                      "WiFi Pineapple",
+                                      "Pwnagotchi",
+                                      "Nyanbox",
+                                      "HaleHound",
+                                      "Serial / skimmer",
+                                      "Raven candidate",
+                                      "Remote ID drone",
+                                      "Camera / Ring vendor",
+                                      "Proximity beacon",
+                                      "Disconnect burst",
+                                      "SSID conflict",
+                                      "BLE advert burst",
+                                      "My watchlist",
+                                      "Samsung SmartTag",
+                                      "Google / Chipolo tag",
+                                      "Tile tracker",
+                                      "Ring camera"};
+  static_assert(sizeof(names) / sizeof(names[0]) == FamilyCount, "one name per family");
+  return unsigned(f) < FamilyCount ? names[unsigned(f)] : names[0];
+}
+// Names for tight spots such as the home NEARBY rows: at most FamilyShortChars characters each.
+constexpr unsigned FamilyShortChars = 14;
+inline const char *familyShort(Family f) {
+  static const char *const names[] = {
+      "Unknown",   "Body cam",     "Flock cam",     "Plate reader",   "Cam glasses",
+      "Tracker",   "Flipper Zero", "Biscuit",       "Pineapple",      "Pwnagotchi",
+      "Nyanbox",   "HaleHound",    "Skimmer",       "Gunshot sensor", "Drone",
+      "Camera",    "Beacon",       "Deauth attack", "Evil twin",      "BLE spam",
+      "Watchlist", "Samsung tag",  "Google tag",    "Tile",           "Ring cam"};
+  static_assert(sizeof(names) / sizeof(names[0]) == FamilyCount, "one short name per family");
+  return unsigned(f) < FamilyCount ? names[unsigned(f)] : names[0];
 }
 inline const char *confidenceName(Confidence c) {
   const char *n[] = {"none", "low", "medium", "high"};

@@ -27,7 +27,7 @@ export function drawPet(canvas,options={},time=0){
   buddyDetails(makePen(g,0,tones.line),base,mood,gaze,blink,custom,custom?eyes:0,custom?to565(eye):0x1085,tones.body,tones.blush,tones.line,tones.shade,tones.light,tones.trim,phase);
   const gy=mood===3||mood===4||mood===5?-25:-4;
   if(eyewear===1){
-    for(const side of [-1,1])for(let a=0;a<16;a++){const angle=a*2*Math.PI/16;ellipse(side*21+Math.trunc(Math.cos(angle)*13),gy+Math.trunc(Math.sin(angle)*14),1,1,blush);}
+    for(const side of [-1,1])for(let a=0;a<48;a++){const angle=a*2*Math.PI/48;ellipse(side*21+Math.round(Math.cos(angle)*13),gy+Math.round(Math.sin(angle)*14),1,1,blush);}
     line(-8,gy,8,gy,blush);
   }else if(eyewear===2||eyewear===3){
     rect(-39,gy-12,78,24,6,blush);

@@ -14,6 +14,23 @@ inline MotionCue panicMotion(unsigned step) {
       {-320, 150, 600, 480}, {-160, 350, 500, 360}, {120, 150, 560, 360}, {0, 260, 380, 600}};
   return cues[step % 8];
 }
+// A napping buddy settles its head once and then holds still, so the servos can rest for as
+// long as the nap lasts. True means "play the settle cue now".
+class NapSettle {
+  bool settled_ = false;
+
+public:
+  bool update(bool napping) {
+    if (!napping)
+      return settled_ = false;
+    if (settled_)
+      return false;
+    return settled_ = true;
+  }
+  bool resting() const {
+    return settled_;
+  }
+};
 class IdleMotion {
 public:
   void reset(uint32_t now, uint32_t pauseMs = 2000) {

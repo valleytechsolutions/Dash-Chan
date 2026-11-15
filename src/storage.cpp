@@ -144,12 +144,15 @@ bool storageFormat(uint64_t expectedBytes) {
 }
 static void storageFail(const char *reason) {
   snprintf(app.storageError, sizeof(app.storageError), "%s", reason);
+  bool wasRecording = app.session.armed;
   app.session.stop();
   captureGeneration.store(0);
   if (drive)
     drive.close();
   app.sdReady = false;
   say(reason);
+  if (wasRecording) // Keep what the drive earned; the failure message stays on screen.
+    saveSettings();
 }
 void storageBegin() {
   if (app.session.armed || uploadBusy())
@@ -236,8 +239,8 @@ void stopDrive() {
   }
   if (wasRecording)
     buddyDriveEnd(app.food.discoveries());
-  else
-    say("Drive saved. I'm still keeping watch.");
+  else // Nothing was recording (for example the card failed mid-drive): never claim a save.
+    say(*app.storageError ? app.storageError : "No drive is recording. Still keeping watch.");
   saveSettings();
   if (wasRecording && app.rows)
     uploadAfterDrive();

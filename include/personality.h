@@ -400,15 +400,14 @@ constexpr unsigned LineCount = sizeof(Lines) / sizeof(Lines[0]);
 // same line never plays twice in a row even when the bag refills.
 class Banter {
   uint32_t used_[TopicCount]{};
-  uint8_t last_[TopicCount];
+  const char *said_[TopicCount]{}; // Last line spoken per topic, whichever bag it came from.
+  unsigned avatar_ = ~0u;
+  bool spicy_ = false;
   static bool fits(const Line &l, Topic t, unsigned avatar, bool spicy) {
     return l.topic == t && (l.who == Who::Any || unsigned(l.who) == avatar) && (spicy || !l.spicy);
   }
 
 public:
-  Banter() {
-    memset(last_, 0xff, sizeof(last_));
-  }
   static unsigned count(Topic t, unsigned avatar, bool spicy) {
     unsigned n = 0;
     for (const auto &l : Lines)
@@ -419,6 +418,13 @@ public:
     unsigned topic = unsigned(t);
     if (topic >= TopicCount)
       return "";
+    // Bag slots number the lines eligible for one buddy and banter setting. A different buddy
+    // or setting renumbers them, so the old bags no longer describe what was heard.
+    if (avatar != avatar_ || spicy != spicy_) {
+      memset(used_, 0, sizeof(used_));
+      avatar_ = avatar;
+      spicy_ = spicy;
+    }
     unsigned n = count(t, avatar, spicy);
     if (!n)
       return "";
@@ -426,12 +432,18 @@ public:
       n = 32;
     uint32_t all = n == 32 ? 0xffffffffu : ((1u << n) - 1);
     uint32_t open = all & ~used_[topic];
-    if (!open) { // Bag is empty: refill, but keep the line we just said out of the first draw.
+    if (!open) { // Bag is empty: refill.
       used_[topic] = 0;
       open = all;
-      if (n > 1 && last_[topic] < n)
-        open &= ~(1u << last_[topic]);
     }
+    // Keep the line we just said out of this draw, after a refill or a change of buddy.
+    unsigned slot = 0;
+    for (const auto &l : Lines)
+      if (fits(l, t, avatar, spicy) && slot < n) {
+        if (l.text == said_[topic] && (open & ~(1u << slot)))
+          open &= ~(1u << slot);
+        ++slot;
+      }
     unsigned choices = 0;
     for (unsigned i = 0; i < n; ++i)
       choices += (open >> i) & 1;
@@ -442,10 +454,9 @@ public:
         break;
       }
     used_[topic] |= 1u << chosen;
-    last_[topic] = uint8_t(chosen);
     for (const auto &l : Lines)
       if (fits(l, t, avatar, spicy) && !chosen--)
-        return l.text;
+        return said_[topic] = l.text;
     return "";
   }
 };
@@ -498,8 +509,11 @@ constexpr uint32_t DryRoadMs = 180000, RedLightMs = 45000, NoSkyMs = 60000;
 inline Topic chatterTopic(Feeling f, const RoadView &r, uint32_t random) {
   bool usually = random % 3 != 0;
   if (r.recording) {
-    if (!r.fix && r.noFixMs >= NoSkyMs && usually)
-      return Topic::NoSky;
+    // Without a fix nothing is known about motion: never claim to be cruising or parked.
+    if (!r.fix)
+      return r.noFixMs >= NoSkyMs && usually ? Topic::NoSky
+             : f == Feeling::Hungry          ? Topic::IdleHungry
+                                             : Topic::Idle;
     if (!r.moving && r.stoppedMs >= RedLightMs)
       return usually ? Topic::RedLight : f == Feeling::Hungry ? Topic::IdleHungry : Topic::Idle;
     if (r.moving && r.sinceFindMs >= DryRoadMs && usually)
@@ -541,6 +555,50 @@ inline bool milestone(uint32_t n) {
       return true;
   return n && n % 1000 == 0;
 }
+// A milestone that lands while the buddy is busy (an alert, a giggle fit) waits here for the
+// next free moment instead of being lost.
+class Milestone {
+  uint32_t due_ = 0;
+
+public:
+  void count(uint32_t n, uint32_t atLeast = 0) {
+    if (n >= atLeast && milestone(n))
+      due_ = n;
+  }
+  uint32_t due() const {
+    return due_;
+  }
+  void clear() {
+    due_ = 0;
+  }
+};
+// A groggy wake-up or a "too much!" should not turn into a tally announcement.
+inline bool petMilestoneFits(Topic t) {
+  return t != Topic::Wake && t != Topic::PetEnough;
+}
+// One Jackpot cheer per burst of finds, and not too often.
+constexpr unsigned JackpotFinds = 12;
+constexpr uint32_t JackpotQuietMs = 180000;
+inline bool jackpotDue(unsigned burstFinds, bool cheeredThisBurst, uint32_t sinceLastMs) {
+  return burstFinds >= JackpotFinds && !cheeredThisBurst && sinceLastMs > JackpotQuietMs;
+}
+// Best-drive bookkeeping that survives a drive ending without Stop (power cut, SD failure):
+// the lifetime best follows the count as it grows, and "record" compares with the drive's start.
+class DriveBest {
+  uint32_t atStart_ = 0;
+
+public:
+  void start(uint32_t best) {
+    atStart_ = best;
+  }
+  static void found(uint32_t &best, uint32_t finds) {
+    if (finds > best)
+      best = finds;
+  }
+  bool record(uint32_t finds) const {
+    return atStart_ && finds > atStart_;
+  }
+};
 inline void petMilestoneLine(char *out, size_t size, uint32_t pets, uint32_t random) {
   static const char *forms[] = {"Pet number %lu! Yes, I keep count.",
                                 "That's %lu pets. I'm keeping a tally.",
@@ -586,6 +644,22 @@ inline uint32_t awayHours(uint32_t lastSeen, uint32_t now) {
     return 0;
   uint32_t hours = (now - lastSeen) / 3600;
   return hours > MaxAwayHours ? MaxAwayHours : hours;
+}
+// Time apart ends when the power comes back, not when the clock is finally learned: a GPS fix
+// can arrive long after boot, and hours spent together must not count as hours alone.
+inline uint32_t awayHoursAtBoot(uint32_t lastSeen, uint32_t now, uint32_t uptimeMs) {
+  uint32_t up = uptimeMs / 1000;
+  return now > up ? awayHours(lastSeen, now - up) : 0;
+}
+// The board clock is believed only once GPS has set it, its backup supply has not sagged, and
+// it has not run backwards or absurdly far ahead of the last time we knew.
+constexpr uint32_t ClockSlackSeconds = 3600, ClockMaxAheadSeconds = 366u * 86400u;
+inline bool boardClockTrusted(bool setByGps, bool lowVoltage, uint32_t seconds, uint32_t lastSeen) {
+  if (!setByGps || lowVoltage || !seconds)
+    return false;
+  if (!lastSeen)
+    return true;
+  return seconds + ClockSlackSeconds >= lastSeen && seconds <= lastSeen + ClockMaxAheadSeconds;
 }
 // Being left alone costs fuel and love, but never below a floor: no starving, no grudges.
 inline void applyAway(uint8_t &energy, uint8_t &bond, uint32_t hours) {

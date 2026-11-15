@@ -7,6 +7,7 @@ export function mix(a, b, n, d) {
   return (part(11, 31) << 11) | (part(5, 63) << 5) | part(0, 31);
 }
 export const dark = c => ((c >> 11) & 31) * 2 + ((c >> 5) & 63) * 2 + (c & 31) < 46;
+export const pale = c => ((c >> 11) & 31) * 2 + ((c >> 5) & 63) * 2 + (c & 31) > 180;
 export function buddyTones(avatar, custom, customBody, customAccent) {
   const body = custom ? customBody : [Paper, Mint, Lilac, 0x0000, 0xfa64][avatar];
   const blush = custom ? customAccent : avatar === 3 ? 0xc5ff : avatar === 4 ? 0xff28 : Blush;
@@ -173,6 +174,12 @@ export function buddyDetails(p, avatar, mood, gaze, blink, custom, eyeStyle, eye
   }
   // Face. Preset buddies get eyes of their own; custom ones use the chosen eye style.
   let eye = custom ? eyeColor : avatar == 2 ? Mint : avatar == 3 ? 0xefff : Ink;
+  // A custom face must stay readable on whatever is behind it (Orbit's screen or the body).
+  let surface = avatar == 2 ? 0x10c7 : body;
+  if (custom && dark(eye) && dark(surface))
+    eye = avatar == 2 ? Mint : 0xefff;
+  if (custom && pale(eye) && pale(surface))
+    eye = Ink;
   let lid = avatar == 2   ? 0x10c7
                  : avatar == 4 ? (custom ? mix(body, blush, 1, 2) : 0xfcc3)
                                : body;

@@ -36,6 +36,7 @@ export function mix(a, b, n, d) {
   return (part(11, 31) << 11) | (part(5, 63) << 5) | part(0, 31);
 }
 export const dark = c => ((c >> 11) & 31) * 2 + ((c >> 5) & 63) * 2 + (c & 31) < 46;
+export const pale = c => ((c >> 11) & 31) * 2 + ((c >> 5) & 63) * 2 + (c & 31) > 180;
 export function buddyTones(avatar, custom, customBody, customAccent) {
   const body = custom ? customBody : [Paper, Mint, Lilac, 0x0000, 0xfa64][avatar];
   const blush = custom ? customAccent : avatar === 3 ? 0xc5ff : avatar === 4 ? 0xff28 : Blush;

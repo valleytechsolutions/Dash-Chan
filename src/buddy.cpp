@@ -25,7 +25,10 @@ static uint32_t lastTouch = 0, chatterGap = 20000, moodAt = 0, moodHold = 0, bur
                 lastFindAt = 0, lastJackpot = 0, lastRemark = 0, stoppedAt = 0, noFixAt = 0,
                 needMinute = 0, lastSnackFuss = 0;
 static unsigned burstFinds = 0;
-static bool greeted = false;
+static bool greeted = false, burstCheered = false;
+static Milestone petMilestone, findMilestone;
+static DriveBest driveBest;
+static NapSettle napSettle;
 struct Note {
   uint16_t hz, ms;
 };
@@ -101,13 +104,16 @@ static bool catchUpOnTimeApart(uint32_t now) {
   if (awayChecked || !seconds)
     return false;
   awayChecked = true;
-  uint32_t hours = awayHours(app.life.lastSeen, seconds);
+  uint32_t hours = awayHoursAtBoot(app.life.lastSeen, seconds, now);
   app.life.lastSeen = seconds;
   if (!hours)
     return false;
   applyAway(app.energy, app.bond, hours);
   char text[64];
-  if (app.alertOpen || !awayLine(text, sizeof(text), hours, esp_random()))
+  // "Missed you" is a boot greeting. When the clock is learned later (first GPS fix mid-drive)
+  // the catch-up stays silent, and it never talks over an alert or a startup failure.
+  if (greeted || app.alertOpen || !app.radioReady || *app.storageError ||
+      !awayLine(text, sizeof(text), hours, esp_random()))
     return false;
   say(text);
   return true;
@@ -134,18 +140,22 @@ void buddyBegin() {
       stoppedAt = noFixAt = millis();
   lastSnackFuss = millis() - 20000;
   ++app.life.boots;
-  // The board clock is only trusted after GPS has set it at least once (year check).
-  if (M5.Rtc.isEnabled()) {
+  // The board clock is only believed once GPS has set it (remembered in settings) and its
+  // backup supply has held; otherwise the time stays unknown until the first fix.
+  if (app.life.clockSet && M5.Rtc.isEnabled()) {
     auto t = M5.Rtc.getDateTime();
     char stamp[24];
     snprintf(stamp, sizeof(stamp), "%04d-%02d-%02d %02d:%02d:%02d", t.date.year, t.date.month,
              t.date.date, t.time.hours, t.time.minutes, t.time.seconds);
-    clockLearn(utcSeconds(stamp), millis());
+    uint32_t seconds = utcSeconds(stamp);
+    if (boardClockTrusted(true, M5.Rtc.getVoltLow(), seconds, app.life.lastSeen))
+      clockLearn(seconds, millis());
   }
 }
 void buddyPet(bool allowVoice) {
   uint32_t now = millis();
-  if (!petTimer.ready(now, 800))
+  // An alert owns the face, the voice and the head until it is dismissed.
+  if (app.alertOpen || !petTimer.ready(now, 800))
     return;
   petTimer.mark(now);
   Feeling before = app.feeling;
@@ -153,6 +163,7 @@ void buddyPet(bool allowVoice) {
   unsigned streak = petCombo.pet(now);
   ++app.pets;
   ++app.life.pets;
+  petMilestone.count(app.life.pets);
   app.bond = std::min(100, int(app.bond) + int(petBondGain(streak)));
   Topic topic = petTopic(streak, before, app.moving, app.bond, esp_random());
   bool enough = topic == Topic::PetEnough;
@@ -163,9 +174,10 @@ void buddyPet(bool allowVoice) {
     M5StackChan.Motion.move(enough ? (esp_random() & 1 ? 140 : -140) : 0, 230, 110);
   const char *text = line(topic);
   char counted[64];
-  if (topic == Topic::Pet && milestone(app.life.pets)) {
-    petMilestoneLine(counted, sizeof(counted), app.life.pets, esp_random());
+  if (petMilestone.due() && petMilestoneFits(topic)) {
+    petMilestoneLine(counted, sizeof(counted), petMilestone.due(), esp_random());
     text = counted;
+    petMilestone.clear();
   }
   say(text);
   // Sensor affection is visual; only deliberate screen pets make noise.
@@ -219,15 +231,21 @@ void buddyDriveStart(bool fix) {
   uint32_t now = millis();
   lastTouch = lastFindAt = stoppedAt = noFixAt = now;
   burstFinds = 0;
+  burstCheered = false;
+  findMilestone.clear();
   ++app.life.drives;
+  driveBest.start(app.life.bestDrive);
   feel(Mood::Curious, 4000);
   // Without a fix nothing gets logged yet, so say that plainly instead of cheering.
   say(fix ? line(Topic::DriveStart) : "Ready! Waiting for a good GPS fix.");
+  // A dashboard drive often ends with the ignition, not the Stop button: count it now.
+  lastSave = now;
+  saveSettings();
 }
 void buddyDriveEnd(uint32_t finds) {
   lastTouch = millis();
-  bool record = app.life.bestDrive && finds > app.life.bestDrive;
-  app.life.bestDrive = std::max(app.life.bestDrive, finds);
+  bool record = driveBest.record(finds);
+  DriveBest::found(app.life.bestDrive, finds);
   char text[64];
   if (driveSummaryLine(text, sizeof(text), finds, record))
     say(text);
@@ -246,8 +264,12 @@ void buddyDiscovery(const uint8_t mac[6], const char *ssid, bool open) {
   if (uint32_t(now - burstAt) > 30000) {
     burstAt = now;
     burstFinds = 0;
+    burstCheered = false;
   }
   ++burstFinds;
+  uint32_t finds = app.food.discoveries();
+  DriveBest::found(app.life.bestDrive, finds);
+  findMilestone.count(finds, 25);
   bool spoke = false;
   auto oldLevel = petLevel(app.settings.xp);
   earnDiscoveryXp(app.settings.xp);
@@ -268,7 +290,6 @@ void buddyDiscovery(const uint8_t mac[6], const char *ssid, bool open) {
   // Never replace an active signal warning with snack chatter.
   if (app.alertOpen)
     return;
-  uint32_t finds = app.food.discoveries();
   char text[64];
   // Snacks can come every few seconds downtown. The food meter always moves, but the buddy
   // only makes a fuss about one when it has been quiet for a while.
@@ -278,17 +299,19 @@ void buddyDiscovery(const uint8_t mac[6], const char *ssid, bool open) {
     feel(Mood::Love, 3000);
     chirp(chirpSnack);
   }
-  if (finds >= 25 && milestone(finds)) {
-    findMilestoneLine(text, sizeof(text), finds, esp_random());
+  if (findMilestone.due()) {
+    findMilestoneLine(text, sizeof(text), findMilestone.due(), esp_random());
     say(text);
+    findMilestone.clear();
   } else if (spoke)
     return;
   else if (fuss)
     buddySay(stuffed ? Topic::Stuffed : Topic::Snack);
   else if (snack)
     return;
-  else if (burstFinds == 12 && uint32_t(now - lastJackpot) > 180000) {
+  else if (jackpotDue(burstFinds, burstCheered, now - lastJackpot)) {
     lastJackpot = now;
+    burstCheered = true;
     buddySay(Topic::Jackpot);
   } else if (uint32_t(now - app.messageAt) > 9000 && uint32_t(now - lastRemark) > 40000) {
     // Now and then, react to the actual network that was just logged.
@@ -328,9 +351,11 @@ void buddyAlert(const Alert &a, bool demo) {
   else
     buddySay(police ? Topic::AlertBodyCam
              : family == Family::Flock || family == Family::Alpr || family == Family::Raven ||
-                     family == Family::Camera
+                     family == Family::Camera || family == Family::Ring
                  ? Topic::AlertCamera
-             : family == Family::Tracker   ? Topic::AlertTracker
+             : family == Family::Tracker || family == Family::SamsungTag ||
+                     family == Family::GoogleTag || family == Family::Tile
+                 ? Topic::AlertTracker
              : family == Family::Meta      ? Topic::AlertGlasses
              : family == Family::Flipper   ? Topic::AlertFlipper
              : family == Family::Drone     ? Topic::AlertDrone
@@ -375,7 +400,8 @@ void buddyTick() {
   if (app.alertOpen && uint32_t(now - app.alertAt) > 8500)
     buddyDismiss();
   bool fix = usableFix(app.fix);
-  if (app.moving || !app.session.armed)
+  // "Stopped" means known to be stationary, so it only accumulates while there is a fix.
+  if (app.moving || !fix || !app.session.armed)
     stoppedAt = now;
   if (fix || !app.session.armed)
     noFixAt = now;
@@ -397,17 +423,23 @@ void buddyTick() {
   if (fix) { // GPS time is the source of truth; also teach it to the board clock once.
     clockLearn(utcSeconds(app.fix.utc), now);
     if (!rtcSynced && M5.Rtc.isEnabled()) {
-      rtcSynced = true;
       int y, mo, d, h, mi, sec;
-      if (sscanf(app.fix.utc, "%d-%d-%d %d:%d:%d", &y, &mo, &d, &h, &mi, &sec) == 6)
+      if (sscanf(app.fix.utc, "%d-%d-%d %d:%d:%d", &y, &mo, &d, &h, &mi, &sec) == 6) {
         M5.Rtc.setDateTime(
             {{int16_t(y), int8_t(mo), int8_t(d)}, {int8_t(h), int8_t(mi), int8_t(sec)}});
+        rtcSynced = true;
+        if (!app.life.clockSet) { // Remember that the board clock now holds real time.
+          app.life.clockSet = true;
+          saveSettings();
+        }
+      }
     }
   }
   bool missedYou = catchUpOnTimeApart(now);
   if (!greeted) { // First words after boot depend on how the pet was left.
     greeted = true;
-    if (missedYou || *app.storageError) {
+    // A radio or storage failure reported during setup must stay on screen.
+    if (missedYou || *app.storageError || !app.radioReady) {
     } else if (app.life.boots <= 1 && !app.life.pets)
       say(FirstHello);
     else
@@ -459,27 +491,42 @@ void buddyTick() {
     else
       soundActive = false;
   }
-  if (app.alertOpen && app.settings.sound && app.settings.volume && app.settings.spicy &&
-      app.settings.tone == AlertTone::Personality && app.active.match.family == Family::Axon &&
-      !M5.Speaker.isPlaying(0) && uint32_t(now - lastSiren) > 220 &&
-      uint32_t(now - app.alertAt) < 6500) {
+  // The wee-woo waits for the alert sting: both use speaker channel 1 and would cut each
+  // other off.
+  if (!soundActive && app.alertOpen && app.settings.sound && app.settings.volume &&
+      app.settings.spicy && app.settings.tone == AlertTone::Personality &&
+      app.active.match.family == Family::Axon && !M5.Speaker.isPlaying(0) &&
+      uint32_t(now - lastSiren) > 220 && uint32_t(now - app.alertAt) < 6500) {
     lastSiren = now;
     M5.Speaker.tone((now / 220) % 2 ? 650 : 1150, 180, 1, true);
   }
-  if (app.alertOpen && app.settings.motion && uint32_t(now - lastMotion) >= panicWait) {
-    lastMotion = now;
-    auto cue = panicMotion(panicStep++);
-    panicWait = cue.holdMs;
-    if (app.settings.motionStyle == 1 || !app.settings.spicy ||
-        app.active.match.family != Family::Axon) {
-      cue.yaw /= 2;
-      cue.pitch = 200 + (cue.pitch - 200) / 2;
-      cue.speed = 260;
-      panicWait += 300;
+  if (app.alertOpen) {
+    if (app.settings.motion && uint32_t(now - lastMotion) >= panicWait) {
+      lastMotion = now;
+      auto cue = panicMotion(panicStep++);
+      panicWait = cue.holdMs;
+      if (app.settings.motionStyle == 1 || !app.settings.spicy ||
+          app.active.match.family != Family::Axon) {
+        cue.yaw /= 2;
+        cue.pitch = 200 + (cue.pitch - 200) / 2;
+        cue.speed = 260;
+        panicWait += 300;
+      }
+      // BSP units are tenths of a degree. Stay well inside K151 travel limits.
+      M5StackChan.Motion.move(cue.yaw, cue.pitch, cue.speed);
     }
-    // BSP units are tenths of a degree. Stay well inside K151 travel limits.
-    M5StackChan.Motion.move(cue.yaw, cue.pitch, cue.speed);
-  } else if (!app.alertOpen) {
+  } else if (app.feeling == Feeling::Napping) {
+    // Asleep: lower the head once, then leave the servos alone so auto torque release can
+    // rest them until someone wakes the buddy.
+    if (napSettle.update(true)) {
+      gazeTarget = 0;
+      if (app.settings.motion)
+        M5StackChan.Motion.move(0, 190, 75);
+    }
+  } else {
+    if (napSettle.resting())
+      idleMotion.reset(now, 2500);
+    napSettle.update(false);
     MotionCue cue;
     if (idleMotion.tick(now, esp_random(), restingMood(app.feeling) != Mood::Happy,
                         app.settings.avatar == Avatar::Custom ? app.settings.customBase
@@ -499,7 +546,8 @@ void buddyTick() {
     lastGaze = now;
     app.gaze += (gazeTarget - app.gaze) * 0.22f;
   }
-  if (uint32_t(now - lastSave) > 300000) {
+  // While recording, save often: snacks, bond and the best-drive count must survive a power cut.
+  if (uint32_t(now - lastSave) > (app.session.armed ? 60000u : 300000u)) {
     lastSave = now;
     saveSettings();
   }

@@ -32,6 +32,7 @@ enum Page {
 static Page page = Home;
 static uint8_t historyPage = 0;
 static bool detailOpen = false;
+static bool fromHome = false; // The page was opened by a Home shortcut, so BACK returns Home.
 static bool confirmUpload = false;
 static Alert detail;
 static Palette colors;
@@ -135,7 +136,7 @@ static void home(uint32_t now) {
   v.clueCount = std::min(3u, unsigned(app.historyCount));
   for (unsigned i = 0; i < v.clueCount; ++i) {
     auto &a = app.history[i];
-    v.clues[i].family = familyName(a.match.family);
+    v.clues[i].family = familyShort(a.match.family);
     v.clues[i].ble = a.ble;
     v.clues[i].rssi = a.rssi;
     v.clues[i].fresh = uint32_t(now - a.at) < 300000;
@@ -444,44 +445,55 @@ static bool row(int y, int top, int height = 36) {
 static void touch(int x, int y) {
   buddyPoke(); // Any tap counts as attention: it keeps the buddy awake.
   if (page == Home) {
-    if (row(y, 208, 28)) {
-      if (x >= 244)
-        page = Menu;
-      else if (x >= 168)
-        uiSwitchView();
-      else if (x >= 8 && x < 162) {
-        if (app.session.armed)
-          stopDrive();
-        else
-          startDrive();
-      }
-    } else if (!app.settings.view && x >= 184 && y >= 53 && y < 173) {
-      unsigned i = (y - 53) / 40;
-      if (i < app.historyCount) {
-        detail = app.history[i];
-        detailOpen = true;
-        page = History;
-      }
-    } else if (y >= 178 && app.alertOpen)
-      buddyDismiss();
-    else if (y >= 178) // The vitals row opens the buddy's stats.
-      page = Behavior;
-    else if (y >= 28 && y < 176 && (app.settings.view || x < 182)) {
-      if (app.alertOpen)
-        buddyDismiss();
+    HomeTapTarget tap = homeTap(x, y, app.settings.view == 1, app.alertOpen, app.historyCount);
+    switch (tap.action) {
+    case HomeTap::Menu:
+      page = Menu;
+      break;
+    case HomeTap::SwitchView:
+      uiSwitchView();
+      break;
+    case HomeTap::Drive:
+      if (app.session.armed)
+        stopDrive();
       else
-        buddyPet();
+        startDrive();
+      break;
+    case HomeTap::Clue:
+    case HomeTap::ClueList:
+      if (app.alertOpen) // Do not leave the alert running behind the History page.
+        buddyDismiss();
+      detailOpen = tap.action == HomeTap::Clue;
+      if (detailOpen)
+        detail = app.history[tap.clue];
+      historyPage = 0;
+      page = History;
+      fromHome = true;
+      break;
+    case HomeTap::Stats: // The vitals row opens the buddy's stats.
+      page = Behavior;
+      fromHome = true;
+      break;
+    case HomeTap::Dismiss:
+      buddyDismiss();
+      break;
+    case HomeTap::Pet:
+      buddyPet();
+      break;
+    case HomeTap::None:
+      break;
     }
     return;
   }
   if (y < 34 && x >= 250) {
-    page = page == Menu                               ? Home
-           : (page == Buddies || page == Studio)      ? Appearance
-           : (page == GpsModels || page == GpsWiring) ? GpsSetup
-           : (page == Reactions || page == NfcCards)  ? DisplaySetup
-           : page == GpsSetup                         ? Diagnostics
-                                                      : Menu;
+    page = page == Menu || (fromHome && (page == Behavior || page == History)) ? Home
+           : (page == Buddies || page == Studio)                               ? Appearance
+           : (page == GpsModels || page == GpsWiring)                          ? GpsSetup
+           : (page == Reactions || page == NfcCards)                           ? DisplaySetup
+           : page == GpsSetup                                                  ? Diagnostics
+                                                                               : Menu;
     detailOpen = false;
+    fromHome = false;
     return;
   }
   bool right = x >= 160;
@@ -493,6 +505,7 @@ static void touch(int x, int y) {
       unsigned n = (y - 42) / 47 * 2 + unsigned(right);
       if (n < 8 && (y - 42) % 47 < 39) {
         page = pages[n];
+        fromHome = false;
         detailOpen = false;
         historyPage = 0;
         confirmUpload = false;
@@ -634,7 +647,10 @@ static void touch(int x, int y) {
     } else if (row(y, 150, 34))
       app.settings.spicy = !app.settings.spicy;
     else if (row(y, 190, 34)) {
-      buddyPet();
+      if (app.alertOpen) // Same as tapping the buddy on Home during an alert.
+        buddyDismiss();
+      else
+        buddyPet();
       page = Home;
     }
     break;

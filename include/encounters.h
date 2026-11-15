@@ -57,6 +57,6 @@ public:
 
 private:
   Entry entries_[128];
-  Cooldown global_, families_[32];
+  Cooldown global_, families_[FamilyCount];
 };
 } // namespace dash

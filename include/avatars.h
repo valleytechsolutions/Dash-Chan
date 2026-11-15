@@ -1,5 +1,6 @@
 // Original vector companions. Shared by firmware and the desktop SVG renderer.
 #pragma once
+#include <algorithm>
 #include <initializer_list>
 #include <math.h>
 #include <stdint.h>
@@ -15,6 +16,9 @@ inline uint16_t mix(uint16_t a, uint16_t b, int n, int d) {
 }
 inline bool dark(uint16_t c) {
   return ((c >> 11) & 31) * 2 + ((c >> 5) & 63) * 2 + (c & 31) < 46;
+}
+inline bool pale(uint16_t c) {
+  return ((c >> 11) & 31) * 2 + ((c >> 5) & 63) * 2 + (c & 31) > 180;
 }
 // A round-capped stroke built from fills, so it scales in the full-face view.
 template <class G> void stroke(G &g, int x0, int y0, int x1, int y1, int w, uint16_t c) {
@@ -44,7 +48,11 @@ template <class G> struct Pen {
     g.fillEllipse(cx + x, cy + y, rx + grow, ry + grow, ink(c));
   }
   void box(int x, int y, int w, int h, int r, uint16_t c) {
-    g.fillRoundRect(cx + x - grow, cy + y - grow, w + 2 * grow, h + 2 * grow, r + grow, ink(c));
+    w += 2 * grow;
+    h += 2 * grow;
+    // The display driver does not clamp the corner radius; an oversized one paints a blob.
+    r = std::max(0, std::min(r + grow, std::min(w, h) / 2));
+    g.fillRoundRect(cx + x - grow, cy + y - grow, w, h, r, ink(c));
   }
   void tri(int x0, int y0, int x1, int y1, int x2, int y2, uint16_t c) {
     if (grow) {
@@ -85,11 +93,22 @@ template <class G> struct Zoom {
   void fillCircle(int x, int y, int r, uint16_t c) {
     g.fillCircle(X(x), Y(y), R(r), c);
   }
+  // Scaled length of a span: thin details (scanlines, LED dashes) keep at least one pixel.
+  int span(int from, int size) const {
+    int scaled = int(lroundf((from + size) * k)) - int(lroundf(from * k));
+    return size > 0 && scaled < 1 ? 1 : scaled;
+  }
   void fillRect(int x, int y, int w, int h, uint16_t c) {
-    g.fillRect(X(x), Y(y), X(x + w) - X(x), Y(y + h) - Y(y), c);
+    g.fillRect(X(x), Y(y), span(x, w), span(y, h), c);
   }
   void fillRoundRect(int x, int y, int w, int h, int r, uint16_t c) {
-    g.fillRoundRect(X(x), Y(y), X(x + w) - X(x), Y(y + h) - Y(y), R(r), c);
+    int sw = span(x, w), sh = span(y, h);
+    // Width, height and radius round separately, so the radius must be re-clamped to fit.
+    int sr = std::min(R(r), std::min(sw, sh) / 2);
+    if (sr <= 0)
+      g.fillRect(X(x), Y(y), sw, sh, c);
+    else
+      g.fillRoundRect(X(x), Y(y), sw, sh, sr, c);
   }
   void fillTriangle(int x0, int y0, int x1, int y1, int x2, int y2, uint16_t c) {
     g.fillTriangle(X(x0), Y(y0), X(x1), Y(y1), X(x2), Y(y2), c);
@@ -264,6 +283,12 @@ void buddyDetails(P &p, int avatar, int mood, int gaze, bool blink, bool custom,
   }
   // Face. Preset buddies get eyes of their own; custom ones use the chosen eye style.
   uint16_t eye = custom ? eyeColor : avatar == 2 ? Mint : avatar == 3 ? 0xefff : Ink;
+  // A custom face must stay readable on whatever is behind it (Orbit's screen or the body).
+  uint16_t surface = avatar == 2 ? 0x10c7 : body;
+  if (custom && art::dark(eye) && art::dark(surface))
+    eye = avatar == 2 ? Mint : 0xefff;
+  if (custom && art::pale(eye) && art::pale(surface))
+    eye = Ink;
   uint16_t lid = avatar == 2   ? 0x10c7
                  : avatar == 4 ? (custom ? art::mix(body, blush, 1, 2) : 0xfcc3)
                                : body;
@@ -414,9 +439,10 @@ void drawBuddy(G &g, int avatar, int cx, int cy, int mood, int gaze, bool blink,
   if (eyewear == 1) {
     for (int side : {-1, 1}) {
       int x = cx + side * 21;
-      for (int a = 0; a < 16; ++a) {
-        double angle = a * 6.2831853 / 16;
-        g.fillCircle(x + int(cos(angle) * 13), glassesY + int(sin(angle) * 14), 1, blush);
+      for (int a = 0; a < 48; ++a) { // Dense enough to read as a solid frame at any zoom.
+        double angle = a * 6.2831853 / 48;
+        g.fillCircle(x + int(lround(cos(angle) * 13)), glassesY + int(lround(sin(angle) * 14)), 1,
+                     blush);
       }
     }
     g.drawLine(cx - 8, glassesY, cx + 8, glassesY, blush);

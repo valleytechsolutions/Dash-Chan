@@ -48,6 +48,7 @@ struct Settings {
 struct Life {
   uint32_t pets = 0, drives = 0, snacks = 0, bestDrive = 0, boots = 0;
   uint32_t lastSeen = 0; // Seconds since 2000 (UTC) when we last knew the time; 0 if never.
+  bool clockSet = false; // GPS has set the board clock at least once, so it can be believed.
 };
 struct Contact {
   bool used = false, ble = false;

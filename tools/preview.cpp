@@ -1,4 +1,5 @@
 // PC preview of the buddy art and home screen. Run through tools/preview.py.
+#include "core.h"
 #include "home_view.h"
 #include "host_canvas.h"
 #include <string>
@@ -32,7 +33,7 @@ int main(int argc, char **argv) {
                 Ink, 0, 0, 0, 0, 2);
   buddies.savePpm((out + "/buddies.ppm").c_str());
 
-  HostCanvas home = sheetOf(3, 3);
+  HostCanvas home = sheetOf(3, 4);
   HomeView v = base(); // 1. Calm, nothing nearby.
   place(home, 0, 0, v);
   v = base(); // 2. Talking.
@@ -50,9 +51,9 @@ int main(int argc, char **argv) {
   v.speaking = true;
   v.message = "My tummy is making dial-up noises.";
   v.clueCount = 3;
-  v.clues[0] = {"Find My / tracker", true, true, -59, "MED"};
-  v.clues[1] = {"Camera / Ring vendor", false, true, -49, "HIGH"};
-  v.clues[2] = {"Flipper Zero", true, false, -80, "LOW"};
+  v.clues[0] = {familyShort(Family::Tracker), true, true, -59, "MED"};
+  v.clues[1] = {familyShort(Family::Raven), false, true, -49, "HIGH"};
+  v.clues[2] = {familyShort(Family::Flipper), true, false, -80, "LOW"};
   place(home, 2, 0, v);
   v = base(); // 4. Recording a drive.
   v.look.base = 4;
@@ -104,9 +105,30 @@ int main(int argc, char **argv) {
   v.look.base = 1;
   v.name = "Sprout";
   place(home, 2, 2, v);
+  v = base(); // 10. A long message: three tight rows, and the chin stays clear.
+  v.speaking = true;
+  v.message = "SD full/write failed. Drive stopped. Check the card, then tap Retry SD.";
+  place(home, 0, 3, v);
+  v = base(Theme::Light); // 11. Light theme alert while recording: white text on the deep red.
+  v.mood = 4;
+  v.alert = v.speaking = true;
+  v.message = "Tracker nearby. Yours, I hope?";
+  v.alertFamily = familyName(Family::SamsungTag);
+  v.alertConfidence = "high";
+  v.recording = v.fix = true;
+  v.sats = 6;
+  v.state = "REC";
+  v.clueCount = 1;
+  v.clues[0] = {familyShort(Family::SamsungTag), true, true, -52, "HIGH"};
+  place(home, 1, 3, v);
+  v = base(); // 12. A veteran: the XP caption must stay inside its panel.
+  v.level = 1000;
+  v.xp = 24;
+  v.name = "Sixteen chars ok";
+  place(home, 2, 3, v);
   home.savePpm((out + "/home.ppm").c_str());
 
-  HostCanvas face = sheetOf(3, 2);
+  HostCanvas face = sheetOf(3, 4);
   for (int a = 0; a < 5; ++a) {
     static const char *names[] = {"Mochi", "Sprout", "Orbit", "Wisp", "Ember"};
     v = base(a == 4 ? Theme::Bwm : Theme::Dark);
@@ -134,6 +156,44 @@ int main(int argc, char **argv) {
   v.mood = 2;
   v.feeling = Feeling::Napping;
   place(face, 2, 1, v);
+  // Custom buddies in Full Face: every hat must be visible, and speech must not hide the mouth.
+  for (int hat = 1; hat <= 5; ++hat) {
+    v = base();
+    v.face = true;
+    v.look.custom = true;
+    v.look.base = hat % 5;
+    v.look.body = hat == 2 ? 0x0000 : rgb565(0xbfe8ff);
+    v.look.accent = rgb565(0xff8a5c);
+    v.look.headwear = hat;
+    v.look.eyewear = hat == 3 ? 1 : 0;
+    v.look.neckwear = hat == 5 ? 2 : 0;
+    v.name = "Custom";
+    v.mood = hat == 4 ? 3 : hat == 5 ? 4 : 0;
+    if (hat == 1 || hat == 4) {
+      v.speaking = true;
+      v.message = hat == 1 ? "Hehe. That's the good spot." : "You were gone 14 hours. I counted.";
+    }
+    if (hat == 5) {
+      v.alert = v.speaking = true;
+      v.message = "Possible body-camera signal nearby.";
+      v.alertFamily = familyName(Family::Axon);
+      v.alertConfidence = "medium";
+    }
+    place(face, (hat - 1) % 3, 2 + (hat - 1) / 3, v);
+  }
+  v = base(Theme::Light); // No hat: the 2.1x close-up, round glasses, Ink eyes on Orbit's screen.
+  v.face = true;
+  v.look.custom = true;
+  v.look.base = 2;
+  v.look.body = rgb565(0xd8c8ff);
+  v.look.eyewear = 1;
+  v.name = "Custom";
+  v.alert = v.speaking = true;
+  v.mood = 0;
+  v.message = "Something odd nearby. Stay curious. This one wraps onto a second row.";
+  v.alertFamily = familyName(Family::None);
+  v.alertConfidence = "low";
+  place(face, 2, 3, v);
   face.savePpm((out + "/face.ppm").c_str());
 
   // Documentation screenshots, one screen each (site/assets/ui-*.png).
@@ -145,9 +205,9 @@ int main(int argc, char **argv) {
   };
   auto clues = [](HomeView &view) {
     view.clueCount = 3;
-    view.clues[0] = {"Find My / tracker", true, true, -59, "MED"};
-    view.clues[1] = {"Camera / Ring vendor", false, true, -49, "HIGH"};
-    view.clues[2] = {"Flipper Zero", true, false, -80, "LOW"};
+    view.clues[0] = {familyShort(Family::Tracker), true, true, -59, "MED"};
+    view.clues[1] = {familyShort(Family::Camera), false, true, -49, "HIGH"};
+    view.clues[2] = {familyShort(Family::Flipper), true, false, -80, "LOW"};
   };
   v = base();
   clues(v);

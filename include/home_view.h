@@ -4,6 +4,8 @@
 //
 //   0- 23  top bar: buddy name and rank, GPS, recording state
 //  24-175  stage: backdrop, buddy, feeling tag, speech bubble (+ NEARBY clues in Recon view)
+//          Recon: the bubble sits under the buddy. Full Face: it sits at the top of the stage,
+//          in place of the feeling tag, so the mouth stays visible while the buddy talks.
 // 178-203  vitals: FOOD, LOVE and XP meters, always visible
 // 208-236  buttons
 #pragma once
@@ -55,6 +57,53 @@ struct HomeView {
   HomeClue clues[3];
   unsigned clueCount = 0;
 };
+
+// Text drawn on the danger colour. The Light theme's danger is a deep red that needs white.
+inline uint16_t onDanger(Theme theme) {
+  return theme == Theme::Light ? 0xffff : Ink;
+}
+// Full Face framing. The close-up fills the screen with the face; a custom buddy wearing a hat
+// is pulled back just enough that the hat (up to y -64 in buddy space) stays on the stage.
+struct FaceFit {
+  int oy;
+  float k;
+  int bob; // Screen pixels per unit of body bob.
+};
+inline FaceFit faceFit(const BuddyLook &look) {
+  return look.custom && look.headwear ? FaceFit{128, 1.6f, 1} : FaceFit{96, 2.1f, 2};
+}
+// The XP caption has to fit above its 74 px bar: 12 characters.
+inline void xpLabel(char *out, size_t size, unsigned level, unsigned xp) {
+  if (level < 100)
+    snprintf(out, size, "LV %u  %u/%u", level, xp, unsigned(XpPerLevel));
+  else
+    snprintf(out, size, "LV %u", level); // The bar still shows progress within the level.
+}
+
+// Where a tap on the home screen goes. Kept free of hardware so the routing can be tested.
+enum class HomeTap : uint8_t { None, Drive, SwitchView, Menu, Clue, ClueList, Dismiss, Stats, Pet };
+struct HomeTapTarget {
+  HomeTap action = HomeTap::None;
+  unsigned clue = 0; // Row index for HomeTap::Clue.
+};
+inline HomeTapTarget homeTap(int x, int y, bool face, bool alert, unsigned clueCount) {
+  if (y >= 208 && y < 236)
+    return {x >= 244            ? HomeTap::Menu
+            : x >= 168          ? HomeTap::SwitchView
+            : x >= 8 && x < 162 ? HomeTap::Drive
+                                : HomeTap::None};
+  if (!face && x >= 184 && y >= 29 && y < 175) { // The whole NEARBY panel, header included.
+    unsigned row = y >= 53 && y < 173 ? unsigned(y - 53) / 40 : 3;
+    if (row < (clueCount < 3 ? clueCount : 3))
+      return {HomeTap::Clue, row};
+    return {alert ? HomeTap::Dismiss : HomeTap::ClueList};
+  }
+  if (y >= 178)
+    return {alert ? HomeTap::Dismiss : HomeTap::Stats};
+  if (y >= 28 && y < 176 && (face || x < 182))
+    return {alert ? HomeTap::Dismiss : HomeTap::Pet};
+  return {};
+}
 
 namespace homeui {
 using art::mix;
@@ -236,30 +285,57 @@ inline int wrapLines(const char *s, int width, char rows[][64], int maxLines) {
   }
   return count;
 }
-// A real speech bubble with its tail aimed at the buddy, so words read as the pet talking.
-template <class G>
-void bubble(G &g, const HomeView &v, const char *msg, int left, int right, int bottom, int tailX) {
+// Speech bubble geometry. Recon view: under the buddy, tail up, never rising above the chin
+// (three rows are set tighter instead of taller). Full Face: top of the stage, tail down, so
+// the mouth is never covered.
+constexpr int ReconChinY = 132;
+struct BubbleBox {
   char rows[3][64];
-  int chars = (right - left - 12) / 6;
-  int lines = wrapLines(msg, chars, rows, 3);
-  if (!lines)
-    return;
+  int lines = 0, x = 0, y = 0, w = 0, h = 0, pitch = 11, inset = 6, tailX = 0, tipY = 0;
+  bool tailDown = false;
+};
+inline int bubbleChars(bool face) {
+  return face ? 47 : 27;
+}
+inline bool layoutBubble(const char *msg, bool face, BubbleBox &b) {
+  const int left = face ? 10 : 2, right = face ? 310 : 180;
+  b.lines = wrapLines(msg, bubbleChars(face), b.rows, 3);
+  if (!b.lines)
+    return false;
   int widest = 0;
-  for (int i = 0; i < lines; ++i)
-    widest = widest > int(strlen(rows[i])) ? widest : int(strlen(rows[i]));
-  int w = widest * 6 + 14, h = lines * 11 + 9;
-  int x = tailX - w / 2;
-  x = x < left ? left : x + w > right ? right - w : x;
-  int y = bottom - h;
+  for (int i = 0; i < b.lines; ++i)
+    widest = widest > int(strlen(b.rows[i])) ? widest : int(strlen(b.rows[i]));
+  bool tight = !face && b.lines == 3;
+  b.pitch = tight ? 9 : 11;
+  b.inset = tight ? 3 : 6;
+  b.w = widest * 6 + 14;
+  if (b.w < 30) // Room for the tail between the rounded corners.
+    b.w = 30;
+  b.h = tight ? 33 : b.lines * 11 + 9;
+  b.tailX = face ? 160 : 91;
+  b.tailDown = face;
+  b.x = b.tailX - b.w / 2;
+  b.x = b.x < left ? left : b.x + b.w > right ? right - b.w : b.x;
+  b.y = face ? 27 : (tight ? 175 : 173) - b.h;
+  b.tipY = face ? b.y + b.h + 9 : b.y - 10;
+  return true;
+}
+// A real speech bubble with its tail aimed at the buddy, so words read as the pet talking.
+template <class G> void bubble(G &g, const HomeView &v, const char *msg) {
+  BubbleBox b;
+  if (!layoutBubble(msg, v.face, b))
+    return;
   uint16_t fill = v.alert ? v.colors.danger : v.theme == Theme::Light ? 0xffff : v.colors.text;
-  uint16_t ink = v.alert || v.theme != Theme::Light ? Ink : v.colors.text;
+  uint16_t ink = v.alert ? onDanger(v.theme) : v.theme != Theme::Light ? Ink : v.colors.text;
   uint16_t edge = v.theme == Theme::Light ? v.colors.muted : Ink;
-  g.fillRoundRect(x - 1, y - 1, w + 2, h + 2, 8, edge);
-  g.fillTriangle(tailX - 7, y, tailX + 7, y, tailX + 1, y - 10, edge);
-  g.fillRoundRect(x, y, w, h, 7, fill);
-  g.fillTriangle(tailX - 5, y + 1, tailX + 5, y + 1, tailX + 1, y - 7, fill);
-  for (int i = 0; i < lines; ++i)
-    text(g, rows[i], x + 7, y + 6 + i * 11, ink);
+  int base = b.tailDown ? b.y + b.h - 1 : b.y, dir = b.tailDown ? 1 : -1;
+  g.fillRoundRect(b.x - 1, b.y - 1, b.w + 2, b.h + 2, 8, edge);
+  g.fillTriangle(b.tailX - 7, base, b.tailX + 7, base, b.tailX + 1, b.tipY, edge);
+  g.fillRoundRect(b.x, b.y, b.w, b.h, 7, fill);
+  g.fillTriangle(b.tailX - 5, base - dir, b.tailX + 5, base - dir, b.tailX + 1, b.tipY - dir * 3,
+                 fill);
+  for (int i = 0; i < b.lines; ++i)
+    text(g, b.rows[i], b.x + 7, b.y + b.inset + i * b.pitch, ink);
 }
 template <class G> void snooze(G &g, const HomeView &v, int x, int y) {
   for (int i = 0; i < 3; ++i) {
@@ -328,15 +404,13 @@ template <class G> void drawHome(G &g, const HomeView &v) {
   int gaze = v.alert ? int(sin(now / 100.0) * 5) : v.gaze;
   bool blink = !v.alert && now % 4100 < 130;
   int phase = int(now / 150);
-  int mouthX, bubbleLeft, bubbleRight;
+  bool talking = v.speaking && *v.message;
   g.setClipRect(0, 24, stage, 151);
   if (v.face) {
     // Close-up: the same vector buddy redrawn large, so edges stay crisp.
-    art::Zoom<G> zoom{g, 160, 96 + bob * 2, 2.1f};
+    FaceFit fit = faceFit(v.look);
+    art::Zoom<G> zoom{g, 160, fit.oy + bob * fit.bob, fit.k};
     drawBuddyLook(zoom, v.look, 0, 0, expression, gaze, blink, 0, 0, phase);
-    mouthX = 160;
-    bubbleLeft = 10;
-    bubbleRight = 310;
     if (v.mood == 3 && !v.alert) {
       heart(g, 38, 70 - int(now / 120 % 12), colors.heart);
       heart(g, 284, 82 - int(now / 140 % 13), colors.heart);
@@ -345,9 +419,6 @@ template <class G> void drawHome(G &g, const HomeView &v) {
       snooze(g, v, 252, 66);
   } else {
     drawBuddyLook(g, v.look, 91, 90 + v.tiltY, expression, gaze, blink, bob, v.kit, phase);
-    mouthX = 91;
-    bubbleLeft = 5;
-    bubbleRight = 178;
     if (v.mood == 3 && !v.alert) {
       heart(g, 26, 63 - int(now / 120 % 12), colors.heart);
       heart(g, 156, 71 - int(now / 140 % 13), colors.heart);
@@ -362,9 +433,11 @@ template <class G> void drawHome(G &g, const HomeView &v) {
     confetti(g, levelUp ? v.levelAge : v.discoveryAge, levelUp, stage);
   g.clearClipRect();
   // Feeling tag, top-left of the stage. An alert or a cheer takes its place.
-  if (v.alert) {
+  if (v.face && talking) {
+    // The Full Face speech bubble occupies this strip while the buddy talks.
+  } else if (v.alert) {
     g.fillRoundRect(6, 29, 21, 22, 5, colors.danger);
-    text(g, "!", 11, 33, Ink, 2);
+    text(g, "!", 11, 33, onDanger(v.theme), 2);
   } else if (cheering || levelUp) {
     const char *badge = levelUp ? "LEVEL UP!" : "+1 XP";
     int w = int(strlen(badge)) * 6 + 12;
@@ -380,8 +453,8 @@ template <class G> void drawHome(G &g, const HomeView &v) {
   }
   // Drive counters sit under the buddy once there is a drive to count.
   bool counters = v.recording || v.wifiSaved || v.bleSaved;
-  if (v.speaking && *v.message)
-    bubble(g, v, v.message, bubbleLeft, bubbleRight, 173, mouthX);
+  if (talking)
+    bubble(g, v, v.message);
   else if (counters) {
     int x0 = v.face ? 77 : 8;
     for (int i = 0; i < 2; ++i) {
@@ -430,8 +503,8 @@ template <class G> void drawHome(G &g, const HomeView &v) {
   bool hot = v.stateUrgent || v.recording;
   g.fillRoundRect(stateX, 4, stateW, 16, 8, hot ? colors.danger : colors.panel);
   if (v.recording && now / 600 % 2)
-    g.fillCircle(stateX + 9, 12, 3, Ink);
-  text(g, v.state, stateX + (v.recording ? 16 : 7), 8, hot ? Ink : colors.accent);
+    g.fillCircle(stateX + 9, 12, 3, onDanger(v.theme));
+  text(g, v.state, stateX + (v.recording ? 16 : 7), 8, hot ? onDanger(v.theme) : colors.accent);
   // GPS: three signal bars and the satellite count.
   int gpsX = stateX - 50;
   for (int i = 0; i < 3; ++i)
@@ -461,7 +534,7 @@ template <class G> void drawHome(G &g, const HomeView &v) {
     snprintf(s, sizeof(s), "LOVE %u%%", v.love);
     vital(g, v, 112, s, v.love, 100, colors.heart, lonely);
     starIcon(g, 223, 191, colors.accent);
-    snprintf(s, sizeof(s), "LV %u  %u/%u", v.level, v.xp, unsigned(XpPerLevel));
+    xpLabel(s, sizeof(s), v.level, v.xp);
     vital(g, v, 214, s, v.xp, XpPerLevel, colors.accent, false);
   }
   button(g, v, 8, 208, 154, 28, v.recording ? "STOP + SAVE" : "START DRIVE", true);
