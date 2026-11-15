@@ -31,7 +31,7 @@ The pet remains visible during alerts and recording. No event automatically open
 | Buddy + Look | Mochi, Sprout, Orbit, Wisp, Ember, or a custom buddy; Dark, Light, Matrix, BWM; Avatar Studio with a live preview, style packs, eyes, layered outfits, extras, and Auto/Always/Off field gear |
 | Sound & Voice | Personality, Siren, Arcade, Chime, Silent; volume 0/100/170/220/255; Master sound; Voice OFF / ALERTS / ALL; tone preview; TEST VOICE; synthetic Axon demo |
 | Personality | Head motion Off/Gentle/Lively; Spicy panic/Gentle lookout; pet button |
-| Detection | Confidence filter; same-family quiet period 60/180/300 seconds; optional five-minute reminders; Quiet road ON/OFF; Auto snooze OFF/5/10; device types (whole tiers or single families); ignored-device count with CLEAR ALL (tap twice) |
+| Detection | Confidence filter; same-family quiet period 60/180/300 seconds; optional five-minute reminders; Quiet road ON/OFF; Auto snooze OFF / 5 alerts / 10 alerts; device types (whole tiers or single families, applied on BACK); ignored-device count with CLEAR ALL (tap twice) |
 | Recon List | **LIVE**: devices in range, most important first. **SEEN**: everything listed, newest first, including rows restored from the SD card. **STATS**: live/listed per tier, devices ever seen per family, following and ignored counts, ledger state. Five rows per page; tap a row for the device card |
 | Display + Fun | Recon/Face, four backgrounds, mood lights, tilt, head swipe, wave hello, auto brightness, NFC outfit cards |
 | Upload drives | Latest 24 drive files, configured destinations, explicit confirmation, cancel, refresh; [setup guide](UPLOADS.md) |

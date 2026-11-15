@@ -468,6 +468,34 @@ int main() {
       CHECK(idle.tick(now + 4500, seed, false, avatar, false, cue));
     }
   }
+  // On the road (recording or not) every idle gesture stays inside the drive-safe box, and the
+  // head moves less often than when parked, not more.
+  for (unsigned avatar = 0; avatar < 5; ++avatar)
+    for (unsigned sample = 0; sample < 256; ++sample) {
+      uint32_t seed = random();
+      uint32_t rest[2] = {};
+      for (bool driving : {false, true}) {
+        IdleMotion idle;
+        uint32_t now = 5000;
+        idle.reset(now, 0);
+        MotionCue cue;
+        bool outside = false;
+        while (idle.tick(now, seed, sample & 1, avatar, driving, cue)) {
+          outside |= cue.yaw < -DriveSafeYaw || cue.yaw > DriveSafeYaw ||
+                     cue.pitch < 200 - DriveSafePitch || cue.pitch > 200 + DriveSafePitch;
+          now += cue.holdMs;
+        }
+        CHECK(!driving || !outside);
+        while (!idle.tick(now, seed, sample & 1, avatar, driving, cue))
+          now += 50, rest[driving] += 50;
+      }
+      CHECK(rest[1] > rest[0]);
+    }
+  CHECK(!contactExpired(1000, 1000) && !contactExpired(1000 + ContactLifeMs, 1000) &&
+        contactExpired(1001 + ContactLifeMs, 1000));
+  // A packet stamped by the radio task after the loop sampled `now` is fresh, not 49 days old.
+  CHECK(!contactExpired(1000, 1001) && !contactExpired(1000, 1000 + 400) &&
+        !contactExpired(0xfffffff0u, 5) && contactExpired(ContactLifeMs + 10, 0xfffffff0u));
   CHECK(petLevel(0) == 1 && petLevel(24) == 1 && petLevel(25) == 2);
   CHECK(levelProgress(24) == 24 && levelProgress(25) == 0);
   uint32_t xp = UINT32_MAX;
@@ -608,11 +636,93 @@ int main() {
         road.noFixMs = noFix;
         Topic t = chatterTopic(Feeling::Content, road, r);
         CHECK(t == Topic::Idle || (t == Topic::NoSky && noFix >= NoSkyMs));
+        // Hungry mid-drive talks about the hunt; the parked lines beg for a drive.
         CHECK(chatterTopic(Feeling::Hungry, road, r) ==
-              (t == Topic::NoSky ? t : Topic::IdleHungry));
+              (t == Topic::NoSky ? t : Topic::RoadHungry));
       }
     road.noFixMs = NoSkyMs;
     CHECK(chatterTopic(Feeling::Content, road, 1) == Topic::NoSky);
+    {
+      // No road state, random number or hunger level may pick the parked "let's go for a
+      // drive" lines while a drive is being recorded.
+      RoadView r;
+      r.recording = true;
+      for (bool fix : {false, true})
+        for (bool moving : {false, true})
+          for (uint32_t ms : {0u, RedLightMs, DryRoadMs, 10 * DryRoadMs})
+            for (uint32_t roll = 0; roll < 9; ++roll)
+              for (Feeling f : {Feeling::Hungry, Feeling::Content, Feeling::Hyped}) {
+                r.fix = fix;
+                r.moving = moving;
+                r.sinceFindMs = r.stoppedMs = r.noFixMs = ms;
+                Topic t = chatterTopic(f, r, roll);
+                CHECK(t != Topic::IdleHungry);
+                CHECK(t != Topic::RoadHungry || f == Feeling::Hungry);
+              }
+      r.fix = true;
+      r.moving = false;
+      r.stoppedMs = RedLightMs;
+      CHECK(chatterTopic(Feeling::Hungry, r, 0) == Topic::RoadHungry);
+      for (unsigned avatar = 0; avatar < 5; ++avatar)
+        for (unsigned i = 0; i < 12; ++i) {
+          std::string said = Banter().pick(Topic::RoadHungry, avatar, i & 1, random());
+          CHECK(!said.empty() && said.find("drive?") == std::string::npos &&
+                said.find("wardrive") == std::string::npos);
+        }
+    }
+    {
+      // DryRoad and NoSky have a handful of lines and can describe hours of driving: each is
+      // said at most once per SituationGapMs, and the general topic stands in between.
+      ChatterPace pace;
+      uint32_t t = 0xfffff000u; // Across the millis() wrap.
+      CHECK(pace.pace(Topic::DryRoad, t) == Topic::DryRoad);
+      CHECK(pace.pace(Topic::DryRoad, t + 30000) == Topic::Cruise);
+      CHECK(pace.pace(Topic::NoSky, t + 30000) == Topic::NoSky); // Its own clock.
+      CHECK(pace.pace(Topic::NoSky, t + 60000) == Topic::Idle);
+      CHECK(pace.pace(Topic::DryRoad, t + SituationGapMs - 1) == Topic::Cruise);
+      CHECK(pace.pace(Topic::DryRoad, t + SituationGapMs) == Topic::DryRoad);
+      for (Topic other : {Topic::Cruise, Topic::Idle, Topic::RedLight, Topic::RoadHungry})
+        CHECK(pace.pace(other, t + 1) == other);
+      // Two hours of dry road, a remark every 25 s, situational two times in three.
+      ChatterPace drive;
+      unsigned dry = 0;
+      for (uint32_t at = 0, i = 0; at < 2 * 3600000u; at += 25000, ++i)
+        dry += drive.pace(i % 3 ? Topic::DryRoad : Topic::Cruise, at) == Topic::DryRoad;
+      CHECK(dry >= 10 && dry <= 2 * 60 / 8 + 1);
+      CHECK(SituationGapMs >= 5 * 60000);
+    }
+    {
+      // An unrecorded drive is still company: the quiet clock starts when the car stops, so a
+      // red light after a long drive is not nap time.
+      uint32_t touched = 1000, now = touched + 2 * NapAfterMs;
+      Vitals rode;
+      rode.onTheRoad = true;
+      touched = attentionAt(touched, now, true);
+      CHECK(touched == now);
+      rode.onTheRoad = false; // Stopped at the lights five seconds later.
+      now += 5000;
+      touched = attentionAt(touched, now, false);
+      rode.quietMs = now - touched;
+      CHECK(rode.quietMs == 5000 && feelingFor(rode) == Feeling::Content);
+      now += NapAfterMs; // Left alone in the parked car: now it may sleep.
+      rode.quietMs = now - attentionAt(touched, now, false);
+      CHECK(feelingFor(rode) == Feeling::Napping);
+      // One tap on a sleeping buddy: the poke's good morning is not followed by a second line.
+      CHECK(justWoken(true, 5000, 5000) && justWoken(true, 5000, 5000 + WakeEchoMs - 1));
+      CHECK(!justWoken(true, 5000, 5000 + WakeEchoMs) && !justWoken(false, 5000, 5000));
+      CHECK(justWoken(true, 0xfffffff0u, 0x10)); // Across the wrap.
+      // "All clear" needs a person to have waved the alert away, and nothing tailing us.
+      CHECK(dismissTopic(false, false, false) == Topic::AllClear);
+      CHECK(dismissTopic(true, false, false) == Topic::AlertOver);
+      CHECK(dismissTopic(false, true, false) == Topic::AlertOver);
+      CHECK(dismissTopic(false, false, true) == Topic::AlertOver);
+      for (unsigned avatar = 0; avatar < 5; ++avatar)
+        for (unsigned i = 0; i < 16; ++i) {
+          std::string said = Banter().pick(Topic::AlertOver, avatar, i & 1, random());
+          for (const char *claim : {"clear", "Clear", "Phew", "gone", "safe"})
+            CHECK(!said.empty() && said.find(claim) == std::string::npos);
+        }
+    }
     for (uint32_t r = 0; r < 1000; r += 37) {
       CHECK(chatterGapMs(Feeling::Content, false, r) >= 30000);
       CHECK(chatterGapMs(Feeling::Napping, false, r) >= 120000);

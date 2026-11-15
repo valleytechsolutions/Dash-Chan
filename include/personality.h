@@ -49,6 +49,19 @@ inline Feeling feelingFor(const Vitals &v) {
   return Feeling::Content;
 }
 
+// The start of the "nobody is paying attention" spell. Being on the road is company, whether or
+// not the drive is being recorded, so the spell starts when the car stops: a pet that rode along
+// for an hour must not fall asleep at the first red light.
+inline uint32_t attentionAt(uint32_t lastTouch, uint32_t now, bool onTheRoad) {
+  return onTheRoad ? now : lastTouch;
+}
+// One tap on a sleeping buddy is both a poke (which wakes it and says good morning) and a pet.
+// The pet half must not say a second wake line over the first.
+constexpr uint32_t WakeEchoMs = 1000;
+inline bool justWoken(bool woken, uint32_t wokenAt, uint32_t now) {
+  return woken && uint32_t(now - wokenAt) < WakeEchoMs;
+}
+
 // ---- Needs ----------------------------------------------------------------------------------
 // Called once a minute. Fuel always burns (slowly while napping); bond only fades when the pet
 // is awake and left alone, never while you are out driving together.
@@ -110,9 +123,17 @@ enum class Topic : uint8_t {
   ReconLost,    // The last device in range has gone.
   ReconIgnore,  // The owner marked a device as their own.
   ReconCleared, // A tag that was flagged as following has gone.
+  AlertOver,    // An alert closed without anyone saying the coast is clear (see dismissTopic).
+  RoadHungry,   // Hungry while a drive is recording: the hunt is already on.
   Count
 };
 constexpr unsigned TopicCount = unsigned(Topic::Count);
+// What to say when an alert closes. "All clear" is only honest when a person waved the alert
+// away and nothing is tailing us: an alert that merely ran out of time says nothing about
+// whether the device has left, and a follow warning is about a tag that is still here.
+inline Topic dismissTopic(bool byTimeout, bool followAlert, bool followerInRange) {
+  return byTimeout || followAlert || followerInRange ? Topic::AlertOver : Topic::AllClear;
+}
 enum class Who : uint8_t { Mochi, Sprout, Orbit, Wisp, Ember, Any };
 struct Line {
   Topic topic;
@@ -349,12 +370,20 @@ inline constexpr Line Lines[] = {
     {Topic::LevelUp, Who::Any, false, "New level! Same me, more swagger."},
 
     // Reactions.
-    {Topic::AllClear, Who::Any, false, "Still here. Still keeping watch."},
     {Topic::AllClear, Who::Any, false, "Okay. Heart rate normal. Back on watch."},
     {Topic::AllClear, Who::Any, false, "All clear. I was totally calm."},
     {Topic::AllClear, Who::Any, false, "Phew. Back to snack patrol."},
-    {Topic::AllClear, Who::Any, false, "Noted and logged. Carry on."},
     {Topic::AllClear, Who::Any, true, "Coast is clear. Act natural anyway."},
+    // Said instead when the alert only timed out, or a tag is still tailing us: nothing here may
+    // claim the thing has gone.
+    {Topic::AlertOver, Who::Any, false, "Still here. Still keeping watch."},
+    {Topic::AlertOver, Who::Any, false, "Noted and logged. Carry on."},
+    {Topic::AlertOver, Who::Any, false, "It's on the list. I'm still watching."},
+    {Topic::AlertOver, Who::Any, false, "Logged it. Eyes stay open."},
+    {Topic::RoadHungry, Who::Any, false, "Running low. Good thing we're hunting."},
+    {Topic::RoadHungry, Who::Any, false, "Tummy's rumbling. Find me fresh WiFi."},
+    {Topic::RoadHungry, Who::Any, false, "Snack radar is on. Keep driving."},
+    {Topic::RoadHungry, Who::Any, false, "Hungry! The next new network is mine."},
     {Topic::Greet, Who::Any, false, "Oh! My favorite human-shaped signal."},
     {Topic::Greet, Who::Any, false, "Hi! I saw you coming. Sort of."},
     {Topic::Greet, Who::Any, false, "You're back! I kept the seat warm."},
@@ -579,12 +608,13 @@ inline Topic chatterTopic(Feeling f, const RoadView &r, uint32_t random) {
   bool usually = random % 3 != 0;
   if (r.recording) {
     // Without a fix nothing is known about motion: never claim to be cruising or parked.
+    // A hungry pet mid-drive talks about the hunt it is on; the parked lines beg for a drive.
     if (!r.fix)
       return r.noFixMs >= NoSkyMs && usually ? Topic::NoSky
-             : f == Feeling::Hungry          ? Topic::IdleHungry
+             : f == Feeling::Hungry          ? Topic::RoadHungry
                                              : Topic::Idle;
     if (!r.moving && r.stoppedMs >= RedLightMs)
-      return usually ? Topic::RedLight : f == Feeling::Hungry ? Topic::IdleHungry : Topic::Idle;
+      return usually ? Topic::RedLight : f == Feeling::Hungry ? Topic::RoadHungry : Topic::Idle;
     if (r.moving && r.sinceFindMs >= DryRoadMs && usually)
       return Topic::DryRoad;
     return Topic::Cruise;
@@ -606,6 +636,30 @@ inline Topic chatterTopic(Feeling f, const RoadView &r, uint32_t random) {
     return Topic::Idle;
   }
 }
+// DryRoad and NoSky have only a handful of lines, and the situations they describe can last for
+// hours (a rural highway, an unplugged antenna). Each is said at most once per SituationGapMs;
+// in between the general topic for the moment stands in, which has many more lines.
+constexpr uint32_t SituationGapMs = 8 * 60000;
+class ChatterPace {
+public:
+  Topic pace(Topic topic, uint32_t now) {
+    Said *said = topic == Topic::DryRoad ? &dry_ : topic == Topic::NoSky ? &sky_ : nullptr;
+    if (!said)
+      return topic;
+    if (said->used && uint32_t(now - said->at) < SituationGapMs)
+      return topic == Topic::DryRoad ? Topic::Cruise : Topic::Idle;
+    said->used = true;
+    said->at = now;
+    return topic;
+  }
+
+private:
+  struct Said {
+    bool used = false;
+    uint32_t at = 0;
+  };
+  Said dry_, sky_;
+};
 // Milliseconds until the next unprompted remark. Never a fixed metronome.
 inline uint32_t chatterGapMs(Feeling f, bool onTheRoad, uint32_t random) {
   if (f == Feeling::Napping)
@@ -645,6 +699,12 @@ public:
   void begin(uint32_t now) {
     quietAt_ = now;
     started_ = true;
+  }
+  // The owner marked a device as their own. If that was the tag being followed it drops out of
+  // the counts while still in the car, and must not be reported as "gone" five minutes later.
+  // Another follower still in range sets the flag again on the next update.
+  void forget() {
+    following_ = false;
   }
   Topic update(const ReconPulse &p, uint32_t now, bool busy) {
     if (!started_)

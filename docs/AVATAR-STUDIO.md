@@ -25,7 +25,7 @@ The studio saves a valid draft in this browser's local storage. **My buddies** k
 
 USB profiles are saved in device NVS. Alternatively, place `avatar.cfg` at `/dashchan/avatar.cfg` on the microSD. That file takes priority at each boot or SD retry; remove or update it if you later want a USB design to persist. Never remove the SD during recording.
 
-![Wisp and Ember in the native buddy picker](../site/assets/ui-new-buddies.png)
+![Wisp on the home screen](../site/assets/ui-wisp.png) ![Ember on the home screen](../site/assets/ui-ember.png)
 
 ## Styles
 
@@ -53,7 +53,7 @@ Notes on the newer slots:
 - **Held** items sit in the buddy's right paw. While the field kit is showing (see below) the antenna and receiver take their place.
 - **Aura** is at most eight small particles, animated from a counter with no stored state. It is decoration only.
 - **Persona** changes which buddy's lines are spoken: a ghost can talk like Mochi. It does not change sound, voice, volume or motion. *Match shape* keeps the shape's own lines.
-- **Pack** is a tag that remembers which style pack a look came from. It does not draw anything by itself; editing any slot afterwards is fine.
+- **Pack** is a tag that remembers which style pack a look came from. It does not draw anything by itself; editing any slot afterwards is fine. The tag alone never makes a design need the newer file format: if you take the new gear off again, the design is saved as a classic `DCAV2` line that older firmware reads, and only the tag is left out.
 - Eye colours that would be invisible are corrected when drawn: a dark colour on a dark body or on Orbit's screen is lightened, and a pale colour on a pale body becomes ink. The studio's contrast warning tells you before you send.
 
 ### Style packs

@@ -102,11 +102,15 @@ inline HomeTapTarget homeTap(int x, int y, const HomeTapState &s) {
   if (s.alert && !s.demo && rv::AlertDetailsZone.has(x, y))
     return {HomeTap::AlertDetail};
   if (!s.face && rv::Panel.has(x, y)) { // The whole panel, header included.
+    // While an alert is open a tap here only dismisses it; opening whichever row happened to be
+    // under the finger as well would be a surprise. DETAILS on the card is the way to the device.
+    if (s.alert)
+      return {HomeTap::Dismiss};
     unsigned limit = rv::homeRowLimit(s.recording), shown = s.rows < limit ? s.rows : limit;
     for (unsigned i = 0; i < shown; ++i)
-      if (rv::homeRow(s.recording, shown, i).has(x, y))
+      if (rv::homeRowZone(s.recording, shown, i).has(x, y))
         return {HomeTap::Row, i};
-    return {s.alert ? HomeTap::Dismiss : HomeTap::Recon};
+    return {HomeTap::Recon};
   }
   if (s.face && !s.alert && rv::FaceChipZone.has(x, y))
     return {HomeTap::Recon};

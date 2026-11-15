@@ -2,6 +2,7 @@
 // real-world recall. Called from tests/core_test.cpp.
 #pragma once
 #include "detector.h"
+#include "recon.h"
 #include "traffic.h"
 #include <cstdlib>
 #include <initializer_list>
@@ -113,7 +114,7 @@ inline void trackers() {
                 labelled(f.label, "Tile"));
     }
   auto f = bleService(0xfd5a, true);
-  SIG_CHECK(is(f.match, Family::SamsungTag, Confidence::High) && labelled(f.label, "SmartTag"));
+  SIG_CHECK(is(f.match, Family::SamsungTag, Confidence::High) && labelled(f.label, "Samsung Find"));
   // Find Hub: frame type 0x40 / 0x41 and an ephemeral ID of a valid length (20 or 32 bytes,
   // optionally one hashed-flags byte).
   for (size_t body : {21, 22, 33, 34})
@@ -561,18 +562,126 @@ inline void disconnectRules() {
                 (i == DisconnectFrames));
     }
   }
-  // Six broadcasts spread wider than the window never add up, and retries are not new frames.
+  // Six broadcasts spread wider than the window never add up.
   {
     TrafficHints hints;
     for (uint16_t i = 1; i <= 12; ++i) {
       auto p = disconnect(ap, true, i);
       SIG_CHECK(hints.wifi(p.data(), p.size(), i * 700).family == Family::None);
     }
+  }
+  // Deauth tools send one fixed frame over and over, sequence number included. Every one of
+  // those counts: the sixth broadcast trips the broadcast rule and the twelfth the per-sender
+  // rule. Only the retry bit marks a retransmission.
+  {
     TrafficHints repeats;
     for (uint32_t i = 1; i <= 12; ++i) {
       auto p = disconnect(ap, true, 5);
-      SIG_CHECK(repeats.wifi(p.data(), p.size(), i * 100).family == Family::None);
+      auto hit = repeats.wifiHit(p.data(), p.size(), i * 100);
+      SIG_CHECK((hit.match.family == Family::Deauth) == (i == BroadcastFrames || i == 12));
+      if (hit.match.family == Family::Deauth)
+        SIG_CHECK(!memcmp(hit.mac, ap, 6)); // Reported under the transmitter's address.
     }
+    TrafficHints retries;
+    for (uint32_t i = 1; i <= 40; ++i) {
+      auto p = disconnect(ap, true, 5);
+      p[1] |= 0x08;
+      SIG_CHECK(retries.wifi(p.data(), p.size(), i * 100).family == Family::None);
+    }
+    // Five seconds of alternating deauth and disassoc, all with sequence control 0xfff0.
+    TrafficHints tool;
+    unsigned reports = 0;
+    for (uint32_t i = 0; i < 500; ++i) {
+      auto p = disconnect(ap, true, 0xfff0);
+      p[0] = i & 1 ? 0xa0 : 0xc0;
+      reports += tool.wifi(p.data(), p.size(), 1000 + i * 10).family == Family::Deauth;
+    }
+    SIG_CHECK(reports >= 1 && reports <= 3); // Once per rule, then the 30 s quiet.
+  }
+  // More senders than slots: a sender that is still counting keeps its slot, so the tracked
+  // ones reach the rule; the surplus goes uncounted rather than wiping a burst in progress.
+  {
+    TrafficHints hints;
+    unsigned reports = 0, surplus = 0;
+    for (uint32_t round = 0; round < 60; ++round)
+      for (uint8_t who = 0; who < 20; ++who) {
+        uint8_t sender[6] = {0x10, 0x20, 0x30, 0x50, who, 1};
+        auto p = disconnect(sender, false, uint16_t(round));
+        auto hit = hints.wifiHit(p.data(), p.size(), round * 120 + who * 6);
+        if (hit.match.family == Family::Deauth) {
+          ++reports;
+          surplus += hit.mac[4] >= 16;
+          SIG_CHECK(!memcmp(hit.mac, sender, 6));
+        }
+      }
+    SIG_CHECK(reports == 16 && !surplus);
+    // Once those have been idle for longer than the window, a newcomer gets a slot.
+    uint8_t late[6] = {0x10, 0x20, 0x30, 0x51, 1, 1};
+    bool caught = false;
+    for (uint16_t i = 0; i < DisconnectFrames; ++i) {
+      auto p = disconnect(late, false, i);
+      caught |=
+          hints.wifi(p.data(), p.size(), 60 * 120 + BroadcastWindowMs + 200 + i * 50).family ==
+          Family::Deauth;
+    }
+    SIG_CHECK(caught);
+  }
+  // A burst aimed at a camera, or sent from a camera maker's address, is not swallowed by the
+  // camera's own (equal or higher) identity grade: the rule reports under the transmitter and
+  // the table lists burst and camera as two rows.
+  {
+    const uint8_t ringCam[6] = {0x18, 0x7f, 0x88, 4, 5, 6};  // Ring LLC: High.
+    const uint8_t blinkCam[6] = {0x3c, 0xa0, 0x70, 4, 5, 6}; // Blink: Medium.
+    std::vector<ReconDevice> rows(8);
+    ReconTable table;
+    table.attach(rows.data(), 8);
+    AlertPolicy policy;
+    AlertContext ctx;
+    ctx.onRoad = true; // Quiet road keeps the Ring row list-only; the burst must still speak.
+    auto list = [&](const Match &m, const uint8_t *mac, uint32_t at) {
+      ReconSighting s;
+      s.mac = mac;
+      s.match = m;
+      s.rssi = -60;
+      ReconSeen seen = table.observe(s, at);
+      SIG_CHECK(seen.row);
+      return policy.decide(*seen.row, seen, ctx, at);
+    };
+    TrafficHints hints;
+    unsigned bursts = 0;
+    for (uint16_t i = 1; i <= 200; ++i) { // The access point (or a spoof of it) to the doorbell.
+      auto p = disconnect(ap, false, 7);
+      memcpy(p.data() + 4, ringCam, 6);
+      uint32_t at = i * 20;
+      auto identity = classifyWifi(p.data(), p.size());
+      SIG_CHECK(is(identity.match, Family::Ring, Confidence::High) &&
+                !memcmp(identity.mac, ringCam, 6));
+      SIG_CHECK(list(identity.match, identity.mac, at) != AlertVerdict::Alert);
+      auto hit = hints.wifiHit(p.data(), p.size(), at);
+      if (hit.match.family != Family::Deauth)
+        continue;
+      ++bursts;
+      SIG_CHECK(!memcmp(hit.mac, ap, 6));
+      SIG_CHECK(list(hit.match, hit.mac, at) == AlertVerdict::Alert);
+    }
+    SIG_CHECK(bursts == 1 && table.size() == 2 && table.find(ringCam, false, 0, Family::Ring) &&
+              table.find(ap, false, 0, Family::Deauth));
+    TrafficHints spoofed;
+    bursts = 0;
+    for (uint16_t i = 1; i <= 200; ++i) { // Broadcast, spoofed from a Blink camera's block.
+      auto p = disconnect(blinkCam, true, 7);
+      uint32_t at = 20000 + i * 20;
+      auto identity = classifyWifi(p.data(), p.size());
+      SIG_CHECK(is(identity.match, Family::Camera, Confidence::Medium));
+      list(identity.match, identity.mac, at);
+      auto hit = spoofed.wifiHit(p.data(), p.size(), at);
+      if (hit.match.family == Family::Deauth) {
+        ++bursts;
+        list(hit.match, hit.mac, at);
+      }
+    }
+    SIG_CHECK(bursts >= 1 && table.find(blinkCam, false, 0, Family::Camera) &&
+              table.find(blinkCam, false, 0, Family::Deauth) && table.size() == 4);
   }
   // Twenty-four broadcasts from any mix of senders: a tool spoofing one AP after another.
   {
@@ -641,8 +750,68 @@ inline void evilTwinRule() {
     if (i == 2)
       SIG_CHECK(hit.confidence == Confidence::Medium);
   }
+  SIG_CHECK(!memcmp(hints.wifiHit(twin.data(), twin.size(), 600).mac, rogue, 6));
   // After 30 quiet seconds the pair has to be seen again from the start.
   SIG_CHECK(hints.wifi(twin.data(), twin.size(), 40000).family == Family::None);
+  // Hidden networks often send a zero-filled SSID instead of an empty one. Two of those with
+  // the same length are not one network name, whatever their makers and security.
+  {
+    SIG_CHECK(blankSsid(nullptr, 0));
+    const uint8_t some[3] = {0, 0, 1};
+    SIG_CHECK(blankSsid(some, 2) && !blankSsid(some, 3));
+    TrafficHints hidden;
+    auto a = beacon(home, "AAAAAAAA", true), b = beacon(rogue, "AAAAAAAA", false);
+    memset(a.data() + 38, 0, 8);
+    memset(b.data() + 38, 0, 8);
+    for (uint32_t i = 0; i < 6; ++i) {
+      SIG_CHECK(hidden.wifi(a.data(), a.size(), 100 + i * 10).family == Family::None);
+      SIG_CHECK(hidden.wifi(b.data(), b.size(), 105 + i * 10).family == Family::None);
+    }
+    b[38] = 'A'; // One real byte makes it a name again, but then the two differ.
+    for (uint32_t i = 0; i < 6; ++i)
+      SIG_CHECK(hidden.wifi(b.data(), b.size(), 300 + i).family == Family::None);
+  }
+  // A street with more access points than the table holds. With the hop plan an access point
+  // gives one or two beacons per visit, so the three sightings take two visits about three
+  // seconds apart; every other BSSID heard in between competes for a table entry.
+  {
+    auto visit = [&](TrafficHints &t, uint32_t at) {
+      bool hit = false;
+      for (uint32_t i = 0; i < 2; ++i) {
+        hit |= t.wifi(real.data(), real.size(), at + i * 100).family == Family::EvilTwin;
+        hit |= t.wifi(twin.data(), twin.size(), at + 50 + i * 100).family == Family::EvilTwin;
+      }
+      return hit;
+    };
+    auto street = [&](TrafficHints &t, unsigned others) {
+      bool hit = visit(t, 1000);
+      for (unsigned n = 0; n < others; ++n) {
+        uint8_t mac[6] = {0x64, 0x70, 0x02, uint8_t(n >> 8), uint8_t(n), 7};
+        char name[16];
+        snprintf(name, sizeof(name), "net-%u", n);
+        auto other = beacon(mac, name, n & 1);
+        hit |= t.wifi(other.data(), other.size(), 1300 + n * 10).family == Family::EvilTwin;
+      }
+      return hit | visit(t, 4100);
+    };
+    std::vector<TrafficHints::AccessPoint> wide(TrafficHints::WideAccessPoints);
+    for (unsigned others : {0u, 40u, 100u, 200u, 250u}) {
+      TrafficHints roomy;
+      roomy.attach(wide.data(), TrafficHints::WideAccessPoints);
+      SIG_CHECK(roomy.accessPoints() == 256 && street(roomy, others));
+    }
+    // The limits, as docs/DETECTIONS.md states them: the attached table is beaten by more than
+    // about 250 other access points between visits, the built-in one by more than about 60.
+    TrafficHints roomy;
+    roomy.attach(wide.data(), TrafficHints::WideAccessPoints);
+    SIG_CHECK(!street(roomy, 300));
+    TrafficHints small;
+    SIG_CHECK(small.accessPoints() == 64 && street(small, 40));
+    TrafficHints crowded;
+    SIG_CHECK(!street(crowded, 100));
+    crowded.attach(nullptr, 0); // Back to the built-in table.
+    SIG_CHECK(crowded.accessPoints() == 64);
+  }
 }
 
 // Labels are fixed-size, terminated and printable whatever arrives.

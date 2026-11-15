@@ -85,6 +85,10 @@ static uint32_t lastFlush = 0;
 // ---- Detection ledger: /events/recon.csv (format in docs/DEVELOPMENT.md) ----------------------
 static uint32_t ledgerAt = 0, ledgerWait = 5000;
 static bool ledgerSoon = false, ledgerLoaded = false;
+// The file may end in a partial row: one torn by a power cut (seen when the tail is read back) or
+// cut short by a failed write. The next row appended starts on a new line, or it would be glued
+// to the fragment and lost with it.
+static bool ledgerTorn = false;
 // Bring back the most recent devices from the end of the ledger so the list is not empty after
 // a restart. Once per boot, at the first successful mount; only the file's tail is read.
 static void ledgerRestore() {
@@ -105,6 +109,7 @@ static void ledgerRestore() {
   if (!text)
     return;
   text[got] = 0;
+  ledgerTorn |= ledgerScrub(text, got); // Before the text is cut up into lines.
   TypeFilter filter;
   filter.mask = app.settings.typeFilter;
   auto &table = reconTable();
@@ -142,15 +147,34 @@ static void ledgerTick() {
     if (!file) {
       bool fresh = !card.exists(LedgerPath);
       file = card.open(LedgerPath, FILE_APPEND);
-      if (!file || (fresh && file.print(ledgerHeader()) != strlen(ledgerHeader()))) {
+      if (!file) {
         failed = true;
         break;
+      }
+      // An empty file left by a failed first attempt still needs its header.
+      fresh = fresh || file.size() == 0;
+      if (fresh) {
+        ledgerTorn = false; // Nothing to be glued to.
+        if (file.print(ledgerHeader()) != strlen(ledgerHeader())) {
+          failed = ledgerTorn = true;
+          break;
+        }
+      } else if (ledgerTorn) {
+        if (file.write(reinterpret_cast<const uint8_t *>("\n"), 1) != 1) {
+          failed = true;
+          break;
+        }
+        ledgerTorn = false;
       }
     }
     char row[LedgerRowMax];
     size_t n = ledgerRow(row, sizeof(row), d, d.arrivedAt, d.boot);
-    if (!n || file.write(reinterpret_cast<const uint8_t *>(row), n) != n) {
+    if (!n) {
       failed = true;
+      break;
+    }
+    if (file.write(reinterpret_cast<const uint8_t *>(row), n) != n) {
+      failed = ledgerTorn = true; // Part of the row may be in the file.
       break;
     }
     d.pendingLog = false;

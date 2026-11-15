@@ -76,6 +76,12 @@ export function initStudio({upload}) {
     future=[];lastKey=key;lastAt=now;current=p;saveDraft();refresh();
   }
   function apply(input,key=''){const p=validateProfile(input);write(p);commit(p,key);}
+  // For actions that restyle the buddy but promise to leave its name alone: a name that is
+  // still being typed (and is not valid yet) stays in the box exactly as typed.
+  function restyle(make,key=''){
+    const typed=form.elements.name.value;apply(make(design()),key);
+    if(!nameOk(typed)){form.elements.name.value=typed;refresh();}
+  }
   function step(from,to){
     if(!from.length)return;
     to.push(current);current=from.pop();lastKey='';write(current);saveDraft();refresh();
@@ -88,7 +94,7 @@ export function initStudio({upload}) {
     const button=el('button',{type:'button',className:'pack'},thumb(200,150),el('strong',{},style.name),el('small',{},style.blurb));
     button.dataset.pack=String(id);button.setAttribute('aria-pressed','false');
     button.addEventListener('click',()=>{
-      apply(applyPack(design(),id));world=style.world;$('preview-world').value=String(world);
+      restyle(p=>applyPack(p,id));world=style.world;$('preview-world').value=String(world);
       notice(`${style.name} look applied. Name, shape and persona are unchanged; the preview world is now ${WORLDS[world]}.`);
     });
     $('pack-strip').append(button);
@@ -100,7 +106,7 @@ export function initStudio({upload}) {
   for(const tones of palettes){
     const button=el('button',{type:'button',className:'swatch'},...['body','accent','eye'].map(k=>{const dot=el('i');dot.style.background=tones[k];return dot;}));
     button.setAttribute('aria-label',`${tones.label} palette`);button.title=tones.label;
-    button.addEventListener('click',()=>{apply({...design(),body:tones.body,accent:tones.accent,eye:tones.eye});notice(`${tones.label} colours applied.`);});
+    button.addEventListener('click',()=>{restyle(p=>({...p,body:tones.body,accent:tones.accent,eye:tones.eye}));notice(`${tones.label} colours applied.`);});
     $('palette-swatches').append(button);
   }
   // Starters and the shelf of saved designs.
@@ -108,7 +114,7 @@ export function initStudio({upload}) {
     const canvas=thumb(164,123),button=el('button',{type:'button',className:'preset'},canvas,el('span',{},preset.name));
     button.setAttribute('aria-label','Use '+preset.name+' preset');
     drawPet(canvas,{...preset,custom:true,still:true},600);
-    button.addEventListener('click',()=>{apply({...preset,name:design().name});notice('Starter loaded. Your buddy keeps its name.');});
+    button.addEventListener('click',()=>{restyle(p=>({...preset,name:p.name}));notice('Starter loaded. Your buddy keeps its name.');});
     $('preset-gallery').append(button);
   }
   function saveShelf(){try{localStorage.setItem(shelfKey,JSON.stringify(shelf));return true;}catch{return false;}}
@@ -128,7 +134,9 @@ export function initStudio({upload}) {
   }
   $('shelf-save').addEventListener('click',()=>{
     if(!form.reportValidity())return;
-    const p=design(),line=avatarLine(p),at=shelf.findIndex(s=>avatarLine(s)===line);
+    // Save what is on screen or nothing: never the design under the last good name instead.
+    let p;try{p=validateProfile(read());}catch(error){notice(error.message,true);return;}
+    const line=avatarLine(p),at=shelf.findIndex(s=>avatarLine(s)===line);
     if(at>=0){notice(`${p.name} is already in My buddies.`);return;}
     if(shelf.length>=SHELF){notice(`My buddies holds ${SHELF} designs. Remove one to make room.`,true);return;}
     shelf.unshift(p);drawShelf();const stored=saveShelf();
@@ -193,12 +201,15 @@ export function initStudio({upload}) {
     else if(key==='y'||(key==='z'&&e.shiftKey)){e.preventDefault();step(future,past);}
   });
   $('reset-avatar').addEventListener('click',()=>{apply(DEFAULT_PROFILE);notice('Fresh canvas. Undo brings the last design back; your uploaded buddy is unchanged.');});
-  $('random-avatar').addEventListener('click',()=>{apply(randomProfile(Math.random,design()));notice('A whole new buddy, same name. Undo if you liked the last one better.');});
+  $('random-avatar').addEventListener('click',()=>{restyle(p=>randomProfile(Math.random,p));notice('A whole new buddy, same name. Undo if you liked the last one better.');});
   $('shuffle-pack').addEventListener('click',()=>{
-    const p=shufflePack(Math.random,design());apply(p);world=PACKS[p.pack].world;$('preview-world').value=String(world);
+    let p;restyle(now=>p=shufflePack(Math.random,now));world=PACKS[p.pack].world;$('preview-world').value=String(world);
     notice(`Shuffled within ${PACKS[p.pack].name}. Shape and name stay put.`);
   });
-  $('contrast-fix').addEventListener('click',e=>{apply({...design(),eye:e.currentTarget.dataset.fix});notice('Eye colour changed so the face reads clearly.');});
+  $('contrast-fix').addEventListener('click',e=>{const eye=e.currentTarget.dataset.fix;restyle(p=>({...p,eye}));notice('Eye colour changed so the face reads clearly.');});
+  // Enter in the name box means "done typing", not "download a file": without this the form's
+  // only submit button (Download avatar.cfg) would fire.
+  form.elements.name.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();e.target.blur();}});
   form.addEventListener('submit',e=>{
     e.preventDefault();
     try{

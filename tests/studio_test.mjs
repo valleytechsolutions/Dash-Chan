@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
-import {DEFAULT_PROFILE,LOOK_FIELDS,NEW_FIELDS,OPTIONS,PACKS,PERSONA_LINES,PRESETS,V2_LIMITS,WORLDS,applyPack,avatarLine,contrastIssue,parseAvatarLine,profileSchema,randomProfile,seededRng,shufflePack,to565,validateProfile} from '../site/profile.mjs';
+import {DEFAULT_PROFILE,DRAWN_NEW_FIELDS,LOOK_FIELDS,NEW_FIELDS,OPTIONS,PACKS,PERSONA_LINES,PRESETS,V2_LIMITS,WORLDS,applyPack,avatarLine,contrastIssue,parseAvatarLine,profileSchema,randomProfile,seededRng,shufflePack,to565,validateProfile} from '../site/profile.mjs';
 import {buddyArt,buddyTones,eyeInk} from '../site/buddy_art.mjs';
 import {drawPet,lookOf} from '../site/pet.mjs';
 const source=name=>readFile(new URL('../'+name,import.meta.url),'utf8');
@@ -50,7 +50,8 @@ assert.equal(new Set(PRESETS.map(p=>p.name)).size,PRESETS.length);
 // Every slot, at its edges: the last option round-trips, one past it is refused, and so is
 // anything that is not a whole number.
 for(const slot of SLOTS){
-  const last=OPTIONS[slot].length-1,p={...DEFAULT_PROFILE,[slot]:last};
+  // The pack tag only travels on a DCAV3 line, so give that case one piece of new gear.
+  const last=OPTIONS[slot].length-1,p={...DEFAULT_PROFILE,[slot]:last,...(slot==='pack'?{mark:1}:{})};
   assert.equal(parseAvatarLine(avatarLine(p))[slot],last);
   for(const bad of [last+1,-1,1.5,NaN,Infinity,String(last),null])assert.throws(()=>avatarLine({...DEFAULT_PROFILE,[slot]:bad}),/Unknown/,`${slot}=${bad}`);
   const numbers=SLOTS.map(s=>s===slot?last+1:0);
@@ -66,7 +67,14 @@ assert.equal(avatarLine(DEFAULT_PROFILE),'DCAV2 0 FFF3D2 FF88B6 0 101029 0 0 0 M
 const classic={...DEFAULT_PROFILE,base:4,eyes:5,headwear:5,eyewear:3,neckwear:3,name:'Old max'};
 assert.equal(profileSchema(classic),2);assert.equal(avatarLine(classic),'DCAV2 4 FFF3D2 FF88B6 5 101029 5 3 3 Old max');
 for(const [slot,count] of Object.entries(V2_LIMITS)){const p={...classic,[slot]:count};assert.equal(profileSchema(p),3);assert(avatarLine(p).startsWith('DCAV3 '));}
-for(const slot of NEW_FIELDS){const p={...classic,[slot]:1};assert.equal(profileSchema(p),3);assert(avatarLine(p).startsWith('DCAV3 '));}
+for(const slot of DRAWN_NEW_FIELDS){const p={...classic,[slot]:1};assert.equal(profileSchema(p),3);assert(avatarLine(p).startsWith('DCAV3 '));}
+// The style-pack tag draws nothing, so alone it never forces DCAV3: the design is written as the
+// classic line and only the tag is left out. Trying a pack and then taking its gear off again
+// must leave a design old firmware can read.
+assert.deepEqual(NEW_FIELDS.filter(f=>!DRAWN_NEW_FIELDS.includes(f)),['pack']);
+{const tagged={...classic,pack:1};assert.equal(profileSchema(tagged),2);assert.equal(avatarLine(tagged),avatarLine(classic));assert.equal(parseAvatarLine(avatarLine(tagged)).pack,0);
+ const undressed={...applyPack(classic,1),eyes:0,headwear:0,eyewear:0,neckwear:0,mark:0,back:0,held:0,aura:0};assert.equal(undressed.pack,1);assert(avatarLine(undressed).startsWith('DCAV2 '));
+ assert.equal(parseAvatarLine(avatarLine({...tagged,mark:1})).pack,1);}
 assert.equal(avatarLine({...DEFAULT_PROFILE,name:'Nyx the 2nd',base:3,body:'#17141f',accent:'#b3123c',eye:'#f2e9ff',eyes:9,headwear:7,neckwear:5,mark:4,back:2,held:4,aura:5,pack:3,persona:1}),
   'DCAV3 3 17141F B3123C F2E9FF 9 7 0 5 4 2 4 5 3 1 Nyx the 2nd');
 same(parseAvatarLine('dcav3 3 17141f b3123c f2e9ff 9 7 0 5 4 2 4 5 3 1 Nyx the 2nd\r\n'),{name:'Nyx the 2nd',base:3,body:'#17141f',accent:'#b3123c',eye:'#f2e9ff',eyes:9,headwear:7,eyewear:0,neckwear:5,mark:4,back:2,held:4,aura:5,pack:3,persona:1});
@@ -81,7 +89,7 @@ for(let i=0;i<4000;i++){
   const modest=i%3===0,p={...DEFAULT_PROFILE,name:names[roll(names.length)],body:colour(),accent:colour(),eye:colour()};
   for(const slot of SLOTS)p[slot]=NEW_FIELDS.includes(slot)?(modest?0:roll(OPTIONS[slot].length)):roll(modest&&V2_LIMITS[slot]||OPTIONS[slot].length);
   const line=avatarLine(p);longest=Math.max(longest,line.length);
-  same(parseAvatarLine(line),p);assert.equal(avatarLine(parseAvatarLine(line)),line);
+  same(parseAvatarLine(line),profileSchema(p)===2?{...p,pack:0}:p);assert.equal(avatarLine(parseAvatarLine(line)),line);
   if(profileSchema(p)===2){classicLines++;const m=legacy.exec(line);assert(m,line);assert.equal(m[9],p.name);assert.equal(Number(m[6]),p.headwear);}
   else{newLines++;assert(line.startsWith('DCAV3 '));assert(!legacy.test(line));}
 }

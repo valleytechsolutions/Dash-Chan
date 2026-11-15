@@ -18,6 +18,10 @@ export const OPTIONS = {
 // What a DCAV2 line can carry. Firmware 0.3 - 0.5 reads nothing newer.
 export const V2_LIMITS = Object.freeze({eyes:6,headwear:6,eyewear:4,neckwear:4});
 export const NEW_FIELDS = Object.freeze(['mark','back','held','aura','pack','persona']);
+// The DCAV3 fields that change what the robot draws or says. The style-pack number is only a
+// tag (it draws nothing), so it never forces the newer format by itself: a design that otherwise
+// fits DCAV2 is written as DCAV2 and the tag is left out.
+export const DRAWN_NEW_FIELDS = Object.freeze(NEW_FIELDS.filter(f=>f!=='pack'));
 // Everything a style pack or a shuffle may restyle. Name, shape and persona are the owner's.
 export const LOOK_FIELDS = Object.freeze(['body','accent','eye','eyes','headwear','eyewear','neckwear','mark','back','held','aura']);
 export const WORLDS = ['Signal City','Sunset Run','Star Patrol','Pixel Garden'];
@@ -73,9 +77,10 @@ export function validateProfile(input){
   return Object.fromEntries(Object.keys(DEFAULT_PROFILE).map(k=>[k,p[k]]));
 }
 // 2 while the design fits the older DCAV2 line (so it still loads on firmware 0.3 - 0.5), else 3.
+// A style-pack tag alone does not count; see DRAWN_NEW_FIELDS.
 export function profileSchema(input){
   const p=validateProfile(input);
-  return NEW_FIELDS.every(f=>p[f]===0)&&Object.entries(V2_LIMITS).every(([f,count])=>p[f]<count)?2:3;
+  return DRAWN_NEW_FIELDS.every(f=>p[f]===0)&&Object.entries(V2_LIMITS).every(([f,count])=>p[f]<count)?2:3;
 }
 export function avatarLine(input){
   // Keep the original API useful to older integrations that supplied one accessory.

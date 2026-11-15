@@ -68,6 +68,8 @@ public:
     wait_ = pauseMs;
     step_ = count_ = 0;
   }
+  // `driving`: on the road, recording or not. Gestures are then held inside the drive-safe box
+  // and come less often, not more: the head is in the driver's view.
   bool tick(uint32_t now, uint32_t random, bool sleepy, unsigned avatar, bool driving,
             MotionCue &cue) {
     if (uint32_t(now - at_) < wait_)
@@ -75,7 +77,7 @@ public:
     if (step_ == count_) {
       int side = random & 0x100 ? 1 : -1;
       int speed = sleepy ? 75 : (avatar == 1 ? 180 : avatar == 2 ? 130 : 150);
-      rest_ = (driving ? 1300 : 2200) + (random >> 12) % 2500;
+      rest_ = (driving ? 3600 : 2200) + (random >> 12) % 2500;
       if (sleepy) {
         cues_[0] = {side * 35, 145, speed, 2300};
         cues_[1] = {0, 190, speed, 1800};
@@ -111,6 +113,8 @@ public:
       step_ = 0;
     }
     cue = cues_[step_++];
+    if (driving)
+      cue = flinchCue(cue, 100, true);
     at_ = now;
     wait_ = cue.holdMs + (step_ == count_ ? rest_ : 0);
     return true;

@@ -48,7 +48,8 @@ struct Settings {
   bool rgb = true, tilt = true, gestures = true, proximity = false, autoDim = false, nfc = false;
   uint8_t ledBrightness = 32;
   char customName[17] = "My buddy";
-  // Recon alert policy (recon.h). Everything classified is listed; these only shape alerts.
+  // Recon alert policy (recon.h). Every classified device of a type that is switched on is
+  // listed; the rest only shape alerts.
   uint32_t typeFilter = TypeFilter::Defaults; // Families tracked at all (TypeFilter mask).
   bool quietRoad = true;                      // Tags and Ring stay list-only while driving.
   uint8_t autoSnooze = 5; // Alerts per device before it must come closer: 0/5/10.
@@ -71,14 +72,11 @@ struct Contact {
   uint8_t channel = 0;
   Match match;
   uint32_t seen = 0, logGeneration = 0;
-  Cooldown logged, alerted;
+  Cooldown logged;
 };
 struct Alert {
   Match match;
-  char name[64]{}, mac[18]{};
   int rssi = 0;
-  uint32_t at = 0;
-  uint32_t firstAt = 0, sightings = 1;
   bool ble = false;
   uint8_t addressType = 0;
   uint8_t kind = 0;                        // AlertKind: what sort of news this is.
@@ -97,7 +95,7 @@ struct State {
   bool sdReady = false, radioReady = false, blePhase = false, alertOpen = false;
   uint8_t channel = 1;
   uint32_t wifiSeen = 0, bleSeen = 0, rows = 0, skippedFix = 0, malformed = 0, drops = 0,
-           alerts = 0, sessionAt = 0, gpsChars = 0, gpsGood = 0, gpsBad = 0;
+           sessionAt = 0, gpsChars = 0, gpsGood = 0, gpsBad = 0;
   uint8_t bond = 70, energy = 85;
   Mood mood = Mood::Happy;
   Feeling feeling = Feeling::Content;
@@ -158,7 +156,9 @@ void buddyDiscovery(const uint8_t mac[6], const char *ssid = nullptr, bool open 
 void buddyAlert(const Alert &, bool demo = false);
 void buddyReconPeek(Family top); // The Recon page was opened; `top` is the top live threat or None.
 void buddyReconIgnored();        // The owner put a device on the ignore list.
-void buddyDismiss();
+// Close the open alert. `byTimeout`: nobody tapped it away; it just ran its time, which says
+// nothing about whether the device has gone.
+void buddyDismiss(bool byTimeout = false);
 void buddyMotion(bool);
 void buddySoundPreview();
 void buddyDemo();

@@ -236,7 +236,7 @@ inline bool speechEnabled(SpeechKind kind, const SpeechSettings &s) {
     return s.mode != VoiceMode::Off && !s.silentTone;
   return s.mode == VoiceMode::All;
 }
-constexpr uint32_t SpeechGapMs = 4000;     // Between any two clips.
+constexpr uint32_t SpeechGapMs = 4000;     // After any clip, before a pet phrase may follow.
 constexpr uint32_t PetSpeechGapMs = 20000; // Between two pet phrases.
 constexpr uint32_t PetRepeatMs = 300000;   // Before the same pet phrase is heard again.
 class SpeechGate {
@@ -245,14 +245,17 @@ public:
   bool ready(SpeechKind kind, Clip clip, uint32_t now, bool alertBusy) const {
     if (kind == SpeechKind::Test)
       return true;
-    if (kind == SpeechKind::Alert) // A detection cuts a pet phrase short, never another alert.
-      return yielding_ || any_.ready(now, SpeechGapMs);
+    // A detection is always spoken. The alert that raises it has already cut whatever was
+    // playing (a pet phrase or an earlier alert's clip), and an alert that follows another this
+    // closely got past the alert cooldowns in recon.h by being the more important one, so it must
+    // not be left as a tone and a caption. Those cooldowns are what limit the rate.
+    if (kind == SpeechKind::Alert)
+      return true;
     return !alertBusy && unsigned(clip) < ClipCount && any_.ready(now, SpeechGapMs) &&
            pet_.ready(now, PetSpeechGapMs) && said_[unsigned(clip)].ready(now, PetRepeatMs);
   }
   void mark(SpeechKind kind, Clip clip, uint32_t now) {
     any_.mark(now);
-    yielding_ = kind != SpeechKind::Alert;
     if (kind == SpeechKind::Pet && unsigned(clip) < ClipCount) {
       pet_.mark(now);
       said_[unsigned(clip)].mark(now);
@@ -261,7 +264,6 @@ public:
 
 private:
   Cooldown any_, pet_, said_[ClipCount];
-  bool yielding_ = false;
 };
 
 // ---- Pet and system phrases that need a little logic ----------------------------------------

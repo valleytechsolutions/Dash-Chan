@@ -124,13 +124,19 @@ inline std::vector<ReconRow> worstRows() {
       r.encounters = n % 4 == 0 ? 0xffffffffu : n % 4 == 1 ? 1 : n % 4 == 2 ? 999 : 1000;
       r.verdict = AlertVerdict(n % 11);
       r.live = state < 3;
+      // A live row is fresh for the first ten seconds; after that it shows an age instead.
+      r.fresh = r.live && (state == 0 ? n % 2 == 0 : state == 2 ? n % 4 < 2 : false);
       r.ignored = state == 1 || state == 5;
       r.following = state == 2 || state == 4;
       r.restored = state >= 5;
       r.ageKnown = state != 6;
       r.alerted = n % 2;
       r.flood = n % 7 == 0;
-      r.ageS = state == 3 ? 0xffffffffu : state == 4 ? 59 : state == 5 ? 86400u * 400 : n % 5;
+      r.ageS = state == 3           ? 0xffffffffu
+               : state == 4         ? 59
+               : state == 5         ? 86400u * 400
+               : r.live && !r.fresh ? ReconFreshS + 1 + n % 49
+                                    : n % 5;
       r.firstS = 0xffffffffu;
       r.hasPosition = n % 2;
       r.lat = -89.999999f;
@@ -239,8 +245,8 @@ inline void texts() {
     VIEW_CHECK(*reading && strlen(reading) <= 8);
     rv::homeStatus(left, right, row);
     VIEW_CHECK(*left && strlen(left) <= 13 && strlen(right) <= 6);
-    // Left text, a trend arrow (live rows only) and the count share one 19-character line.
-    VIEW_CHECK(strlen(left) + (row.live ? 2 : 1) + strlen(right) <= rv::HomeRowChars);
+    // Left text, a trend arrow (fresh rows only) and the count share one 19-character line.
+    VIEW_CHECK(strlen(left) + (row.fresh ? 2 : 1) + strlen(right) <= rv::HomeRowChars);
     rv::listStatus(left, flag, row);
     VIEW_CHECK(strlen(left) <= 32 && strlen(flag) <= 9);
     VIEW_CHECK(strlen(rv::verdictWhy(row)) <= rv::DetailChars && *rv::verdictWhy(row));
@@ -359,24 +365,140 @@ inline void snapshots() {
   VIEW_CHECK(home.count == 4 && home.total == 4 && home.live == 2 && home.blipCount == 2);
   VIEW_CHECK(home.topTier() == int(Tier::Surveillance) && home.liveTier[0] == 1 &&
              home.liveTier[unsigned(Tier::Tracker)] == 1);
-  // Priority order: live by tier, then the stale row, then the ledger row.
+  VIEW_CHECK(home.inRange == 2);
+  // What is in range first, by tier; then what was heard most recently, whatever its tier.
   VIEW_CHECK(home.rows[0].family == Family::Flock && home.rows[0].live &&
              !strcmp(home.rows[0].label, "Flock Falcon") && home.rows[0].rssi == -50);
   VIEW_CHECK(home.rows[1].family == Family::Tracker && home.rows[1].trend == 1 &&
              home.rows[1].ageS == 1 && home.rows[1].firstS == 5 && home.rows[1].encounters == 1);
-  // Out of range, tier still decides: the ledger's camera before this boot's Flipper.
-  VIEW_CHECK(home.rows[2].family == Family::Ring && home.rows[2].restored &&
-             home.rows[2].ageKnown && home.rows[2].ageS == 600 && home.rows[2].alerted);
-  VIEW_CHECK(home.rows[3].family == Family::Flipper && !home.rows[3].live &&
-             home.rows[3].ageS == 300 && home.rows[3].trend == 0);
+  // Out of range, recency decides: the Flipper that was here five minutes ago comes before a
+  // camera from an earlier boot, although the camera is the higher tier.
+  VIEW_CHECK(home.rows[2].family == Family::Flipper && !home.rows[2].live &&
+             home.rows[2].ageS == 300 && home.rows[2].trend == 0);
+  VIEW_CHECK(home.rows[3].family == Family::Ring && home.rows[3].restored &&
+             home.rows[3].ageKnown && home.rows[3].ageS == 600 && home.rows[3].alerted);
+  VIEW_CHECK(home.rows[0].fresh && home.rows[1].fresh && !home.rows[2].fresh);
   VIEW_CHECK(home.blips[0].tier == Tier::Surveillance && home.blips[0].rssi == -50 &&
              home.blips[1].tier == Tier::Tracker);
   VIEW_CHECK(sameDevice(home.rows[1], home.rows[1]) && !sameDevice(home.rows[0], home.rows[1]));
   // Without a clock a ledger row has no age to show.
   reconHome(home, table, counts, now, 0);
-  VIEW_CHECK(!home.rows[2].ageKnown);
+  VIEW_CHECK(!home.rows[3].ageKnown);
   reconHome(home, table, counts, now, 799999999); // A clock behind the ledger is not believed.
-  VIEW_CHECK(!home.rows[2].ageKnown);
+  VIEW_CHECK(!home.rows[3].ageKnown);
+  {
+    // With nothing in range the panel answers "what was just here": most recent first. Four
+    // cameras from hours ago do not hide the Flipper that left two minutes ago.
+    std::vector<ReconDevice> rows(40);
+    ReconTable quiet;
+    quiet.attach(rows.data(), 40);
+    auto heard = [&](unsigned id, Family family, uint32_t at) {
+      uint8_t mac[6] = {2, 0, 0, 1, 0, uint8_t(id)};
+      ReconSighting s;
+      s.mac = mac;
+      s.match = {family, Confidence::Medium, "test"};
+      s.rssi = -60;
+      return quiet.observe(s, at).row;
+    };
+    const uint32_t t = 20000000;
+    for (unsigned i = 0; i < 6; ++i)
+      heard(i, Family::Flock, t - 7200000 - i * 1000);
+    heard(10, Family::Flipper, t - 120000);
+    heard(11, Family::Tile, t - 400000);
+    ReconCounts c;
+    quiet.counts(c, t);
+    ReconHome h;
+    reconHome(h, quiet, c, t, 0);
+    VIEW_CHECK(h.count == 4 && !h.live && !h.inRange && !h.blipCount && h.total == 8);
+    VIEW_CHECK(h.rows[0].family == Family::Flipper && h.rows[1].family == Family::Tile &&
+               h.rows[2].family == Family::Flock && h.rows[3].family == Family::Flock);
+    for (unsigned i = 1; i < h.count; ++i)
+      VIEW_CHECK(h.rows[i - 1].ageS <= h.rows[i].ageS);
+    VIEW_CHECK(!homeTopThreat(h));
+
+    // The owner's own gear, ignored and in range, does not outrank a stranger's gadget, light
+    // the chips or count in the Full Face chip. While driving only two rows are shown.
+    ReconDevice *dashcam = heard(20, Family::Camera, t - 500);
+    ReconDevice *doorbell = heard(21, Family::Ring, t - 400);
+    heard(22, Family::Flipper, t - 300);
+    heard(23, Family::Tile, t - 200);
+    IgnoreList mine;
+    mine.add(dashcam->mac, Family::Camera);
+    mine.add(doorbell->mac, Family::Ring);
+    quiet.applyIgnores(mine);
+    quiet.counts(c, t);
+    reconHome(h, quiet, c, t, 0);
+    VIEW_CHECK(h.count == 4 && h.inRange == 4 && h.live == 2 && h.blipCount == 4);
+    VIEW_CHECK(h.rows[0].family == Family::Flipper && h.rows[1].family == Family::Tile &&
+               h.rows[2].ignored && h.rows[3].ignored &&
+               tierOf(h.rows[2].family) == Tier::Surveillance);
+    VIEW_CHECK(h.topTier() == int(Tier::Hacker) && !h.liveTier[unsigned(Tier::Surveillance)] &&
+               h.liveTier[unsigned(Tier::Hacker)] == 1 && h.liveTier[unsigned(Tier::Tracker)] == 1);
+    VIEW_CHECK(homeTopThreat(h) && homeTopThreat(h)->family == Family::Flipper);
+    unsigned hollow = 0;
+    for (unsigned i = 0; i < h.blipCount; ++i)
+      hollow += h.blips[i].ignored;
+    VIEW_CHECK(hollow == 2);
+    // The LIVE tab uses the same order.
+    static uint16_t scratch[40];
+    ReconList live;
+    reconList(live, quiet, rv::Tab::Live, 0, t, 0, scratch, 40);
+    VIEW_CHECK(live.total == 4 && !live.rows[0].ignored && !live.rows[1].ignored &&
+               live.rows[2].ignored && live.rows[3].ignored);
+    // Only the owner's gear in range: nothing lit, nothing to remark on, "All quiet".
+    mine.add(h.rows[0].mac, Family::Flipper);
+    mine.add(h.rows[1].mac, Family::Tile);
+    quiet.applyIgnores(mine);
+    quiet.counts(c, t);
+    reconHome(h, quiet, c, t, 0);
+    VIEW_CHECK(h.inRange == 4 && !h.live && h.topTier() == -1 && !homeTopThreat(h) &&
+               h.count == 4 && h.rows[0].ignored && h.rows[0].live);
+  }
+  {
+    // A row is "live" for a minute but its reading is only current for ten seconds: after that
+    // it shows how long ago it was heard, with no signal level and no closer/further arrow.
+    std::vector<ReconDevice> rows(4);
+    ReconTable t;
+    t.attach(rows.data(), 4);
+    uint8_t mac[6] = {2, 0, 0, 2, 0, 1};
+    ReconSighting s;
+    s.mac = mac;
+    s.match = {Family::Alpr, Confidence::High, "test"};
+    s.rssi = -70;
+    t.observe(s, 1000);
+    s.rssi = -47; // Passed at speed: much closer on the last packet.
+    ReconDevice *d = t.observe(s, 4000).row;
+    char reading[12], left[24], right[8];
+    for (uint32_t age : {0u, 1u, 9u, 10u}) {
+      ReconRow r = reconRow(*d, 4000 + age * 1000, 0);
+      VIEW_CHECK(r.live && r.fresh && r.trend == 1);
+      rv::readingText(reading, r);
+      VIEW_CHECK(!strcmp(reading, "-47dB"));
+      rv::DetailText text;
+      rv::detailText(text, r);
+      VIEW_CHECK(strstr(text.line[3], "dBm now") && strstr(text.line[3], "getting closer") &&
+                 strstr(text.line[4], "in range now"));
+    }
+    for (uint32_t age : {11u, 30u, 55u, 59u}) {
+      ReconRow r = reconRow(*d, 4000 + age * 1000, 0);
+      VIEW_CHECK(r.live && !r.fresh && r.trend == 0 && r.ageS == age);
+      rv::readingText(reading, r);
+      VIEW_CHECK(!strstr(reading, "dB") && strstr(reading, "s ago") && strlen(reading) <= 8);
+      rv::homeStatus(left, right, r);
+      VIEW_CHECK(!strstr(left, "dB") && strstr(left, "s ago") && strlen(left) <= 13);
+      rv::DetailText text;
+      rv::detailText(text, r);
+      VIEW_CHECK(!strstr(text.line[3], "now") && !strstr(text.line[3], "closer") &&
+                 strstr(text.line[3], "s ago, peak -47") && !strstr(text.line[4], "in range now") &&
+                 strstr(text.line[4], "| heard "));
+      r.following = true;
+      rv::homeStatus(left, right, r);
+      VIEW_CHECK(!strcmp(left, "FOLLOWING") && !strstr(right, "dB") && strlen(right) <= 6);
+    }
+    ReconRow gone = reconRow(*d, 4000 + 60000, 0);
+    VIEW_CHECK(!gone.live && !gone.fresh);
+    VIEW_CHECK(ReconFreshS == 10 && ReconFreshS * 1000 < ReconLiveMs);
+  }
   // A following tag carries its trail.
   ReconDevice &tag = *table.find(home.rows[1].mac, true, 1, Family::Tracker);
   tag.following = true;
@@ -398,7 +520,7 @@ inline void snapshots() {
   table.counts(counts, now);
   reconHome(home, table, counts, now, 0);
   VIEW_CHECK(home.count == rv::HomeRows && home.blipCount == rv::HomeBlips && home.live == 32 &&
-             home.total == 34);
+             home.inRange == 32 && home.total == 34);
   for (unsigned i = 0; i < home.count; ++i)
     VIEW_CHECK(tierOf(home.rows[i].family) == Tier::Surveillance && home.rows[i].live);
 
@@ -512,9 +634,11 @@ inline void homeScreen() {
           else if (s.alert && !s.demo && rv::AlertDetailsZone.has(x, y))
             want = HomeTap::AlertDetail;
           else if (!s.face && rv::Panel.has(x, y)) {
+            // A row owns its whole 22 px pitch. While an alert is open the panel only
+            // dismisses: no device card opens under a tap meant for the alert.
             want = s.alert ? HomeTap::Dismiss : HomeTap::Recon;
-            for (unsigned i = 0; i < shown; ++i)
-              if (rv::homeRow(s.recording, shown, i).has(x, y)) {
+            for (unsigned i = 0; i < shown && !s.alert; ++i)
+              if (rv::homeRowZone(s.recording, shown, i).has(x, y)) {
                 want = HomeTap::Row;
                 row = i;
               }
@@ -537,8 +661,23 @@ inline void homeScreen() {
   s.rows = 1; // One row sits low, under the big radar.
   VIEW_CHECK(homeTap(250, 85, s).action == HomeTap::Recon &&
              homeTap(250, 130, s).action == HomeTap::Row);
-  s.alert = true; // A row still opens its card; the rest of the screen dismisses.
-  VIEW_CHECK(homeTap(250, 130, s).action == HomeTap::Row &&
+  s.rows = 4; // Neighbouring rows meet: the pixel row between two cards belongs to the upper one.
+  VIEW_CHECK(homeTap(250, 98, s).action == HomeTap::Row && homeTap(250, 98, s).row == 0 &&
+             homeTap(250, 99, s).row == 1);
+  for (bool recording : {false, true})
+    for (unsigned shown = 1; shown <= rv::homeRowLimit(recording); ++shown)
+      for (unsigned i = 0; i < shown; ++i) {
+        rv::Box zone = rv::homeRowZone(recording, shown, i);
+        VIEW_CHECK(within(rv::homeRow(recording, shown, i), zone) && within(zone, rv::Panel) &&
+                   zone.h == rv::RowPitch);
+        if (i)
+          VIEW_CHECK(apart(zone, rv::homeRowZone(recording, shown, i - 1)));
+        if (recording)
+          VIEW_CHECK(apart(zone, rv::DriveBlock));
+      }
+  s.rows = 1;
+  s.alert = true; // The whole panel dismisses, rows included; DETAILS is the way to the device.
+  VIEW_CHECK(homeTap(250, 130, s).action == HomeTap::Dismiss &&
              homeTap(250, 40, s).action == HomeTap::Dismiss &&
              homeTap(90, 100, s).action == HomeTap::Dismiss &&
              homeTap(100, 190, s).action == HomeTap::Dismiss &&
@@ -698,6 +837,60 @@ inline void pages() {
     for (const rv::Box &b : *set)
       VIEW_CHECK(b.w >= 58 && b.h >= 22); // Finger sized.
   VIEW_CHECK(within(rv::BackButton, rv::BackZone));
+  // What a finger has to hit is at least 27 px tall and wraps the control it belongs to. The
+  // tab and tier-toggle zones stop one pixel row short of the BACK zone, so a slightly high tap
+  // on STATS or BEACON does nothing rather than leave the page.
+  for (unsigned i = 0; i < rv::Tabs; ++i) {
+    rv::Box zone = rv::tabZone(i);
+    VIEW_CHECK(within(rv::tab(i), zone) && zone.h >= 28 && apart(zone, rv::BackZone) &&
+               zone.y > rv::BackZone.y + rv::BackZone.h && apart(zone, rv::listRowZone(0)) &&
+               apart(zone, rv::tierBox(0)));
+    if (i)
+      VIEW_CHECK(apart(zone, rv::tabZone(i - 1)));
+  }
+  for (unsigned t = 0; t < TierCount; ++t) {
+    rv::Box zone = rv::tierToggleZone(t);
+    VIEW_CHECK(within(rv::tierToggle(t), zone) && zone.h >= 28 && apart(zone, rv::BackZone) &&
+               zone.y > rv::BackZone.y + rv::BackZone.h);
+    for (unsigned i = 0; i < rv::TypeCells; ++i)
+      VIEW_CHECK(apart(zone, rv::typeCell(i)));
+    if (t)
+      VIEW_CHECK(apart(zone, rv::tierToggleZone(t - 1)));
+  }
+  for (unsigned i = 0; i < rv::ListRows; ++i) {
+    rv::Box zone = rv::listRowZone(i);
+    VIEW_CHECK(within(rv::listRow(i), zone) && zone.h == 27 && apart(zone, rv::Prev) &&
+               apart(zone, rv::Next));
+    if (i)
+      VIEW_CHECK(apart(zone, rv::listRowZone(i - 1)));
+  }
+  VIEW_CHECK(rv::listTap(280, 35, 5, 1).hit == ListHit::Tab &&
+             rv::listTap(280, 35, 5, 1).index == 2 &&
+             rv::listTap(280, 34, 5, 1).hit == ListHit::None &&
+             rv::listTap(280, 33, 5, 1).hit == ListHit::Back);
+  VIEW_CHECK(rv::listTap(100, 88, 5, 1).hit == ListHit::Row &&
+             rv::listTap(100, 88, 5, 1).index == 0 && rv::listTap(100, 89, 5, 1).index == 0 &&
+             rv::listTap(100, 90, 5, 1).index == 1);
+  VIEW_CHECK(rv::typesTap(280, 35, 0).hit == rv::TypesHit::Tier &&
+             rv::typesTap(280, 35, 0).index == 4 &&
+             rv::typesTap(280, 34, 0).hit == rv::TypesHit::None);
+
+  // An alert that opens over any other page: its card takes the next tap, wherever it lands.
+  for (int y = 0; y < 240; ++y)
+    for (int x = 0; x < 320; ++x) {
+      VIEW_CHECK(rv::overlayTap(x, y, false, false) == rv::OverlayTap::Pass &&
+                 rv::overlayTap(x, y, false, true) == rv::OverlayTap::Pass);
+      VIEW_CHECK(
+          rv::overlayTap(x, y, true, false) ==
+          (rv::AlertDetailsZone.has(x, y) ? rv::OverlayTap::Details : rv::OverlayTap::Dismiss));
+      VIEW_CHECK(rv::overlayTap(x, y, true, true) == rv::OverlayTap::Dismiss); // No device.
+    }
+  // The card covers Detection's CLEAR ALL row and the foot of the device card, which is why
+  // the tap is never passed on to the page while the alert is open.
+  VIEW_CHECK(!apart(rv::AlertCard, rv::ClearButton) &&
+             rv::overlayTap(rv::ClearButton.x + 70, rv::ClearButton.y + 10, true, false) !=
+                 rv::OverlayTap::Pass &&
+             rv::overlayTap(280, 20, true, false) == rv::OverlayTap::Dismiss); // BACK too.
 
   // Recon page: every pixel, for every number of rows and pages.
   for (unsigned rows = 0; rows <= rv::ListRows + 1; ++rows)
@@ -710,12 +903,12 @@ inline void pages() {
           if (rv::BackZone.has(x, y))
             want = ListHit::Back;
           for (unsigned i = 0; i < rv::Tabs; ++i)
-            if (rv::tab(i).has(x, y)) {
+            if (rv::tabZone(i).has(x, y)) {
               want = ListHit::Tab;
               index = i;
             }
           for (unsigned i = 0; i < rows && i < rv::ListRows; ++i)
-            if (rv::listRow(i).has(x, y)) {
+            if (rv::listRowZone(i).has(x, y)) {
               want = ListHit::Row;
               index = i;
             }
@@ -765,7 +958,7 @@ inline void pages() {
         if (rv::BackZone.has(x, y))
           want = rv::TypesHit::Back;
         for (unsigned tier = 0; tier < TierCount; ++tier)
-          if (rv::tierToggle(tier).has(x, y)) {
+          if (rv::tierToggleZone(tier).has(x, y)) {
             want = rv::TypesHit::Tier;
             index = tier;
           }
@@ -799,6 +992,23 @@ inline void pages() {
   VIEW_CHECK(rv::tierState(partial, Tier::Surveillance) == 1 &&
              rv::toggleTier(partial, Tier::Surveillance) == TypeFilter::All);
   VIEW_CHECK(rv::tierState(TypeFilter::Defaults, Tier::Beacon) == 0); // Beacons start off.
+  {
+    // The Types page edits a draft. One slip on a tier (which would drop every listed row of
+    // it once in force) is undone by the next tap, and nothing but tier and family taps edit.
+    const uint32_t saved = TypeFilter::Defaults;
+    rv::TypesTarget tier{rv::TypesHit::Tier, unsigned(Tier::Surveillance)};
+    uint32_t draft = rv::typesEdit(saved, tier);
+    VIEW_CHECK(draft != saved && rv::tierState(draft, Tier::Surveillance) == 0);
+    VIEW_CHECK(rv::typesEdit(draft, tier) == saved); // Back where it started: nothing to apply.
+    rv::TypesTarget ring{rv::TypesHit::Family, 0, Family::Ring};
+    draft = rv::typesEdit(saved, ring);
+    VIEW_CHECK(draft == (saved & ~TypeFilter::flag(Family::Ring)) &&
+               rv::typesEdit(draft, ring) == saved);
+    for (rv::TypesHit other :
+         {rv::TypesHit::None, rv::TypesHit::Back, rv::TypesHit::Prev, rv::TypesHit::Next})
+      VIEW_CHECK(rv::typesEdit(saved, {other, 0, Family::Ring}) == saved);
+    VIEW_CHECK(rv::typesEdit(0xffffffffu, {}) == TypeFilter::All);
+  }
   // The cycles offer exactly what the engine accepts.
   VIEW_CHECK(rv::nextSnooze(0) == 5 && rv::nextSnooze(5) == 10 && rv::nextSnooze(10) == 0 &&
              rv::nextSnooze(7) == 10 && rv::nextSnooze(200) == 0);
@@ -835,12 +1045,24 @@ inline void pages() {
         VIEW_CHECK(tidy(page, Screen) && page.has("DEVICE") && page.has("BACK"));
         VIEW_CHECK(page.has("NO LONGER LISTED") == !present);
         VIEW_CHECK(page.has(row.ignored ? "UNIGNORE" : "IGNORE (IT'S MINE)") == present);
+        // With the ignore list full the button says so instead of being a dead tap. A device
+        // already on the list can still be taken off.
+        Ink full;
+        rv::drawReconDetail(full, s, row, present, true);
+        VIEW_CHECK(
+            tidy(full, Screen) && full.has("IGNORE LIST FULL") == (present && !row.ignored) &&
+            full.has("UNIGNORE") == (present && row.ignored) && !full.has("IGNORE (IT'S MINE)"));
+        for (const auto &run : full.runs)
+          if (rv::IgnoreButton.has(run.x + run.w / 2, run.y + 4))
+            VIEW_CHECK(run.x >= rv::IgnoreButton.x + 3 &&
+                       run.x + run.w <= rv::IgnoreButton.x + rv::IgnoreButton.w - 3);
         for (const auto &run : page.runs) // Nothing runs into the buttons or off the margins.
           VIEW_CHECK(run.x >= 8 && run.x + run.w <= 312 &&
                      (run.y + run.h <= rv::IgnoreButton.y || run.y >= rv::IgnoreButton.y));
       }
     }
-    // Empty states say what is true: everything classified is listed, alert filter or not.
+    // Empty states say what is true: everything classified is listed, alert filter or not,
+    // except the types the owner has switched off.
     for (bool cardIn : {true, false})
       for (bool radio : {true, false})
         for (unsigned seen : {0u, 1u, 256u}) {
@@ -853,7 +1075,8 @@ inline void pages() {
           rv::drawReconList(all, s, rv::Tab::Seen, ReconList(), ctx);
           VIEW_CHECK(tidy(live, Screen) && tidy(all, Screen));
           VIEW_CHECK(live.has(radio ? "Nothing sketchy in range" : "radios are not running"));
-          VIEW_CHECK(live.has("whatever your") && live.has("under SEEN") == (seen > 0));
+          VIEW_CHECK(live.has("whatever your") && live.has("Switched-off types are not") &&
+                     live.has("under SEEN") == (seen > 0));
           VIEW_CHECK(live.has("1 earlier device is") == (seen == 1));
           VIEW_CHECK(all.has("No classified devices yet") &&
                      all.has(cardIn ? "saved to the SD card" : "until power off"));
@@ -896,7 +1119,12 @@ inline void pages() {
       Ink ink;
       rv::drawReconSettings(ink, s, v);
       VIEW_CHECK(tidy(ink, Screen) && ink.has("DETECTION") && ink.has("clue, not proof"));
-      VIEW_CHECK(ink.has(v.autoSnooze ? "Auto snooze: " : "Auto snooze: OFF") &&
+      // The note must not promise that everything is listed: switched-off types are not.
+      VIEW_CHECK(ink.has("Types switched off are not listed") && !ink.has("Everything classified"));
+      // Auto snooze counts alerts, and says so beside settings measured in seconds and minutes.
+      VIEW_CHECK(ink.has(v.autoSnooze == 10  ? "Auto snooze: 10 alerts"
+                         : v.autoSnooze == 5 ? "Auto snooze: 5 alerts"
+                                             : "Auto snooze: OFF") &&
                  ink.has(v.quietRoad ? "Quiet road: ON" : "Quiet road: OFF"));
       VIEW_CHECK(ink.has(!v.ignored       ? "NONE TO CLEAR"
                          : v.confirmClear ? "TAP AGAIN: CLEAR"
@@ -914,7 +1142,14 @@ inline void pages() {
       for (uint32_t filter : {uint32_t(0), TypeFilter::Defaults, TypeFilter::All, partial}) {
         Ink ink;
         rv::drawReconTypes(ink, s, filter, page);
-        VIEW_CHECK(tidy(ink, Screen) && ink.has("DEVICE TYPES") && ink.has("PREV"));
+        VIEW_CHECK(tidy(ink, Screen) && ink.has("DEVICE TYPES") && ink.has("PREV") &&
+                   !ink.has("BACK applies"));
+        Ink edited; // An edit that is not in force yet says how to apply it.
+        rv::drawReconTypes(edited, s, filter, page, true);
+        VIEW_CHECK(tidy(edited, Screen) && edited.has("BACK applies"));
+        for (const auto &run : edited.runs)
+          VIEW_CHECK(run.y > rv::BackZone.h || run.x + run.w <= rv::BackButton.x ||
+                     run.x >= rv::BackButton.x);
         for (const auto &run : ink.runs)
           for (const rv::Box &b : types)
             if (b.has(run.x + run.w / 2, run.y + 4))
@@ -1045,6 +1280,39 @@ inline void wiring() {
     for (unsigned i = 0; i < 100; ++i)
       VIEW_CHECK(talk.update(p, now += 500, false) != Topic::ReconCleared);
   }
+  {
+    // The owner marks the following tag as their own: it drops out of the counts while still
+    // in the car, and must not be announced as "gone" five minutes later.
+    ReconBanter talk;
+    ReconPulse p;
+    p.live = p.following = 1;
+    uint32_t now = 1000;
+    for (; now < 3 * minute; now += 500)
+      talk.update(p, now, false);
+    talk.forget();
+    p.live = p.following = 0; // Ignored devices are not in the pulse.
+    for (; now < 40 * minute; now += 500)
+      VIEW_CHECK(talk.update(p, now, false) != Topic::ReconCleared);
+    // A second follower still in range keeps the watch going after the first is ignored.
+    ReconBanter two;
+    p.live = p.following = 2;
+    for (now = 1000; now < 3 * minute; now += 500)
+      two.update(p, now, false);
+    two.forget();
+    p.live = p.following = 1;
+    two.update(p, now, false);
+    p.live = p.following = 0;
+    Topic cleared = Topic::Count;
+    for (uint32_t end = now + 10 * minute; now < end && cleared != Topic::ReconCleared; now += 500)
+      cleared = two.update(p, now, false);
+    VIEW_CHECK(cleared == Topic::ReconCleared);
+  }
+  for (const char *line : rv::SettingsNote) // Two lines at x 12 inside a 320 px screen.
+    VIEW_CHECK(strlen(line) <= 49);
+  VIEW_CHECK(rv::ignoreLabel(true, false, false).active &&
+             !rv::ignoreLabel(true, false, true).active &&
+             !strcmp(rv::ignoreLabel(true, true, true).text, "UNIGNORE") &&
+             !strcmp(rv::ignoreLabel(false, false, true).text, "NO LONGER LISTED"));
   {
     // Whatever the counts do, two remarks are never closer than the gap.
     ReconBanter talk;

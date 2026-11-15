@@ -169,12 +169,7 @@ static void learnClock(uint32_t now) {
 static Alert toAlert(const ReconDevice &d) {
   Alert a;
   a.match = {d.family, d.confidence, d.evidence};
-  snprintf(a.name, sizeof(a.name), "%s", d.name);
-  macText(a.mac, d.mac);
   a.rssi = d.rssi;
-  a.at = d.lastAt;
-  a.firstAt = d.firstAt;
-  a.sightings = d.encounters;
   a.ble = d.ble;
   a.addressType = d.addressType;
   memcpy(a.addr, d.mac, 6);
@@ -223,20 +218,22 @@ ReconDevice *reconFind(const ReconRow &row) {
   return reconTable().find(row.mac, row.ble, row.addressType, row.family);
 }
 // List the device and decide whether it may interrupt. Listing never depends on the alert
-// threshold; only a family the user has switched off is left out.
-static void recon(const Contact &c, const uint8_t *mac, const Packet &p) {
+// threshold; only a family the user has switched off is left out. `name` and `label` may be
+// empty.
+static void recon(const Match &match, const uint8_t *mac, const char *name, const char *label,
+                  const Packet &p) {
   AlertContext ctx = reconContext();
-  if (!ctx.filter.tracks(c.match.family))
+  if (!ctx.filter.tracks(match.family))
     return;
   ReconSighting s;
   s.mac = mac;
   s.ble = p.ble;
   s.addressType = p.addressType;
-  s.match = c.match;
-  s.name = c.name;
-  s.label = c.label;
-  s.channel = p.ble ? 0 : c.channel;
-  s.rssi = c.rssi;
+  s.match = match;
+  s.name = name;
+  s.label = label;
+  s.channel = p.ble ? 0 : p.channel;
+  s.rssi = p.rssi;
   s.utc = reconClock();
   s.boot = app.life.boots;
   if (usableFix(app.fix)) {
@@ -259,7 +256,6 @@ static void recon(const Contact &c, const uint8_t *mac, const Packet &p) {
     a.kind = AlertFollowing;
     a.followMs = followSpanMs(row);
     a.followMeters = uint32_t(followSpanMeters(row));
-    a.match.evidence = "Heard at 3+ places over 10+ minutes; it may be travelling with you";
     buddyAlert(a);
   } else if (verdict == AlertVerdict::Alert) {
     row.pendingLog = true; // The ledger line for this encounter should say it alerted.
@@ -268,8 +264,6 @@ static void recon(const Contact &c, const uint8_t *mac, const Packet &p) {
     row.flood = row.alerted = row.pendingLog = true; // Its ledger line says "flood".
     Alert a = toAlert(row);
     a.kind = AlertFlood;
-    snprintf(a.name, sizeof(a.name), "Many new addresses at once");
-    a.match.evidence = "40+ new addresses of this kind in a minute; a spam gadget or a crowd";
     buddyAlert(a);
   } else if (row.confidence >= ctx.threshold)
     ++app.suppressed;
@@ -299,6 +293,7 @@ static Contact &findContact(const uint8_t *mac, bool ble, uint8_t type, uint32_t
 }
 static void process(const Packet &p) {
   Match m;
+  TrafficHit hit;
   char name[64]{}, auth[64] = "[BLE]", label[LabelChars]{};
   uint8_t mac[6];
   bool loggable = p.ble;
@@ -311,8 +306,7 @@ static void process(const Packet &p) {
     }
     m = f.match;
     snprintf(label, sizeof(label), "%s", f.label);
-    // The label names the signature's product: it goes when a hint or a rule replaces the match.
-    promoteLabelled(m, label, traffic.ble(p.data, p.len, p.mac, p.at));
+    hit = traffic.bleHit(p.data, p.len, p.mac, p.at);
     snprintf(name, sizeof(name), "%s", f.name);
   } else {
     auto f = classifyWifi(p.data, p.len);
@@ -323,11 +317,19 @@ static void process(const Packet &p) {
     m = f.match;
     loggable = f.loggable;
     snprintf(label, sizeof(label), "%s", f.label);
-    promoteLabelled(m, label, traffic.wifi(p.data, p.len, p.at));
+    hit = traffic.wifiHit(p.data, p.len, p.at);
     memcpy(mac, f.mac, 6);
     snprintf(name, sizeof(name), "%s", f.name);
     snprintf(auth, sizeof(auth), "%s", f.auth);
   }
+  // A rate rule that fired (disconnect burst, SSID conflict, pairing-advert storm) is listed as
+  // its own row under the address that was transmitting. It never replaces the identity match:
+  // a burst aimed at a camera is classified by the camera's address and at a higher grade, and
+  // merging the two would lose the burst. The table keys rows by address and family, so the
+  // burst and the camera sit side by side.
+  if (hit.match.family != Family::None)
+    recon(hit.match, hit.mac, "", "", p);
+  // The label names the signature's product: it goes when a watchlist rule replaces the match.
   promoteLabelled(m, label,
                   watchlist.match(mac, !p.ble || p.addressType == 0, name, p.ble ? p.data : nullptr,
                                   p.ble ? p.len : 0));
@@ -348,7 +350,7 @@ static void process(const Packet &p) {
   if (loggable)
     logObservation(c, auth, p.generation, p.at);
   if (c.match.family != Family::None)
-    recon(c, mac, p);
+    recon(c.match, mac, c.name, c.label, p);
 }
 static bool beginBle() {
   if (!NimBLEDevice::init("")) {
@@ -365,6 +367,11 @@ static bool beginBle() {
 }
 void radioBegin() {
   reconRefresh();
+  // A city street has more access points than the built-in table; see traffic.h.
+  if (auto wide = static_cast<TrafficHints::AccessPoint *>(
+          heap_caps_malloc(TrafficHints::WideAccessPoints * sizeof(TrafficHints::AccessPoint),
+                           MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT)))
+    traffic.attach(wide, TrafficHints::WideAccessPoints);
   auto memory = static_cast<uint8_t *>(
       heap_caps_malloc(32 * sizeof(Packet), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
   packets = memory ? xQueueCreateStatic(32, sizeof(Packet), memory, &packetControl)
@@ -414,8 +421,10 @@ void radioTick() {
     gpsTick();
   }
   app.drops = lost.load();
+  // Signed on purpose: a packet stamped by a radio task after `now` was sampled above gives a
+  // contact that is "seen in the future", which must read as fresh, not as 49 days old.
   for (auto &c : contacts)
-    if (c.used && uint32_t(now - c.seen) > 120000)
+    if (c.used && contactExpired(now, c.seen))
       c.used = false;
   if (app.blePhase) {
     if (uint32_t(now - phaseAt) >= bleWindow) {

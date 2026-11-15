@@ -108,13 +108,15 @@ inline bool parseAvatar(const char *line, AvatarProfile &out) {
   return true;
 }
 
-// The oldest format that can carry this profile without losing anything. Plain designs stay
-// DCAV2 so they still load on firmware that has never heard of DCAV3.
+// The oldest format that can carry this profile. Plain designs stay DCAV2 so they still load on
+// firmware that has never heard of DCAV3. The style-pack number is only a tag and draws nothing,
+// so it does not force DCAV3 by itself: a design that otherwise fits is written as DCAV2 and the
+// tag is the one thing left out. (Otherwise a design could never be made "classic" again once a
+// pack had been tried, however much gear was taken off.)
 inline unsigned avatarSchema(const AvatarProfile &p) {
   using namespace limits;
   bool plain = p.eyes < V2Eyes && p.headwear < V2Headwear && p.eyewear < V2Eyewear &&
-               p.neckwear < V2Neckwear && !p.mark && !p.back && !p.held && !p.aura && !p.pack &&
-               !p.persona;
+               p.neckwear < V2Neckwear && !p.mark && !p.back && !p.held && !p.aura && !p.persona;
   return plain ? 2 : 3;
 }
 // Writes the profile as one line, exactly as the website does. False if it is not valid.

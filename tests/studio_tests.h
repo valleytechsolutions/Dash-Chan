@@ -285,6 +285,17 @@ inline void profiles() {
     bool old = slot.field == &AvatarProfile::eyes || slot.field == &AvatarProfile::headwear ||
                slot.field == &AvatarProfile::eyewear || slot.field == &AvatarProfile::neckwear;
     q.*slot.field = old ? q.*slot.field + 1 : 1;
+    if (slot.field == &AvatarProfile::pack) {
+      // The style-pack number is a tag that draws nothing. Alone it does not make a design
+      // unreadable to old firmware: the line stays DCAV2 and only the tag is left out, so a
+      // design can always be made classic again by taking the new gear off.
+      AvatarProfile back;
+      SCHECK(avatarSchema(q) == 2 && line(q) == line(plain));
+      SCHECK(parseAvatar(line(q).c_str(), back) && back.pack == 0 && same(plain, back));
+      q.mark = 1; // With anything DCAV3 is needed for, the tag travels too.
+      SCHECK(avatarSchema(q) == 3 && parseAvatar(line(q).c_str(), back) && back.pack == 1);
+      continue;
+    }
     SCHECK(avatarSchema(q) == 3 && line(q).rfind("DCAV3 ", 0) == 0);
   }
 
@@ -315,8 +326,10 @@ inline void profiles() {
     strcpy(q.name, names[rng() % 6]);
     std::string text = line(q);
     longest = std::max(longest, text.size());
-    AvatarProfile back;
-    SCHECK(parseAvatar(text.c_str(), back) && same(q, back) && back.schema == avatarSchema(q));
+    AvatarProfile back, kept = q;
+    if (avatarSchema(q) == 2)
+      kept.pack = 0; // A pack tag on an otherwise classic design is not written.
+    SCHECK(parseAvatar(text.c_str(), back) && same(kept, back) && back.schema == avatarSchema(q));
     SCHECK(line(back) == text);
     LegacyProfile old;
     if (avatarSchema(q) == 2) {

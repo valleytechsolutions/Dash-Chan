@@ -48,6 +48,9 @@ struct ReconRow {
   const char *evidence = ""; // Static text from the classifier.
   char name[32]{}, label[LabelChars]{};
   int8_t rssi = 0, peakRssi = 0, trend = 0; // trend: +1 closer, -1 further.
+  // `live` lasts ReconLiveMs after the last packet; `fresh` only ReconFreshS, and only a fresh row
+  // may show its signal and trend as current.
+  bool fresh = false;
   bool live = false, restored = false, ignored = false, following = false, alerted = false,
        flood = false, hasPosition = false;
   bool ageKnown = true;          // False for a ledger row when the clock is not set.
@@ -58,6 +61,11 @@ struct ReconRow {
   uint32_t followS = 0, followMeters = 0; // Company so far, when `following`.
   uint8_t places = 0;
 };
+// A row stays "live" (listed as in range, tier colours, a radar blip) for a minute after its
+// last packet, but a reading that old says little about now: at road speed the device is a
+// kilometre behind. Past this many seconds the row shows how long ago it was heard instead of a
+// signal level, and no closer/further arrow.
+constexpr uint32_t ReconFreshS = 10;
 // `clock` is seconds since 2000 UTC, or 0 while the time is unknown.
 inline ReconRow reconRow(const ReconDevice &d, uint32_t now, uint32_t clock) {
   ReconRow r;
@@ -74,7 +82,8 @@ inline ReconRow reconRow(const ReconDevice &d, uint32_t now, uint32_t clock) {
   r.peakRssi = d.peakRssi;
   r.restored = d.restored;
   r.live = reconLive(d, now);
-  r.trend = r.live ? int8_t(reconTrend(d)) : 0;
+  r.fresh = r.live && uint32_t(now - d.lastAt) / 1000 <= ReconFreshS;
+  r.trend = r.fresh ? int8_t(reconTrend(d)) : 0;
   r.ignored = d.ignored;
   r.following = d.following;
   r.alerted = d.alerted;
@@ -184,10 +193,13 @@ inline void countText(char out[8], uint32_t encounters) { // "x3", at most "x999
   else
     snprintf(out, 8, "x%u", unsigned(encounters));
 }
-// Right-hand reading of a row: signal while live, otherwise how long ago. At most 8 characters.
+// Right-hand reading of a row: the signal while it is fresh, otherwise how long ago it was last
+// heard. At most 8 characters.
 inline void readingText(char out[12], const ReconRow &r) {
-  if (r.live)
+  if (r.fresh)
     snprintf(out, 12, "%ddB", int(r.rssi));
+  else if (r.live)
+    agoText(out, r.ageS);
   else if (!r.ageKnown)
     snprintf(out, 12, "earlier");
   else
@@ -201,7 +213,10 @@ inline void homeStatus(char left[24], char right[8], const ReconRow &r) {
   right[0] = 0;
   if (r.following && r.live) {
     snprintf(left, 24, "FOLLOWING");
-    snprintf(right, 8, "%ddB", int(r.rssi));
+    if (r.fresh)
+      snprintf(right, 8, "%ddB", int(r.rssi));
+    else
+      ageText(right, r.ageS);
     return;
   }
   if (r.ignored)
@@ -333,24 +348,28 @@ inline void detailText(DetailText &t, const ReconRow &r) {
   else
     snprintf(text, sizeof(text), "WiFi %s (%s)", mac, kind);
   fit(t.line[2], 64, text, DetailChars);
-  if (r.live)
+  agoText(first, r.firstS);
+  agoText(last, r.ageS);
+  if (r.fresh)
     snprintf(text, sizeof(text), "Signal %d dBm now, peak %d, %s", int(r.rssi), int(r.peakRssi),
              r.trend > 0   ? "getting closer"
              : r.trend < 0 ? "moving away"
                            : "steady");
+  else if (r.live)
+    snprintf(text, sizeof(text), "Signal %d dBm %s, peak %d", int(r.rssi), last, int(r.peakRssi));
   else
     snprintf(text, sizeof(text), "Signal %d dBm when last heard, peak %d", int(r.rssi),
              int(r.peakRssi));
   fit(t.line[3], 64, text, DetailChars);
-  agoText(first, r.firstS);
-  agoText(last, r.ageS);
   unsigned long seen = r.encounters > 99999 ? 99999 : r.encounters;
   if (r.restored && !r.ageKnown)
     snprintf(text, sizeof(text), "Encounters: %lu | last heard on an earlier boot", seen);
   else if (r.restored)
     snprintf(text, sizeof(text), "Encounters: %lu | last heard %s", seen, last);
-  else if (r.live)
+  else if (r.fresh)
     snprintf(text, sizeof(text), "Encounters: %lu | first %s | in range now", seen, first);
+  else if (r.live)
+    snprintf(text, sizeof(text), "Encounters: %lu | first %s | heard %s", seen, first, last);
   else
     snprintf(text, sizeof(text), "Encounters: %lu | first %s | last %s", seen, first, last);
   fit(t.line[4], 64, text, DetailChars);
@@ -426,6 +445,10 @@ constexpr int homeRowsTop(bool recording, unsigned shown) {
 constexpr Box homeRow(bool recording, unsigned shown, unsigned i) {
   return {188, homeRowsTop(recording, shown) + int(i) * RowPitch, 122, RowH};
 }
+// What a finger has to hit: the row and the gap under it, so neighbouring rows meet.
+constexpr Box homeRowZone(bool recording, unsigned shown, unsigned i) {
+  return {188, homeRowsTop(recording, shown) + int(i) * RowPitch, 122, RowPitch};
+}
 constexpr Box homeRadar(unsigned shown) {
   return shown ? Box{189, 47, 120, homeRowsTop(false, shown) - 50} : Box{189, 48, 120, 84};
 }
@@ -440,6 +463,16 @@ constexpr Box FaceChipZone{238, 148, 82, 27};
 constexpr Box AlertCard{6, 178, 308, 26};
 constexpr Box AlertDetails{250, 181, 60, 20};
 constexpr Box AlertDetailsZone{244, 178, 70, 26};
+// An alert can open while any page is showing. Away from Home the card is drawn over the page
+// (it would otherwise be heard and not seen) and owns the next tap: DETAILS opens the device,
+// a tap anywhere else dismisses the alert and is not passed on to the page underneath, whose
+// controls the card may be covering.
+enum class OverlayTap : uint8_t { Pass, Details, Dismiss };
+constexpr OverlayTap overlayTap(int x, int y, bool alertOpen, bool demo) {
+  return !alertOpen                            ? OverlayTap::Pass
+         : !demo && AlertDetailsZone.has(x, y) ? OverlayTap::Details
+                                               : OverlayTap::Dismiss;
+}
 
 struct Blip {
   uint8_t angle = 0; // 0..255 around the dial, fixed per address so a blip does not jump about.
@@ -466,9 +499,14 @@ inline void blipPoint(const Box &box, const Blip &b, int &x, int &y) {
 
 // What the home screen shows of the table: the top rows, the live counts and the radar blips.
 struct ReconHome {
+  // Rows filled: what is in range first, in ReconSort::Priority order (the owner's ignored gear
+  // after everything else), then what was heard most recently.
   ReconRow rows[reconview::HomeRows];
-  unsigned count = 0; // Rows filled, in ReconSort::Priority order.
-  unsigned total = 0; // Every row in the table, live or not.
+  unsigned count = 0;
+  unsigned total = 0;   // Every row in the table, live or not.
+  unsigned inRange = 0; // Every live row, the owner's ignored gear included.
+  // What the chips, the Full Face chip and "All quiet" count: live rows that are NOT on the
+  // ignore list. The owner's own dashcam in range is not a reason to light anything up.
   unsigned live = 0;
   uint16_t liveTier[TierCount]{};
   reconview::Blip blips[reconview::HomeBlips];
@@ -480,29 +518,51 @@ struct ReconHome {
     return -1;
   }
 };
+// The first live row a remark should be about: not one the owner has marked as their own.
+inline const ReconRow *homeTopThreat(const ReconHome &h) {
+  for (unsigned i = 0; i < h.count; ++i)
+    if (h.rows[i].live && !h.rows[i].ignored)
+      return &h.rows[i];
+  return nullptr;
+}
 inline void reconHome(ReconHome &out, const ReconTable &table, const ReconCounts &counts,
                       uint32_t now, uint32_t clock) {
   out = ReconHome();
   uint16_t order[reconview::HomeBlips];
   unsigned n = table.sorted(order, reconview::HomeBlips, now, ReconSort::Priority);
-  for (unsigned i = 0; i < n; ++i) {
+  for (unsigned i = 0; i < n; ++i) { // Priority order puts every live row first.
     const ReconDevice &d = table.at(order[i]);
-    if (i < reconview::HomeRows)
+    if (!reconLive(d, now))
+      break;
+    if (out.count < reconview::HomeRows)
       out.rows[out.count++] = reconRow(d, now, clock);
-    if (reconLive(d, now))
-      out.blips[out.blipCount++] = {reconview::addressAngle(d.mac), d.rssi, tierOf(d.family),
-                                    d.ignored};
+    out.blips[out.blipCount++] = {reconview::addressAngle(d.mac), d.rssi, tierOf(d.family),
+                                  d.ignored};
+  }
+  // The rest of the rows answer "what was just here": most recently heard first, whatever its
+  // tier. Fewer than HomeRows of the newest 2 x HomeRows can be live at this point, so that many
+  // are enough to fill the panel.
+  if (out.count < reconview::HomeRows) {
+    uint16_t recent[2 * reconview::HomeRows];
+    n = table.sorted(recent, 2 * reconview::HomeRows, now, ReconSort::Recent);
+    for (unsigned i = 0; i < n && out.count < reconview::HomeRows; ++i) {
+      const ReconDevice &d = table.at(recent[i]);
+      if (!reconLive(d, now))
+        out.rows[out.count++] = reconRow(d, now, clock);
+    }
   }
   out.total = counts.total;
-  out.live = counts.live;
-  for (unsigned t = 0; t < TierCount; ++t)
-    out.liveTier[t] = counts.liveTier[t];
+  out.inRange = counts.live;
+  for (unsigned t = 0; t < TierCount; ++t) {
+    out.liveTier[t] = counts.watchTier[t];
+    out.live += counts.watchTier[t];
+  }
 }
 
 // ---- Recon page -----------------------------------------------------------------------------
 //   5- 31  heading and BACK (shared by every menu page)
-//  37- 58  LIVE | SEEN | STATS
-//  63-197  five rows (LIVE, SEEN) or the totals (STATS)
+//  37- 58  LIVE | SEEN | STATS (touch zone 35-62)
+//  63-197  five rows (LIVE, SEEN) or the totals (STATS); a row's touch zone is its full pitch
 // 202-231  PREV, page, NEXT
 namespace reconview {
 enum class Tab : uint8_t { Live, Seen, Stats };
@@ -513,8 +573,16 @@ constexpr Box BackZone{250, 0, 70, 34}; // The rule src/ui.cpp applies on every 
 constexpr Box tab(unsigned i) {
   return {8 + int(i) * 103, 37, 98, 22};
 }
+// The tabs are 22 px tall and sit 3 px under BACK. Their touch zone takes the gap above and
+// below, which makes it 28 px and still leaves a dead pixel row under the BACK zone.
+constexpr Box tabZone(unsigned i) {
+  return {8 + int(i) * 103, 35, 98, 28};
+}
 constexpr Box listRow(unsigned i) {
   return {8, 63 + int(i) * 27, 304, 25};
+}
+constexpr Box listRowZone(unsigned i) {
+  return {8, 63 + int(i) * 27, 304, 27};
 }
 constexpr Box Prev{8, 202, 84, 30}, Next{228, 202, 84, 30};
 constexpr Box tierBox(unsigned tier) {
@@ -606,10 +674,10 @@ inline ListTarget listTap(int x, int y, unsigned rows, unsigned pages) {
   if (BackZone.has(x, y))
     return {ListHit::Back};
   for (unsigned i = 0; i < Tabs; ++i)
-    if (tab(i).has(x, y))
+    if (tabZone(i).has(x, y))
       return {ListHit::Tab, i};
   for (unsigned i = 0; i < rows && i < ListRows; ++i)
-    if (listRow(i).has(x, y))
+    if (listRowZone(i).has(x, y))
       return {ListHit::Row, i};
   if (pages > 1 && Prev.has(x, y))
     return {ListHit::Prev};
@@ -671,6 +739,9 @@ constexpr unsigned TypePages = (FamilyCount - 1 + TypeCells - 1) / TypeCells;
 constexpr Box tierToggle(unsigned tier) {
   return {8 + int(tier) * 61, 38, 58, 22};
 }
+constexpr Box tierToggleZone(unsigned tier) { // 28 px tall, like tabZone().
+  return {8 + int(tier) * 61, 35, 58, 28};
+}
 constexpr Box typeCell(unsigned i) {
   return {8 + int(i % 2) * 156, 66 + int(i / 2) * 32, 148, 28};
 }
@@ -709,7 +780,7 @@ inline TypesTarget typesTap(int x, int y, unsigned page) {
   if (BackZone.has(x, y))
     return {TypesHit::Back};
   for (unsigned t = 0; t < TierCount; ++t)
-    if (tierToggle(t).has(x, y))
+    if (tierToggleZone(t).has(x, y))
       return {TypesHit::Tier, t};
   Family order[FamilyCount - 1];
   typeOrder(order);
@@ -723,6 +794,18 @@ inline TypesTarget typesTap(int x, int y, unsigned page) {
   if (Next.has(x, y))
     return {TypesHit::Next};
   return {};
+}
+
+// One tap on the Types page applied to the mask being edited. The firmware keeps that mask as a
+// draft and only puts it in force when the page is left.
+inline uint32_t typesEdit(uint32_t draft, const TypesTarget &t) {
+  TypeFilter filter;
+  filter.mask = draft & TypeFilter::All;
+  if (t.hit == TypesHit::Tier)
+    filter.mask = toggleTier(filter.mask, Tier(t.index));
+  else if (t.hit == TypesHit::Family)
+    filter.set(t.family, !filter.tracks(t.family));
+  return filter.mask;
 }
 
 // ---- Drawing --------------------------------------------------------------------------------
@@ -816,7 +899,7 @@ template <class G> void homeRowCard(G &g, const Style &s, const Box &b, const Re
   homeStatus(left, extra, r);
   uint16_t status = dim ? s.colors.muted : tier;
   text(g, left, b.x + 6, b.y + 11, status);
-  if (r.live && !r.following)
+  if (r.fresh && !r.following)
     trendArrow(g, b.x + 8 + int(strlen(left)) * 6, b.y + 11, r.trend, status);
   right(g, extra, b.x + b.w - 3, b.y + 11, dim ? s.colors.muted : s.colors.text);
 }
@@ -930,9 +1013,9 @@ template <class G> void listRowCard(G &g, const Style &s, const Box &b, const Re
   wideTitle(title, sizeof(title), r, 36);
   text(g, title, b.x + 10, b.y + 3, dim ? s.colors.muted : s.colors.text);
   readingText(reading, r);
-  int edge = b.x + b.w - 6 - (r.live && r.trend ? 8 : 0);
-  right(g, reading, edge, b.y + 3, r.live ? tier : s.colors.muted);
-  if (r.live)
+  int edge = b.x + b.w - 6 - (r.fresh && r.trend ? 8 : 0);
+  right(g, reading, edge, b.y + 3, r.fresh ? tier : s.colors.muted);
+  if (r.fresh)
     trendArrow(g, edge + 2, b.y + 3, r.trend, tier);
   listStatus(left, flag, r);
   text(g, left, b.x + 10, b.y + 14, s.colors.muted);
@@ -976,7 +1059,7 @@ void drawReconList(G &g, const Style &s, Tab current, const ReconList &list,
          80, s.colors.text);
     paragraph(g,
               "Every device I can classify is listed here while it is in range, whatever your "
-              "alert settings say.",
+              "alert filter says. Switched-off types are not.",
               100, s.colors.muted);
     if (ctx.seenTotal) {
       snprintf(n, sizeof(n), "%u earlier %s under SEEN.", ctx.seenTotal,
@@ -1029,8 +1112,21 @@ template <class G> void drawReconStats(G &g, const Style &s, const ReconStats &v
   }
   pager(g, s, v.page, StatPages);
 }
-// `present` is false when the row has left the table since the card was opened.
-template <class G> void drawReconDetail(G &g, const Style &s, const ReconRow &r, bool present) {
+// What the device card's left button says and whether it can do anything. At most 24 characters.
+struct IgnoreLabel {
+  const char *text;
+  bool active;
+};
+constexpr IgnoreLabel ignoreLabel(bool present, bool ignored, bool listFull) {
+  return !present   ? IgnoreLabel{"NO LONGER LISTED", false}
+         : ignored  ? IgnoreLabel{"UNIGNORE", false}
+         : listFull ? IgnoreLabel{"IGNORE LIST FULL", false}
+                    : IgnoreLabel{"IGNORE (IT'S MINE)", true};
+}
+// `present` is false when the row has left the table since the card was opened; `listFull` when
+// the ignore list has no room for another device (Detection > CLEAR ALL empties it).
+template <class G>
+void drawReconDetail(G &g, const Style &s, const ReconRow &r, bool present, bool listFull = false) {
   DetailText t;
   detailText(t, r);
   heading(g, s, "DEVICE");
@@ -1048,13 +1144,14 @@ template <class G> void drawReconDetail(G &g, const Style &s, const ReconRow &r,
     text(g, t.info[i], 10, 148 + i * 11, s.colors.muted);
   for (int i = 0; i < t.clueLines; ++i)
     text(g, t.clue[i], 10, 182 + i * 11, s.colors.muted);
-  if (present)
-    button(g, s, IgnoreButton, r.ignored ? "UNIGNORE" : "IGNORE (IT'S MINE)", !r.ignored);
-  else
-    button(g, s, IgnoreButton, "NO LONGER LISTED");
+  IgnoreLabel ignore = ignoreLabel(present, r.ignored, listFull);
+  button(g, s, IgnoreButton, ignore.text, ignore.active);
   button(g, s, CloseButton, "BACK");
 }
 
+// The note under the settings: two lines of at most 49 characters.
+constexpr const char *SettingsNote[2] = {"Types switched off are not listed; the rest only",
+                                         "shape alerts. A match is a clue, not proof."};
 struct SettingsView {
   Confidence threshold = Confidence::Medium;
   uint32_t familyQuietMs = 60000, typeFilter = TypeFilter::Defaults;
@@ -1072,8 +1169,8 @@ template <class G> void drawReconSettings(G &g, const Style &s, const SettingsVi
   button(g, s, FamilyQuietButton, n);
   button(g, s, RemindersButton, v.repeat ? "Reminders: 5 min" : "Reminders: OFF");
   button(g, s, QuietRoadButton, v.quietRoad ? "Quiet road: ON" : "Quiet road: OFF");
-  if (v.autoSnooze)
-    snprintf(n, sizeof(n), "Auto snooze: %u", unsigned(v.autoSnooze));
+  if (v.autoSnooze) // A count of alerts, not minutes: say so. At most 21 characters.
+    snprintf(n, sizeof(n), "Auto snooze: %u alerts", unsigned(v.autoSnooze));
   else
     snprintf(n, sizeof(n), "Auto snooze: OFF");
   button(g, s, SnoozeButton, n);
@@ -1088,12 +1185,16 @@ template <class G> void drawReconSettings(G &g, const Style &s, const SettingsVi
          : v.confirmClear ? "TAP AGAIN: CLEAR"
                           : "CLEAR ALL",
          v.confirmClear && v.ignored);
-  text(g, "Everything classified is listed; these only", 12, 212, s.colors.muted);
-  text(g, "shape alerts. A match is a clue, not proof.", 12, 224, s.colors.muted);
+  text(g, SettingsNote[0], 12, 212, s.colors.muted);
+  text(g, SettingsNote[1], 12, 224, s.colors.muted);
 }
-template <class G> void drawReconTypes(G &g, const Style &s, uint32_t typeFilter, unsigned page) {
+// `typeFilter` is the mask being edited. It takes effect when the page is left (`changed` says it
+// differs from the one in force), so a slip of the finger can be undone before any row is dropped.
+template <class G>
+void drawReconTypes(G &g, const Style &s, uint32_t typeFilter, unsigned page,
+                    bool changed = false) {
   char n[40];
-  heading(g, s, "DEVICE TYPES");
+  heading(g, s, changed ? "DEVICE TYPES - BACK applies" : "DEVICE TYPES");
   for (unsigned t = 0; t < TierCount; ++t) {
     Box b = tierToggle(t);
     unsigned state = tierState(typeFilter, Tier(t));

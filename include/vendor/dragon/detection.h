@@ -286,7 +286,7 @@ inline BleFrame parseBle(const uint8_t* p,size_t n,size_t advLength=0) {
   else if(snap && snapService)f.match={Family::Meta,Confidence::Medium,"Snap company + FE45 service; model/recording unknown","Snap Spectacles"};
   else if(raven)f.match={Family::Raven,ravenServices==0x1f?Confidence::Strong:Confidence::Medium,"exact Raven research service; spoofable, field validation pending","Raven"};
   else if(biscuit && namedPrefix(f.name,"biscuit"))f.match={Family::Biscuit,Confidence::Medium,"Biscuit name + service; Pro/Ultra model unverified"};
-  else if(smarttag)f.match={Family::SmartTag,Confidence::Strong,"Samsung FD5A service; owner and model unknown","SmartTag"};
+  else if(smarttag)f.match={Family::SmartTag,Confidence::Strong,"Samsung FD5A service; owner and model unknown","Samsung Find"};
   else if(google)f.match={Family::GoogleTag,Confidence::Strong,"Find Hub 40/41 frame and valid EID length; owner unknown","Find Hub"};
   else if(tile)f.match={Family::Tile,Confidence::Strong,"Tile-assigned service; owner unknown","Tile"};
   else if(chipolo)f.match={Family::GoogleTag,Confidence::Medium,"Chipolo-assigned identifier; network/model/owner unverified","Chipolo"};

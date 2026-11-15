@@ -75,7 +75,7 @@ static void openRecon(bool home) {
   detailOpen = false;
   reconPage = statPage = 0;
   // Start where there is something to read: what is in range, else what has been.
-  reconTab = homeRows.live || !homeRows.total ? rv::Tab::Live : rv::Tab::Seen;
+  reconTab = homeRows.inRange || !homeRows.total ? rv::Tab::Live : rv::Tab::Seen;
 }
 static void openDevice(const ReconRow &row, bool direct) {
   page = Recon;
@@ -85,6 +85,9 @@ static void openDevice(const ReconRow &row, bool direct) {
 }
 static const char *names[] = {"Mochi", "Sprout", "Orbit", "Wisp", "Ember"};
 static unsigned buddyPage = 0, gpsModelPage = 0;
+// The type filter as edited on the Types page. It replaces the saved one when the page is left:
+// switching a type off drops its rows from the list, so a slip must be undoable first.
+static uint32_t typeDraft = TypeFilter::Defaults;
 static GpsConfig gpsDraft;
 static bool gpsWasSearching = false;
 static const char *tones[] = {"Personality", "Siren", "Arcade", "Chime", "Silent"};
@@ -145,6 +148,32 @@ static BuddyLook buddyLook() {
   look.aura = app.settings.customAura;
   return look;
 }
+// What the open alert is about, for the card on Home and the overlay on every other page.
+static rv::AlertCardView alertCard() {
+  rv::AlertCardView card;
+  card.kind = app.active.kind;
+  card.demo = app.demo;
+  card.family = app.active.match.family;
+  card.confidence = app.active.match.confidence;
+  card.label = app.active.label;
+  card.rssi = app.active.rssi;
+  card.followS = app.active.followMs / 1000;
+  card.followMeters = app.active.followMeters;
+  return card;
+}
+// DETAILS on the alert card: the card of the device behind the open alert, if its row is still
+// in the table. Either way the alert is dismissed.
+static void openAlertDevice() {
+  ReconRow wanted;
+  memcpy(wanted.mac, app.active.addr, 6);
+  wanted.ble = app.active.ble;
+  wanted.addressType = app.active.addressType;
+  wanted.family = app.active.match.family;
+  const ReconDevice *row = reconFind(wanted);
+  buddyDismiss();
+  if (row)
+    openDevice(reconRow(*row, millis(), reconClock()), true);
+}
 // Snapshot the app state for the shared home-screen renderer (include/home_view.h).
 static void home(uint32_t now) {
   HomeView v;
@@ -170,13 +199,7 @@ static void home(uint32_t now) {
   v.levelAge = app.levelUpAt ? uint32_t(now - app.levelUpAt) : UINT32_MAX;
   v.alert = app.alertOpen;
   v.demo = app.demo;
-  v.card.kind = app.active.kind;
-  v.card.family = app.active.match.family;
-  v.card.confidence = app.active.match.confidence;
-  v.card.label = app.active.label;
-  v.card.rssi = app.active.rssi;
-  v.card.followS = app.active.followMs / 1000;
-  v.card.followMeters = app.active.followMeters;
+  v.card = alertCard();
   v.fix = usableFix(app.fix);
   v.sats = app.fix.sats;
   v.recording = app.session.armed;
@@ -431,7 +454,8 @@ static void detection() {
 }
 static void recon() {
   if (detailOpen)
-    rv::drawReconDetail(canvas, reconStyle(), detail, detailPresent);
+    rv::drawReconDetail(canvas, reconStyle(), detail, detailPresent,
+                        reconPolicy().ignores.size() >= IgnoreList::Capacity);
   else if (reconTab == rv::Tab::Stats)
     rv::drawReconStats(canvas, reconStyle(), statRows);
   else {
@@ -449,7 +473,9 @@ static void reconTouch(int x, int y) {
     case rv::DetailHit::Ignore:
       if (ReconDevice *row = reconFind(detail)) {
         bool ignore = !row->ignored;
-        if (reconIgnore(*row, ignore) && ignore)
+        if (!reconIgnore(*row, ignore)) // Only a full list refuses; the button says so too.
+          say("Ignore list is full. Detection > CLEAR ALL.");
+        else if (ignore)
           buddyReconIgnored();
       }
       break;
@@ -594,31 +620,20 @@ static void touch(int x, int y) {
       else
         startDrive();
       break;
-    case HomeTap::Row:
-      if (app.alertOpen) // Do not leave the alert running behind the card.
-        buddyDismiss();
+    case HomeTap::Row: // Never offered while an alert is open (homeTap).
       openDevice(homeRows.rows[tap.row], true);
       break;
     case HomeTap::Recon: {
       openRecon(true);
-      // Voice ALL names the top thing in range (an existing family clip), at most once per tap.
-      const ReconRow &top = homeRows.rows[0];
-      buddyReconPeek(homeRows.count && top.live && !top.ignored ? top.family : Family::None);
+      // Voice ALL names the top thing in range that is not the owner's own (an existing family
+      // clip), at most once per tap.
+      const ReconRow *top = homeTopThreat(homeRows);
+      buddyReconPeek(top ? top->family : Family::None);
       break;
     }
-    case HomeTap::AlertDetail: {
-      // The card of the device behind the open alert, if its row is still in the table.
-      ReconRow wanted;
-      memcpy(wanted.mac, app.active.addr, 6);
-      wanted.ble = app.active.ble;
-      wanted.addressType = app.active.addressType;
-      wanted.family = app.active.match.family;
-      const ReconDevice *row = reconFind(wanted);
-      buddyDismiss();
-      if (row)
-        openDevice(reconRow(*row, millis(), reconClock()), true);
+    case HomeTap::AlertDetail:
+      openAlertDevice();
       break;
-    }
     case HomeTap::Stats: // The vitals row opens the buddy's stats.
       page = Behavior;
       fromHome = true;
@@ -635,12 +650,28 @@ static void touch(int x, int y) {
     snapshot();
     return;
   }
+  // An alert that opened over another page: its card is drawn on top (uiTick) and takes this
+  // tap, so the page underneath never acts on a tap aimed at the alert.
+  rv::OverlayTap over = rv::overlayTap(x, y, app.alertOpen, app.demo);
+  if (over != rv::OverlayTap::Pass) {
+    if (over == rv::OverlayTap::Details)
+      openAlertDevice();
+    else
+      buddyDismiss();
+    snapshot();
+    return;
+  }
   if (page == Recon) {
     reconTouch(x, y);
     snapshot();
     return;
   }
   if (rv::BackZone.has(x, y)) {
+    if (page == Types && typeDraft != (app.settings.typeFilter & TypeFilter::All)) {
+      app.settings.typeFilter = typeDraft;
+      reconRefresh(); // Rows of a type that was switched off leave the list now.
+      saveSettings();
+    }
     page = page == Menu || (fromHome && page == Behavior) ? Home
            : page == Types                                ? Detection
            : (page == Buddies || page == Studio)          ? Appearance
@@ -845,6 +876,7 @@ static void touch(int x, int y) {
     case rv::SettingsHit::Types:
       page = Types;
       typePage = 0;
+      typeDraft = app.settings.typeFilter & TypeFilter::All;
       break;
     case rv::SettingsHit::Clear:
       if (clearing && confirmClear) // The second tap does it.
@@ -858,18 +890,10 @@ static void touch(int x, int y) {
   }
   case Types: {
     rv::TypesTarget t = rv::typesTap(x, y, typePage);
-    TypeFilter filter;
-    filter.mask = app.settings.typeFilter & TypeFilter::All;
-    if (t.hit == rv::TypesHit::Tier)
-      filter.mask = rv::toggleTier(filter.mask, Tier(t.index));
-    else if (t.hit == rv::TypesHit::Family)
-      filter.set(t.family, !filter.tracks(t.family));
-    else if (t.hit == rv::TypesHit::Prev || t.hit == rv::TypesHit::Next)
+    // Edits go to the draft; BACK (above) puts it in force.
+    typeDraft = rv::typesEdit(typeDraft, t);
+    if (t.hit == rv::TypesHit::Prev || t.hit == rv::TypesHit::Next)
       typePage = rv::stepPage(typePage, rv::TypePages, t.hit == rv::TypesHit::Next);
-    if (filter.mask != app.settings.typeFilter) {
-      app.settings.typeFilter = filter.mask;
-      reconRefresh(); // Rows of a family that was switched off leave the list now.
-    }
     break;
   }
   case Diagnostics:
@@ -1021,7 +1045,8 @@ void uiTick() {
     detection();
     break;
   case Types:
-    rv::drawReconTypes(canvas, reconStyle(), app.settings.typeFilter, typePage);
+    rv::drawReconTypes(canvas, reconStyle(), typeDraft, typePage,
+                       typeDraft != (app.settings.typeFilter & TypeFilter::All));
     break;
   case Recon:
     recon();
@@ -1039,6 +1064,9 @@ void uiTick() {
     gpsWiring();
     break;
   }
+  // Home draws the alert card itself; everywhere else it goes on top of the page.
+  if (app.alertOpen && page != Home)
+    rv::drawAlertCard(canvas, reconStyle(), alertCard());
   canvas.pushSprite(0, 0);
 }
 void uiSwitchView() {

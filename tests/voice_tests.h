@@ -111,8 +111,21 @@ inline void checkVoice() {
     uint32_t t = 0xffffe000u;
     CHECK(gate.ready(SpeechKind::Alert, Clip::Flock, t, true));
     gate.mark(SpeechKind::Alert, Clip::Flock, t);
-    // No second clip of any kind for four seconds; an alert never interrupts another alert.
-    CHECK(!gate.ready(SpeechKind::Alert, Clip::Tile, t + 3999, true));
+    // A second alert moments later is spoken too: the firmware has already cut the first clip
+    // for it, and it only got past the alert cooldowns by being the more important one (a
+    // camera behind a tag, a flood, "We're being followed!"). It must not be left as a tone.
+    for (uint32_t later : {0u, 1u, 1000u, 3999u})
+      for (Clip second : {Clip::Tile, Clip::Following, Clip::Flood, Clip::Flock})
+        CHECK(gate.ready(SpeechKind::Alert, second, t + later, true));
+    {
+      SpeechGate twice = gate;
+      twice.mark(SpeechKind::Alert, Clip::Following, t + 1000);
+      CHECK(twice.ready(SpeechKind::Alert, Clip::Flock, t + 1001, true));
+      // The pet-phrase gap restarts from the latest alert clip.
+      CHECK(!twice.ready(SpeechKind::Pet, Clip::AllClear, t + 4999, false));
+      CHECK(twice.ready(SpeechKind::Pet, Clip::AllClear, t + 5000, false));
+    }
+    // No pet phrase for four seconds after any clip.
     CHECK(!gate.ready(SpeechKind::Pet, Clip::AllClear, t + 3999, false));
     CHECK(gate.ready(SpeechKind::Alert, Clip::Tile, t + 4000, true));
     CHECK(gate.ready(SpeechKind::Pet, Clip::AllClear, t + 4000, false));
@@ -128,11 +141,12 @@ inline void checkVoice() {
     CHECK(!gate.ready(SpeechKind::Pet, Clip::AllClear, t + 9000 + PetRepeatMs - 1, false));
     CHECK(gate.ready(SpeechKind::Pet, Clip::AllClear, t + 9000 + PetRepeatMs, false));
     CHECK(gate.ready(SpeechKind::Pet, Clip::Sleepy, t + 60000, false));
-    // A detection pre-empts a pet phrase at once, then holds the floor.
+    // A detection pre-empts a pet phrase at once; pet phrases then wait, a later alert does not.
     gate.mark(SpeechKind::Pet, Clip::Sleepy, t + 60000);
     CHECK(gate.ready(SpeechKind::Alert, Clip::Drone, t + 60001, true));
     gate.mark(SpeechKind::Alert, Clip::Drone, t + 60001);
-    CHECK(!gate.ready(SpeechKind::Alert, Clip::Drone, t + 62000, true));
+    CHECK(gate.ready(SpeechKind::Alert, Clip::Drone, t + 62000, true));
+    CHECK(!gate.ready(SpeechKind::Pet, Clip::Hello, t + 62000, false));
     // The test button always speaks and yields to a real alert like a pet phrase does.
     CHECK(gate.ready(SpeechKind::Test, Clip::Hello, t + 60002, true));
     gate.mark(SpeechKind::Test, Clip::Hello, t + 62000);

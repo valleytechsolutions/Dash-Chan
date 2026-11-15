@@ -19,6 +19,9 @@ static unsigned panicStep = 0;
 static uint32_t panicWait = 0;
 static Banter banter;
 static ReconBanter reconBanter;
+static ChatterPace chatterPace;
+static uint32_t wokenAt = 0;
+static bool woken = false; // buddyPoke() has just woken the buddy and said so.
 static uint32_t reconAt = 0, ignoreSaidAt = 0;
 static unsigned alertFlinch = 100; // Percent of the full panic gesture for the open alert.
 static PetCombo petCombo;
@@ -170,8 +173,12 @@ static Mood watchfulMood(Feeling f) {
 void buddyPoke() {
   lastTouch = millis();
   // buddyTick re-evaluates the feeling on the next pass.
-  if (app.feeling == Feeling::Napping && !app.alertOpen && !petSpeak(Clip::GoodMorning))
-    buddySay(Topic::Wake);
+  if (app.feeling == Feeling::Napping && !app.alertOpen) {
+    if (!justWoken(woken, wokenAt, lastTouch) && !petSpeak(Clip::GoodMorning))
+      buddySay(Topic::Wake);
+    woken = true;
+    wokenAt = lastTouch;
+  }
 }
 // Someone leaned in (proximity sensor). A hello, not a pet: it wakes the buddy and warms it a
 // little without counting toward pets or combos.
@@ -268,8 +275,19 @@ void buddyPet(bool allowVoice) {
   feel(enough ? Mood::Curious : Mood::Love, 3000);
   idleMotion.reset(now, 3500);
   gazeTarget = 0;
-  if (app.settings.motion)
-    M5StackChan.Motion.move(enough ? (esp_random() & 1 ? 140 : -140) : 0, 230, 110);
+  if (app.settings.motion) {
+    // On the road the turn stays inside the drive-safe box (idle_motion.h).
+    MotionCue cue{enough ? (esp_random() & 1 ? 140 : -140) : 0, 230, 110, 0};
+    cue = flinchCue(cue, 100, onTheRoad());
+    M5StackChan.Motion.move(cue.yaw, cue.pitch, cue.speed);
+  }
+  // The tap that woke the buddy has already had its good morning from buddyPoke(); the love and
+  // the nuzzle above still count, but a second wake line would replace the words being spoken.
+  if (topic == Topic::Wake && justWoken(woken, wokenAt, now)) {
+    if (allowVoice)
+      chirp(chirpYawn); // Stays silent while the good morning clip is playing.
+    return;
+  }
   const char *text = line(topic);
   char counted[64];
   if (petMilestone.due() && petMilestoneFits(topic)) {
@@ -324,18 +342,20 @@ void buddyDemo() {
   Alert a;
   a.match = {Family::Axon, Confidence::Medium, "Synthetic demo; no device detected"};
   a.rssi = -45;
-  strcpy(a.name, "Demo body-camera signal");
   buddyAlert(a, true);
 }
 // Opening the Recon page in Voice ALL names the top thing in range, with one of the family
 // clips that already exist. The pet-phrase limits apply, so it cannot chatter.
 void buddyReconPeek(Family top) {
-  if (top == Family::None || app.alertOpen || app.feeling == Feeling::Napping)
+  // It is the alert clip for that family, so the Silent alert tone keeps it quiet as well.
+  if (top == Family::None || app.alertOpen || app.feeling == Feeling::Napping ||
+      app.settings.tone == AlertTone::Silent)
     return;
   petSpeak(clipFor(top));
 }
 void buddyReconIgnored() {
   uint32_t now = millis();
+  reconBanter.forget(); // Before the early return: an ignored follower has not "gone".
   if (app.alertOpen || (ignoreSaidAt && uint32_t(now - ignoreSaidAt) < 5000))
     return;
   ignoreSaidAt = now | 1;
@@ -419,13 +439,15 @@ void buddyDiscovery(const uint8_t mac[6], const char *ssid, bool open) {
     feel(Mood::Love, 3000);
     chirp(chirpSnack);
   }
+  // The level-up line (and its clip) keeps the bubble; a milestone that landed on the same
+  // network stays due and is said with the next one.
+  if (spoke)
+    return;
   if (findMilestone.due()) {
     findMilestoneLine(text, sizeof(text), findMilestone.due(), esp_random());
     say(text);
     findMilestone.clear();
-  } else if (spoke)
-    return;
-  else if (fuss) {
+  } else if (fuss) {
     if (stuffed || !petSpeak(Clip::NewWifi))
       buddySay(stuffed ? Topic::Stuffed : Topic::Snack);
   } else if (snack)
@@ -458,10 +480,8 @@ void buddyAlert(const Alert &a, bool demo) {
   panicStep = 0;
   panicWait = 0;
   idleMotion.reset(millis(), 4000);
-  if (!demo) {
-    ++app.alerts;
+  if (!demo)
     logAlert(a);
-  }
   bool police = a.match.family == Family::Axon;
   unsigned line = demo ? 0 : esp_random() % 3;
   Family family = a.match.family;
@@ -478,7 +498,9 @@ void buddyAlert(const Alert &a, bool demo) {
   alertFlinch = flinchPercent(twist == AlertTwist::Following ? 0 : unsigned(tierOf(family)),
                               demo ? -50 : a.rssi);
   soundActive = false;
-  speechStop(); // A pet phrase gives way even when the alert itself is silent.
+  // Whatever was being said gives way, a pet phrase or an earlier alert's clip, even when this
+  // alert is silent: the bubble and the card now belong to the new alert.
+  speechStop();
   if (audible)
     M5.Speaker.stop();
   if (voiceSpeak(clip, SpeechKind::Alert)) {
@@ -518,7 +540,10 @@ void buddyAlert(const Alert &a, bool demo) {
     beginTone(app.settings.tone);
   }
 }
-void buddyDismiss() {
+void buddyDismiss(bool byTimeout) {
+  // Read what the alert was about before anything is cleared.
+  Topic closing =
+      dismissTopic(byTimeout, app.active.kind == AlertFollowing, reconCounts().followingLive != 0);
   app.alertOpen = false;
   app.demo = false;
   feel(Mood::Curious, 4000);
@@ -529,9 +554,11 @@ void buddyDismiss() {
   gazeTarget = 0;
   if (app.settings.motion)
     M5StackChan.Motion.move(0, 200, 100);
-  // A silent alert ends silently too.
-  if (app.settings.tone == AlertTone::Silent || !petSpeak(Clip::AllClear))
-    buddySay(Topic::AllClear);
+  // "All clear" is only said when that is what happened (see dismissTopic); otherwise a neutral
+  // line, in text only. A silent alert ends silently too.
+  if (closing != Topic::AllClear || app.settings.tone == AlertTone::Silent ||
+      !petSpeak(Clip::AllClear))
+    buddySay(closing);
 }
 void buddyTick() {
   uint32_t now = millis();
@@ -541,7 +568,7 @@ void buddyTick() {
   if (headTouch.update(now, headPressed) && !app.alertOpen)
     buddyPet(false); // Sensor affection is visual; only deliberate screen pets can speak.
   if (app.alertOpen && uint32_t(now - app.alertAt) > 8500)
-    buddyDismiss();
+    buddyDismiss(true);
   bool fix = usableFix(app.fix);
   // "Stopped" means known to be stationary, so it only accumulates while there is a fix.
   if (app.moving || !fix || !app.session.armed)
@@ -555,6 +582,7 @@ void buddyTick() {
   vitals.energy = app.energy;
   vitals.bond = app.bond;
   vitals.onTheRoad = onTheRoad();
+  lastTouch = attentionAt(lastTouch, now, vitals.onTheRoad);
   vitals.quietMs = now - lastTouch;
   vitals.recentFinds = uint32_t(now - burstAt) < 45000 ? burstFinds : 0;
   app.feeling = feelingFor(vitals);
@@ -625,10 +653,10 @@ void buddyTick() {
     road.noFixMs = now - noFixAt;
     if (app.mood == Mood::Happy)
       feel(Mood::Curious, 5000);
-    Topic topic = chatterTopic(app.feeling, road, esp_random());
-    Clip clip = topic == Topic::IdleHungry   ? Clip::Hungry
-                : topic == Topic::IdleDrowsy ? Clip::Sleepy
-                                             : Clip::Count;
+    Topic topic = chatterPace.pace(chatterTopic(app.feeling, road, esp_random()), now);
+    Clip clip = topic == Topic::IdleHungry || topic == Topic::RoadHungry ? Clip::Hungry
+                : topic == Topic::IdleDrowsy                             ? Clip::Sleepy
+                                                                         : Clip::Count;
     if (clip == Clip::Count || !petSpeak(clip))
       buddySay(topic);
   }
@@ -707,7 +735,7 @@ void buddyTick() {
     if (idleMotion.tick(now, esp_random(), restingMood(app.feeling) != Mood::Happy,
                         app.settings.avatar == Avatar::Custom ? app.settings.customBase
                                                               : unsigned(app.settings.avatar),
-                        app.session.armed, cue)) {
+                        onTheRoad(), cue)) {
       if (app.settings.motionStyle == 1) {
         cue.yaw /= 2;
         cue.pitch = 200 + (cue.pitch - 200) / 2;

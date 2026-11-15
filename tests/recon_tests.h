@@ -75,7 +75,7 @@ static_assert(SnoozeMarginDb == 7 && SnoozeDecayMs == 30 * 60000 && RenotifyMs =
 static_assert(FloodGate::Trip == 40 && FloodGate::WindowMs == 60000 &&
                   FloodGate::QuietMs == 5 * 60000,
               "flood gate");
-static_assert(FollowPlaces == 3 && FollowMeters == 500 && FollowMs == 10 * 60000 &&
+static_assert(FollowPlaces == 3 && FollowMeters == 500 && FollowMs == 25 * 60000 &&
                   FollowPointCount == 4,
               "follow detection");
 inline void tiersAndLabels() {
@@ -329,6 +329,33 @@ inline void sortingAndCounts() {
   // Another packet from B changes the recency order but not the steady priority order.
   b.see(B, Family::Flock, 159500);
   RECON_CHECK(ids(ReconSort::Priority) == "EBDACR" && ids(ReconSort::Recent) == "BADECR");
+  {
+    // The owner's own gear: an ignored live row comes after every other live row, whatever
+    // its tier, and before anything that is out of range. Recent order is not affected.
+    IgnoreList mine;
+    uint8_t address[6];
+    Bench::mac(address, E);
+    mine.add(address, Family::Flock);
+    b.table.applyIgnores(mine);
+    RECON_CHECK(ids(ReconSort::Priority) == "BDAECR" && ids(ReconSort::Recent) == "BADECR");
+    RECON_CHECK(ids(ReconSort::Priority, 2) == "BD");
+    Bench::mac(address, B);
+    mine.add(address, Family::Flock);
+    b.table.applyIgnores(mine);
+    RECON_CHECK(ids(ReconSort::Priority) == "DAEBCR"); // Among ignored rows: tier, then arrival.
+    ReconCounts watch;
+    b.table.counts(watch, now);
+    RECON_CHECK(watch.live == 4 && watch.liveTier[unsigned(Tier::Surveillance)] == 2 &&
+                watch.watchTier[unsigned(Tier::Surveillance)] == 0 &&
+                watch.watchTier[unsigned(Tier::Hacker)] == 1 && watchLevel(watch) == 2);
+    // Out of range the flag no longer matters to the order.
+    uint32_t later = now;
+    now = 400000;
+    RECON_CHECK(ids(ReconSort::Priority) == "BECRDA");
+    now = later;
+    b.table.applyIgnores(IgnoreList());
+    RECON_CHECK(ids(ReconSort::Priority) == "EBDACR");
+  }
   ReconCounts c;
   b.table.counts(c, now);
   RECON_CHECK(c.total == 6 && c.live == 4 && c.restored == 1 && c.following == 0);
@@ -709,10 +736,53 @@ inline void followDetection() {
     RECON_CHECK(!followNote(tag, lat + step, lon, 5 * minute) && tag.pointCount == 2);
     // Three places, but only eight minutes: could be the car ahead at the lights.
     RECON_CHECK(!followNote(tag, lat + 2 * step, lon, 8 * minute) && tag.pointCount == 3);
-    RECON_CHECK(!followNote(tag, lat + 2 * step, lon, 10 * minute)); // Exactly ten is not "more".
-    // Still with us past ten minutes: flagged, even though it is the same third place.
-    RECON_CHECK(followNote(tag, lat + 2 * step + 0.001f, lon, 10 * minute + 1));
-    RECON_CHECK(tag.following && tag.pointCount == 3 && followSpanMs(tag) == 10 * minute + 1);
+    // Seventeen minutes is still inside one address lifetime of a tag riding with its owner.
+    RECON_CHECK(!followNote(tag, lat + 2 * step, lon, 17 * minute));
+    RECON_CHECK(
+        !followNote(tag, lat + 2 * step, lon, FollowMs)); // Exactly the limit is not "more".
+    // Still with us past the limit: flagged, even though it is the same third place.
+    RECON_CHECK(followNote(tag, lat + 2 * step + 0.001f, lon, FollowMs + 1));
+    RECON_CHECK(tag.following && tag.pointCount == 3 && followSpanMs(tag) == FollowMs + 1);
+  }
+  {
+    // A tag riding with its owner (the driver's keys, a passenger's bag) changes its address
+    // about every 15 to 17 minutes, and each address is a new row. Heard every two seconds on
+    // an hour's drive at 50 km/h, no row may ever qualify: the limit is longer than a lifetime.
+    for (uint32_t lifetime : {15 * minute, 17 * minute, 20 * minute}) {
+      Bench b;
+      uint8_t address[6];
+      unsigned flagged = 0;
+      for (uint32_t t = 0; t < 60 * minute; t += 2000) {
+        Bench::mac(address, 100 + t / lifetime);
+        ReconSighting s = b.sighting(address, Family::SamsungTag, -55);
+        s.fix = true;
+        s.lat = lat + float(t / 1000) * 13.9f / 111320.0f; // 50 km/h, due north.
+        s.lon = lon;
+        ReconDevice *row = b.table.observe(s, t).row;
+        RECON_CHECK(row);
+        flagged += b.table.followDue(*row);
+      }
+      RECON_CHECK(!flagged);
+    }
+    // The same drive with an address that stays put (a tag away from its owner) does qualify,
+    // once, after the limit.
+    Bench b;
+    uint8_t address[6];
+    Bench::mac(address, 7);
+    unsigned flagged = 0;
+    uint32_t flaggedAt = 0;
+    for (uint32_t t = 0; t < 60 * minute; t += 2000) {
+      ReconSighting s = b.sighting(address, Family::SamsungTag, -55);
+      s.fix = true;
+      s.lat = lat + float(t / 1000) * 13.9f / 111320.0f;
+      s.lon = lon;
+      ReconDevice *row = b.table.observe(s, t).row;
+      if (b.table.followDue(*row)) {
+        ++flagged;
+        flaggedAt = t;
+      }
+    }
+    RECON_CHECK(flagged == 1 && flaggedAt > FollowMs && flaggedAt <= FollowMs + 2000);
   }
   {
     ReconDevice tag; // Parked next to a tag for an hour, GPS wandering 100 m: never.
@@ -735,7 +805,8 @@ inline void followDetection() {
       for (unsigned c = a + 1; c < tag.pointCount; ++c)
         RECON_CHECK(metersBetween(tag.points[a].lat, tag.points[a].lon, tag.points[c].lat,
                                   tag.points[c].lon) > FollowMeters);
-    RECON_CHECK(followNote(tag, lat + 11 * step, lon, 11 * minute));
+    RECON_CHECK(!followNote(tag, lat + 11 * step, lon, 11 * minute));
+    RECON_CHECK(followNote(tag, lat + 26 * step, lon, 26 * minute));
     ReconDevice mine; // The user's own tag is never flagged, however far it travels.
     mine.ignored = true;
     for (unsigned i = 0; i < 30; ++i)
@@ -753,7 +824,7 @@ inline void followDetection() {
       s.lat = lat + i * step;
       s.lon = lon;
       s.utc = 800000000 + i * 60;
-      return b.table.observe(s, i * 4 * minute).row;
+      return b.table.observe(s, i * 9 * minute).row;
     };
     ReconDevice *tag = nullptr, *camera = nullptr;
     for (unsigned i = 0; i < 4; ++i) {
@@ -765,13 +836,13 @@ inline void followDetection() {
                 fabsf(tag->lat - (lat + 3 * step)) < 1e-5f && tag->lon == lon);
     RECON_CHECK(!camera->following && camera->pointCount == 0 && camera->lat == tag->lat);
     ReconCounts counts;
-    b.table.counts(counts, 12 * minute);
+    b.table.counts(counts, 27 * minute);
     RECON_CHECK(counts.following == 1);
     RECON_CHECK(b.table.followDue(*tag) && !b.table.followDue(*tag) && !b.table.followDue(*camera));
-    b.policy.announceFollow(*tag, 12 * minute);
+    b.policy.announceFollow(*tag, 27 * minute);
     RECON_CHECK(tag->alerted);
     // Nothing talks over a follow warning for ten seconds, not even a camera.
-    RECON_CHECK(b.hear(9, Family::Flock, 12 * minute + 5000) == AlertVerdict::GlobalCooldown);
+    RECON_CHECK(b.hear(9, Family::Flock, 27 * minute + 5000) == AlertVerdict::GlobalCooldown);
     // Ignoring it afterwards clears the flag; a sighting without a fix leaves the trail alone.
     b.policy.ignores.add(address, Family::SamsungTag);
     b.table.applyIgnores(b.policy.ignores);
@@ -994,6 +1065,78 @@ inline void ledger() {
               ledgerLoad(few.table, junk, false, few.ctx.filter) == 0 &&
               ledgerLoad(few.table, empty, false, few.ctx.filter) == 0);
   RECON_CHECK(ReconTable::live(*b.row(69, Family::Flock), 5000));
+  {
+    // A power cut can leave a partial last row. Read back, the tail is reported as torn, and
+    // the next rows are started on a new line: without it the first row written after the cut
+    // is glued to the fragment and both are lost.
+    std::string cut = ledgerHeader() + fileLine(1, Family::Flock, 1000) +
+                      fileLine(2, Family::Flock, 2000).substr(0, 40);
+    std::string glued = cut + fileLine(3, Family::Flock, 3000) + fileLine(4, Family::Flock, 4000);
+    Bench lost;
+    copy = glued;
+    RECON_CHECK(!ledgerScrub(&copy[0], copy.size())); // It ends in a newline; the damage is inside.
+    RECON_CHECK(ledgerLoad(lost.table, &copy[0], false, lost.ctx.filter) == 2 &&
+                !lost.row(3, Family::Flock)); // What used to happen: row 3 gone.
+    copy = cut;
+    RECON_CHECK(ledgerScrub(&copy[0], copy.size())); // Torn: the writer must break the line.
+    std::string mended =
+        cut + "\n" + fileLine(3, Family::Flock, 3000) + fileLine(4, Family::Flock, 4000);
+    Bench kept;
+    copy = mended;
+    RECON_CHECK(!ledgerScrub(&copy[0], copy.size()));
+    RECON_CHECK(ledgerLoad(kept.table, &copy[0], false, kept.ctx.filter) == 3 &&
+                kept.row(1, Family::Flock) && !kept.row(2, Family::Flock) &&
+                kept.row(3, Family::Flock) && kept.row(4, Family::Flock));
+    // A clean tail, an empty file and a lone newline are not torn.
+    copy = ledgerHeader() + fileLine(1, Family::Flock, 1000);
+    RECON_CHECK(!ledgerScrub(&copy[0], copy.size()) && !ledgerScrub(&copy[0], 0));
+    char newline[] = "\n";
+    RECON_CHECK(!ledgerScrub(newline, 1));
+    // The same after a write that failed part-way through a row: the retry writes the whole
+    // row again, on its own line.
+    std::string retried = ledgerHeader() + fileLine(1, Family::Flock, 1000).substr(0, 30) + "\n" +
+                          fileLine(1, Family::Flock, 1000);
+    Bench again;
+    copy = retried;
+    RECON_CHECK(ledgerLoad(again.table, &copy[0], false, again.ctx.filter) == 1 &&
+                again.row(1, Family::Flock));
+  }
+  {
+    // Zero bytes inside the tail (a stale cluster after a power cut) used to end the walk, so
+    // every newer row was hidden at each boot. They become line breaks: the damaged line is
+    // dropped and the rest load.
+    std::string damaged = ledgerHeader() + fileLine(1, Family::Flock, 1000);
+    std::string hurt = fileLine(2, Family::Flock, 2000);
+    hurt[10] = hurt[11] = hurt[30] = 0;
+    damaged += hurt + fileLine(3, Family::Flock, 3000) + std::string(4, '\0') + "\n" +
+               fileLine(4, Family::Flock, 4000);
+    std::vector<char> raw(damaged.begin(), damaged.end());
+    raw.push_back(0);
+    Bench blind;
+    std::vector<char> untreated = raw;
+    RECON_CHECK(ledgerLoad(blind.table, untreated.data(), false, blind.ctx.filter) == 1);
+    Bench seeing;
+    RECON_CHECK(!ledgerScrub(raw.data(), raw.size() - 1));
+    for (size_t i = 0; i + 1 < raw.size(); ++i)
+      RECON_CHECK(raw[i] != 0);
+    RECON_CHECK(ledgerLoad(seeing.table, raw.data(), false, seeing.ctx.filter) == 3 &&
+                seeing.row(1, Family::Flock) && !seeing.row(2, Family::Flock) &&
+                seeing.row(3, Family::Flock) && seeing.row(4, Family::Flock));
+    // A zero in the first, partial line of a tail read from mid-file.
+    std::string mid =
+        std::string("lf of a row") + '\0' + "more\n" + fileLine(5, Family::Flock, 5000);
+    std::vector<char> midRaw(mid.begin(), mid.end());
+    midRaw.push_back(0);
+    Bench middle;
+    ledgerScrub(midRaw.data(), midRaw.size() - 1);
+    RECON_CHECK(ledgerLoad(middle.table, midRaw.data(), true, middle.ctx.filter) == 1 &&
+                middle.row(5, Family::Flock));
+    // A tail that ends in zeros counts as ending in a line break.
+    std::string zeroEnd = fileLine(6, Family::Flock, 6000) + std::string(3, '\0');
+    std::vector<char> zeros(zeroEnd.begin(), zeroEnd.end());
+    zeros.push_back(0);
+    RECON_CHECK(!ledgerScrub(zeros.data(), zeros.size() - 1));
+  }
 }
 
 inline void wraparound() {
@@ -1031,8 +1174,8 @@ inline void wraparound() {
   ReconDevice tag;
   followNote(tag, 40.00f, -75, start);
   followNote(tag, 40.01f, -75, start + 300000);
-  RECON_CHECK(!followNote(tag, 40.02f, -75, start + 600000) &&
-              followNote(tag, 40.02f, -75, start + 600001));
+  RECON_CHECK(!followNote(tag, 40.02f, -75, start + FollowMs) &&
+              followNote(tag, 40.02f, -75, start + FollowMs + 1));
 
   // A device heard once and never again must not come back to life when millis() comes round
   // (about every 49.7 days), as long as the table is maintained now and then.

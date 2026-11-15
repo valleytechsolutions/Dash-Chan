@@ -65,8 +65,8 @@ Curious brows, bright eye highlights, paw pads, heart reactions, and open-mouth 
 
 Dash-Chan keeps track of how it feels and talks about that instead of looping one phrase:
 
-- **Feelings:** Content, Hyped, Hungry, Lonely, Bored, Drowsy or Napping, shown as a tag above the buddy. Low fuel or low love brings a pouty face; ignore it for 12 minutes off the road and it dozes off with drifting Zs until you tap or pet it.
-- **No repeats:** about 260 lines across 42 situations, with extra lines unique to each buddy and a sassier set when Banter is Spicy. Every line in a situation is used once before any comes back, and remarks arrive at irregular gaps.
+- **Feelings:** Content, Hyped, Hungry, Lonely, Bored, Drowsy or Napping, shown as a tag above the buddy. Low fuel or low love brings a pouty face; ignore it for 12 minutes off the road (the clock starts when the car stops, recorded drive or not) and it dozes off with drifting Zs until you tap or pet it.
+- **No repeats:** about 330 lines across 50 situations, with extra lines unique to each buddy and a sassier set when Banter is Spicy. Every line in a situation is used once before any comes back, and remarks arrive at irregular gaps.
 - **Petting has a combo:** a couple of pets earn love, quick repeats get giggles, and six in a row gets “Okay okay okay! I'm fully petted!” with no extra love.
 - **It notices the drive:** drive starts, red lights, dry stretches, sudden bursts of networks, missing GPS, per-drive milestones, and now and then the real name of a network it just logged (“Ooh, 'CoffeeShop'. Tasty.”).
 - **It remembers:** love, lifetime pets, snacks, drives and your best drive survive restarts. Beat your record and it says so. **MENU → Personality** shows the tally.
@@ -96,7 +96,7 @@ Open **[Avatar Studio](https://valleytech-dash-chan.pages.dev/#creator)** and st
 
 In **Auto** field-kit mode, the pet holds a radar-style antenna and pocket receiver while recording or when fresh GPS speed confirms movement. **Always** keeps the gear visible; **Off** hides it. Cruising adds a subtle bob and travel streaks. These are personality animations: the receiver does not process audio, and the antenna does not indicate signal direction. Alerts, muting, logging, and food rules work independently of the outfit.
 
-![The running firmware with a custom scout outfit and listening kit](site/assets/ui-fieldkit.png)
+![The home screen with a custom scout outfit and listening kit, rendered on a PC from the firmware's drawing code](site/assets/ui-fieldkit.png)
 
 ## Four themes, one familiar face
 
@@ -138,11 +138,11 @@ Choose **Off / Gentle / Lively** head motion and **Spicy / Gentle** banter under
 
 ## Alerts that know when to be quiet
 
-Everything Dash-Chan can classify is **listed**; only some of it **alerts**. An alert is a tier-coloured card with the name, signal strength and a **DETAILS** button; tapping anywhere else dismisses it. Two alerts are about behaviour rather than brand: a **tracker flood** (dozens of new tag addresses in a minute, probably a spam gadget) and a tag that has **stayed with you** across several places. With head motion on, the flinch is bigger for a closer, more serious device and is held to a small nod while driving.
+Everything Dash-Chan can classify is **listed**, except device types you have switched off (shop beacons start off); only some of it **alerts**. An alert is a tier-coloured card with the name, signal strength and a **DETAILS** button; tapping anywhere else dismisses it. The card appears over whatever page is open. Two alerts are about behaviour rather than brand: a **tracker flood** (dozens of new tag addresses in a minute, probably a spam gadget) and a tag that has **stayed with you** across several places. With head motion on, the flinch is bigger for a closer, more serious device and is held to a small nod while driving.
 
 The same continuing encounter is announced once by default. Its row keeps updating RSSI, count, and last-seen time. After **five minutes absent**, it can announce again. Stronger evidence may alert again after cooldowns. A separate **60/180/300-second family quiet period** reduces repeated notifications from rotating addresses; it does not claim those addresses belong to the same device. Optional five-minute reminders are off by default.
 
-The list holds 256 devices and the last 64 come back from the SD card after a restart. Very dense areas can evict older rows. **MENU → Detection** also has **Quiet road** (tags and Ring cameras are listed but silent while driving), **Auto snooze** (after 5 or 10 alerts a device must come closer to speak again), a **device type** filter, and the count of devices you have marked as your own with **CLEAR ALL**. A default medium-or-higher confidence threshold keeps weak name/vendor clues quieter. [Exact methods, limits, and personal watchlists](docs/DETECTIONS.md).
+The list holds 256 devices and the last 64 come back from the SD card after a restart. Very dense areas can evict older rows. **MENU → Detection** also has **Quiet road** (tags and Ring cameras are listed but silent while driving), **Auto snooze** (after 5 or 10 alerts a device must come closer to speak again), a **device type** filter (applied when you leave its page; a type that is off is not listed), and the count of devices you have marked as your own with **CLEAR ALL**. A default medium-or-higher confidence threshold keeps weak name/vendor clues quieter. [Exact methods, limits, and personal watchlists](docs/DETECTIONS.md).
 
 ## Hardware and first use
 

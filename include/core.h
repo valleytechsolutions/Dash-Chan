@@ -270,6 +270,13 @@ struct Cooldown {
     used = true;
   }
 };
+// A contact is forgotten after two minutes of silence. `seen` can be a moment AFTER `now`: the
+// radio tasks stamp packets while the loop is still working with an older millis() sample. The
+// difference is taken signed so that reads as "just seen", not as an age of 49 days.
+constexpr int32_t ContactLifeMs = 120000;
+inline bool contactExpired(uint32_t now, uint32_t seen) {
+  return int32_t(now - seen) > ContactLifeMs;
+}
 struct Session {
   bool armed = false;
   uint32_t generation = 0;

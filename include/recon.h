@@ -105,8 +105,8 @@ inline const char *familyInfo(Family f) {
       "popup-spam gadget.",
       "Matches a rule on your own watchlist. You asked to be told whenever this device or maker "
       "shows up.",
-      "Samsung SmartTag tracker. Fine on someone's keys; worth a look if it stays with you from "
-      "place to place.",
+      "Samsung SmartTag, or another Galaxy device in offline-finding mode. Worth a look only if "
+      "it stays with you from place to place.",
       "Tracker on Google's Find Hub network, such as a Chipolo or Pebblebee. Watch for one that "
       "keeps following you.",
       "Tile tracker. Usually on keys or a bag close by; be wary only if the same one keeps "
@@ -142,8 +142,12 @@ constexpr int ReconTrendDb = 4;             // Closer/further needs at least thi
 constexpr uint32_t ReconClampMs = 1u << 30; // Ages saturate here (12 days) so they never wrap.
 constexpr unsigned RestoreKeep = 64;        // Rows from earlier boots kept for the history list.
 constexpr unsigned FollowPointCount = 4;
-constexpr float FollowMeters = 500;     // Places closer together than this count as one place.
-constexpr uint32_t FollowMs = 600000;   // The company has to last longer than this.
+constexpr float FollowMeters = 500; // Places closer together than this count as one place.
+// The company has to last longer than this. A tag riding with its owner changes its address
+// about every 15 to 17 minutes and starts a new row each time, so the limit sits well above
+// that: only an address that stays put (a tag away from its owner keeps one for about a day)
+// can qualify.
+constexpr uint32_t FollowMs = 1500000;
 constexpr unsigned FollowPlaces = 3;    // ...across at least this many separate places.
 constexpr uint32_t RenotifyMs = 300000; // Same device: quiet until absent this long (or reminder).
 constexpr int SnoozeMarginDb = 7;       // A snoozed device must come this much closer to speak.
@@ -274,7 +278,9 @@ inline bool followDetected(const FollowPoint *points, unsigned count, uint32_t l
 //
 // Limits worth knowing: the identity is the advertised address. A tag separated from its owner
 // keeps one address for about a day, which is the case that matters; a tag near its owner rotates
-// roughly every 15 minutes and starts a new row each time. Rows are NOT folded by advert payload:
+// roughly every 15 minutes and starts a new row each time, which is why FollowMs is longer than
+// that. The ignore list is keyed by address too, so IGNORE only holds for a fixed address. Rows
+// are NOT folded by advert payload:
 // in Find My, SmartTag and Find Hub adverts the payload is key material that rotates together
 // with the address, and the bytes that stay put are shared by every tag of that model, so a
 // payload match would either never fire or merge strangers.
@@ -661,7 +667,8 @@ struct ReconSeen {
   uint32_t gapMs = 0; // Silence before this packet; UINT32_MAX for a restored row.
 };
 enum class ReconSort : uint8_t {
-  Priority, // Live first, then tier, then most recent. Steady: see ReconTable::sorted().
+  Priority, // Live first (the user's own ignored gear after the rest), then tier, then most
+            // recent. Steady: see ReconTable::sorted().
   Recent    // Most recently heard first, whatever it is.
 };
 struct ReconCounts {
@@ -887,7 +894,9 @@ public:
   // heap is used. Pass an array of capacity() entries for the whole list, or a shorter one for
   // just the top rows.
   //
-  // Priority order is live rows first, then tier, then most recent. To keep on-screen rows
+  // Priority order is live rows first, then tier, then most recent; among live rows the ones on
+  // the ignore list come last, so the user's own dashcam never outranks a stranger's gadget. To
+  // keep on-screen rows
   // from swapping places with every packet, "most recent" for a live row means it arrived most
   // recently (start of its current encounter); for rows no longer live it is when they were last
   // heard. Restored rows come after rows from this boot, newest ledger entry first.
@@ -1051,6 +1060,8 @@ private:
     if (order == ReconSort::Priority) {
       if (liveA != liveB)
         return liveA;
+      if (liveA && a.ignored != b.ignored)
+        return b.ignored;
       Tier tierA = tierOf(a.family), tierB = tierOf(b.family);
       if (tierA != tierB)
         return tierA < tierB;
@@ -1076,11 +1087,22 @@ private:
   bool lifetimeDirty_ = false;
 };
 
+// Make a freshly read ledger tail safe to walk as text and say how it ends. A power cut can leave
+// zero bytes inside the file; each becomes a line break, so the damaged line splits into pieces
+// ledgerParse() rejects and the rows after it still load. Returns true when the tail does not end
+// in a line break: the last row was torn, and the next row appended must start on a new line or
+// it would be glued to the fragment and lost with it.
+inline bool ledgerScrub(char *text, size_t length) {
+  for (size_t i = 0; i < length; ++i)
+    if (!text[i])
+      text[i] = '\n';
+  return length && text[length - 1] != '\n';
+}
 // Restore from the tail of the ledger file: `text` is the NUL-terminated end of the file (it is
-// cut up in place) and `midLine` says it does not start at the beginning of the file, so its
-// first line is probably the back half of one. Lines of families the filter has switched off,
-// torn lines and a last line that lost its newline to a power cut are skipped. Returns the
-// number of lines taken.
+// cut up in place; run ledgerScrub() over it first) and `midLine` says it does not start at the
+// beginning of the file, so its first line is probably the back half of one. Lines of families the
+// filter has switched off, torn lines and a last line that lost its newline to a power cut are
+// skipped. Returns the number of lines taken.
 inline unsigned ledgerLoad(ReconTable &table, char *text, bool midLine, const TypeFilter &filter,
                            unsigned keep = RestoreKeep) {
   unsigned loaded = 0;

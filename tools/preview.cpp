@@ -66,7 +66,7 @@ struct Scene {
     snprintf(e.label, sizeof(e.label), "%s", label);
     table.restore(e);
   }
-  // A tag heard at four places over twenty minutes: the follow rule trips.
+  // A tag heard at four places over thirty minutes: the follow rule trips.
   ReconDevice *follower() {
     uint8_t mac[6] = {0x5e, 0x11, 0x22, 0x33, 0x44, 0x55};
     ReconSeen seen;
@@ -80,7 +80,7 @@ struct Scene {
       s.fix = true;
       s.lat = 39.9526f + 0.011f * float(place);
       s.lon = -75.1652f + 0.006f * float(place);
-      uint32_t at = now - 1200000 + uint32_t(place) * 399000;
+      uint32_t at = now - 1800000 + uint32_t(place) * 599000;
       seen = table.observe(s, at);
       policy.decide(*seen.row, seen, ctx, at);
     }
@@ -383,12 +383,12 @@ static void reconSheets() {
     v = homeOf(Theme::Dark, tailed);
     v.mood = 4;
     v.alert = v.speaking = true;
-    v.message = "This tag has been with us 19 min / 4.4 km.";
+    v.message = "This tag has been with us 29 min / 4.4 km.";
     v.card.kind = 2;
     v.card.family = Family::Tracker;
     v.card.confidence = Confidence::High;
     v.card.rssi = -61;
-    v.card.followS = 1197;
+    v.card.followS = 1797;
     v.card.followMeters = 4400;
     place(sheet, 2, 0, v);
     v.face = true;
@@ -552,6 +552,56 @@ static void reconSheets() {
       put(sheet, int(page), 1, screen);
     }
     save(sheet, "recon-settings");
+  }
+  // 6. States added after review: an alert that opens over another page, readings that are no
+  //    longer current, the owner's own gear in range, a full ignore list, an unapplied type edit.
+  {
+    HostCanvas sheet = sheetOf(3, 2);
+    static uint16_t order[96];
+    Style dark = styleOf(Theme::Dark);
+    Scene s;
+    ReconDevice *dashcam = s.hear(Family::Camera, -41, 700, false, "Viofo dashcam");
+    ReconDevice *doorbell = s.hear(Family::Ring, -67, 1200, false, "Ring LLC");
+    s.policy.ignores.add(dashcam->mac, dashcam->family);
+    s.policy.ignores.add(doorbell->mac, doorbell->family);
+    s.table.applyIgnores(s.policy.ignores);
+    s.hear(Family::Flipper, -58, 900, true, "", "Flipper Rokeo", 1);
+    ReconDevice *passed = // A plate reader passed 40 s ago: still listed, no longer "now".
+        s.hear(Family::Alpr, -47, 40000, false, "Motorola Vigilant", "", 1, Confidence::High);
+    s.hear(Family::Tile, -70, 240000, true);
+    AlertCardView card;
+    card.family = Family::Flipper;
+    card.confidence = Confidence::Medium;
+    card.rssi = -58;
+    ReconList list;
+    ListContext ctx;
+    ctx.seenTotal = s.counts().total;
+    HostCanvas screen = fresh(Theme::Dark);
+    reconList(list, s.table, Tab::Live, 0, s.now, s.clock, order, 96);
+    drawReconList(screen, dark, Tab::Live, list, ctx);
+    drawAlertCard(screen, dark, card); // The alert opened while the list was being read.
+    put(sheet, 0, 0, screen);
+    SettingsView v;
+    v.ignored = 2;
+    screen = fresh(Theme::Dark);
+    drawReconSettings(screen, dark, v);
+    card.kind = 2;
+    card.family = Family::Tracker;
+    card.followS = 1797;
+    card.followMeters = 4400;
+    drawAlertCard(screen, dark, card);
+    put(sheet, 1, 0, screen);
+    screen = fresh(Theme::Dark);
+    drawReconDetail(screen, dark, reconRow(*passed, s.now, s.clock), true, true);
+    put(sheet, 2, 0, screen);
+    place(sheet, 0, 1, homeOf(Theme::Dark, s));
+    HomeView drive = homeOf(Theme::Dark, s); // Two rows while driving: not the owner's own.
+    driving(drive);
+    place(sheet, 1, 1, drive);
+    screen = fresh(Theme::Dark);
+    drawReconTypes(screen, dark, TypeFilter::Defaults & ~tierMask(Tier::Surveillance), 0, true);
+    put(sheet, 2, 1, screen);
+    save(sheet, "recon-review");
   }
 }
 int main(int argc, char **argv) {

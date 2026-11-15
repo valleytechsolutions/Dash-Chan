@@ -66,9 +66,36 @@ try{
   await page.locator('[data-mood="0"][aria-pressed=true]').waitFor({timeout:6000});
   assert.equal(await page.getByRole('button',{name:'Love',exact:true}).getAttribute('aria-pressed'),'false');
   await nameBox.fill('Bad;name');assert.equal(await page.locator('#avatar-form').evaluate(f=>f.checkValidity()),false);
-  await page.locator('#random-avatar').click();assert.equal(await page.locator('#avatar-form').evaluate(f=>f.checkValidity()),true);
-  assert.equal(await nameBox.inputValue(),'Old Orbit');
+  // A name that is still being typed stays in the box as typed when the buddy is restyled; the
+  // status says the name is unchanged, so the box must not jump back to the last good one.
+  const eyesBefore=await page.locator('input[name=body]').inputValue();
+  await page.locator('#random-avatar').click();
+  assert.equal(await nameBox.inputValue(),'Bad;name');assert.equal(await page.locator('#avatar-form').evaluate(f=>f.checkValidity()),false);
+  assert.notEqual(await page.locator('input[name=body]').inputValue(),eyesBefore,'Surprise me still restyles');
+  await page.getByRole('button',{name:'Use Petal patrol preset',exact:true}).click();assert.equal(await nameBox.inputValue(),'Bad;name');assert.equal(await chosen('headwear'),'4');
+  await packButton('Goth').click();assert.equal(await nameBox.inputValue(),'Bad;name');assert.equal(await packButton('Goth').getAttribute('aria-pressed'),'true');
+  assert.match(await page.locator('#draft-status').textContent(),/Finish the name/);
+  // Saving to the shelf takes the design on screen or nothing: a blank or invalid name is
+  // refused with the name error, never stored under the previous name.
+  for(const typed of ['Bad;name','   ']){
+    await nameBox.fill(typed);await page.locator('#shelf-save').click();
+    assert.equal(await page.locator('#shelf .shelf-item').count(),0,`"${typed}" was shelved`);
+    assert.doesNotMatch(await page.locator('#avatar-status').textContent(),/saved to My buddies/);
+  }
+  assert.equal(await page.locator('#avatar-form').evaluate(f=>f.checkValidity()),false,'An all-space name is not valid');
+  // The same refusal without the browser's own field check in the way.
+  const pattern=await nameBox.getAttribute('pattern');
+  await nameBox.evaluate(e=>{e.removeAttribute('pattern');e.required=false;});await nameBox.fill('   ');await page.locator('#shelf-save').click();
+  await page.locator('#avatar-status.error').filter({hasText:'Use a name'}).waitFor();assert.equal(await page.locator('#shelf .shelf-item').count(),0);
+  await nameBox.evaluate((e,p)=>{e.setAttribute('pattern',p);e.required=true;},pattern);
+  // Enter in the name box finishes typing. It must not submit the form, which would download
+  // avatar.cfg.
   await nameBox.fill('Nyx');
+  let stray=0;const countDownload=()=>stray++;page.on('download',countDownload);
+  await nameBox.press('Enter');await page.waitForTimeout(500);
+  assert.equal(stray,0,'Enter in the name box downloaded a file');page.off('download',countDownload);
+  assert.equal(await nameBox.evaluate(e=>e===document.activeElement),false);assert.equal(await nameBox.inputValue(),'Nyx');
+  assert.doesNotMatch(await page.locator('#avatar-status').textContent(),/Saved/);
   const surprise=await saved('surprise.cfg');assert.match(surprise,/^DCAV[23] [0-4] [0-9A-F]{6} .* Nyx\n$/);
   await page.locator('#random-avatar').click();assert.notEqual(await saved('surprise2.cfg'),surprise);assert.equal(await nameBox.inputValue(),'Nyx');
   assert.equal(await page.locator('#contrast-warning').isHidden(),true,'Surprise me never makes unreadable eyes');
@@ -120,6 +147,19 @@ try{
   assert.equal(await nameBox.inputValue(),'Vapor Ember');assert.equal(await chosen('aura'),'1');assert.equal(await chosen('persona'),'5');
   assert.equal(await packButton('Vaporwave').getAttribute('aria-pressed'),'true');
   assert.equal(await saved('imported.cfg'),'DCAV3 4 B967FF 01CDFE FFFB96 7 4 0 0 2 1 1 1 4 5 Vapor Ember\n');
+  // A pack tag alone never forces the newer format: take the pack's gear off again and the
+  // design is a classic one that older firmware reads, while the pack card stays selected.
+  await page.evaluate(()=>{const form=document.getElementById('avatar-form');
+    for(const slot of ['eyes','headwear','eyewear','neckwear','mark','back','held','aura','persona']){const none=form.querySelector(`input[name=${slot}][value="0"]`);none.checked=true;none.dispatchEvent(new Event('input',{bubbles:true}));}});
+  assert.equal(await packButton('Vaporwave').getAttribute('aria-pressed'),'true');
+  assert.match(await page.locator('#format-note').textContent(),/DCAV2/);
+  assert.equal(await saved('undressed.cfg'),'DCAV2 4 B967FF 01CDFE 0 FFFB96 0 0 0 Vapor Ember\n');
+  // The help text in the lilac preview panel is readable (WCAG AA for small text is 4.5:1).
+  const contrast=await page.locator('.preview .micro').first().evaluate(node=>{
+    const rgb=text=>text.match(/\d+(\.\d+)?/g).slice(0,3).map(Number),lum=c=>{const [r,g,b]=c.map(v=>{v/=255;return v<=.03928?v/12.92:((v+.055)/1.055)**2.4;});return .2126*r+.7152*g+.0722*b;};
+    let panel=node;while(panel&&getComputedStyle(panel).backgroundColor.match(/, 0\)$|transparent/))panel=panel.parentElement;
+    const a=lum(rgb(getComputedStyle(node).color)),b=lum(rgb(getComputedStyle(panel).backgroundColor));return (Math.max(a,b)+.05)/(Math.min(a,b)+.05);});
+  assert(contrast>=4.5,`Preview help text contrast is ${contrast.toFixed(2)}:1`);
   await page.getByRole('button',{name:'Happy',exact:true}).click();
   assert.equal(await page.locator('#preset-gallery button').count(),6);
   for(const [name,base] of [['Wisp',3],['Ember',4]]){
@@ -128,6 +168,14 @@ try{
     assert.match(await saved(`${name}.cfg`),new RegExp(`^DCAV2 ${base} `));
     await page.locator('#avatar-preview').screenshot({path:`build/web/${name}.png`});
   }
+  // A saved name made of the widest letters wraps inside its shelf card on a phone.
+  await nameBox.fill('WWWWWWWWWWWWWWWW');await page.locator('#shelf-save').click();await page.locator('#avatar-status').filter({hasText:'saved to My buddies'}).waitFor();
+  await page.setViewportSize({width:390,height:844});await page.locator('#shelf .preset').first().scrollIntoViewIfNeeded();
+  const wideName=await page.locator('#shelf .preset').first().evaluate(card=>{const c=card.getBoundingClientRect(),t=card.querySelector('span').getBoundingClientRect();return {card:[c.left,c.right],text:[t.left,t.right]};});
+  assert(wideName.text[0]>=wideName.card[0]-1&&wideName.text[1]<=wideName.card[1]+1&&wideName.card[0]>=0,`Shelf name overflows its card: ${JSON.stringify(wideName)}`);
+  await page.locator('#shelf').screenshot({path:'build/web/shelf-wide-name.png'});
+  await page.getByRole('button',{name:'Remove WWWWWWWWWWWWWWWW from My buddies',exact:true}).click();
+  await page.setViewportSize({width:1440,height:1000});await nameBox.fill('Vapor Ember');
   const badImages=await page.locator('img').evaluateAll(imgs=>imgs.filter(i=>i.getBoundingClientRect().width&&(!i.complete||!i.naturalWidth)).map(i=>i.src));assert.deepEqual(badImages,[]);
   await page.locator('.tabs a[href="#install"]').click();await page.screenshot({path:'build/web/desktop.png',fullPage:true});
   for(const width of [390,320,768]){
