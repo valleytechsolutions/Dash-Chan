@@ -20,7 +20,7 @@ Welcome to your tiny road buddy: passive Wi-Fi/BLE awareness, GPS wardriving, SD
 
 Install, connect GPS to blue Port C, insert FAT32 microSD, and wait for GPS READY. Tap START DRIVE on the pet. Five new Wi-Fi networks successfully logged with a usable fix earn one snack. Tap STOP & SAVE before removing the card.
 
-Tap the face or touch the head for affection. Head touches are visual only. Speech starts off; enable **MENU → Sound & Voice → Voice** if desired. **Master sound OFF** silences everything. You can keep tones with speech off.
+Tap the face or touch the head for affection. Head touches are visual only. Speech starts off; set **MENU → Sound & Voice → Voice** to ALERTS or ALL if desired. **Master sound OFF** silences everything. You can keep tones with speech off.
 
 The pet stays visible during an alert. Signals are clues, not proof of police, recording, ownership, or intent. Native hardware covers 2.4 GHz Wi-Fi and BLE. The project's detailed pages distinguish implemented methods from unverified field claims.
 

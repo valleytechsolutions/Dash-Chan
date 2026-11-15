@@ -9,7 +9,7 @@ Dash-Chan turns the official M5Stack StackChan K151 into an offline companion fo
 3. Open **MENU → GPS & SD → GPS SETUP**. Select your module preset and actual port. Tap **APPLY SETTINGS**, or **APPLY + FIND BAUD** if its speed is unknown. The finder saves a rate after two valid NMEA sentences, or restores the applied rate after cancellation/timeout. Stop recording before changing GPS settings.
 4. Go outside with a clear view of the sky. **GPS READY** means a fresh fix, valid UTC, four or more satellites, and HDOP no greater than 5. Acquiring satellites alone is not enough.
 5. Choose **Buddy + Look** for your buddy and theme. Under **Personality**, enable gentle or lively head motion if desired. Motion is off on a new installation; existing preferences persist.
-6. Under **Sound & Voice**, choose your volume and alert tone. **Voice starts OFF**. Enable it only if you want speech. **Master sound OFF** silences both speech and tones immediately. Your pet keeps animating and collecting signals when muted.
+6. Under **Sound & Voice**, choose your volume and alert tone. **Voice starts OFF**. Tap it for **ALERTS** (spoken detection announcements) or **ALL** (also pet phrases) if you want speech; **TEST VOICE** plays a sample. **Master sound OFF** silences both speech and tones immediately. Your pet keeps animating and collecting signals when muted.
 
 ## The face is home
 
@@ -28,7 +28,7 @@ The pet remains visible during alerts and recording. No event automatically open
 | Menu | Controls |
 |---|---|
 | Buddy + Look | Mochi, Sprout, Orbit, Wisp, Ember, or a custom buddy; Dark, Light, Matrix, BWM; Avatar Studio with eyes, layered outfits, and Auto/Always/Off field gear |
-| Sound & Voice | Personality, Siren, Arcade, Chime, Silent; volume 0/100/170/220/255; Master sound; Voice; preview; synthetic Axon demo |
+| Sound & Voice | Personality, Siren, Arcade, Chime, Silent; volume 0/100/170/220/255; Master sound; Voice OFF / ALERTS / ALL; tone preview; TEST VOICE; synthetic Axon demo |
 | Personality | Head motion Off/Gentle/Lively; Spicy panic/Gentle lookout; pet button |
 | Detection | Confidence filter; same-family quiet period 60/180/300 seconds; optional five-minute reminders |
 | Recent Clues | Up to 32 entries, four per page; transport, RSSI, name/address, evidence, count, last-seen age |
@@ -36,7 +36,7 @@ The pet remains visible during alerts and recording. No event automatically open
 | Upload drives | Latest 24 drive files, configured destinations, explicit confirmation, cancel, refresh; [setup guide](UPLOADS.md) |
 | GPS & SD | Fix/satellites/HDOP, received NMEA characters, rows, queue drops, storage errors, module presets, port/RX, baud finder, wiring help, SD retry |
 
-**Silent** is a detection-tone choice. **Voice OFF** disables every spoken clip. **Master sound OFF** disables all audio. With Voice OFF, Personality uses electronic sounds instead of speech. Spicy captions can remain on-screen independently of voice.
+**Silent** is a detection-tone choice. **Voice OFF** disables every spoken clip; **ALERTS** speaks detection announcements with any tone except Silent; **ALL** adds pet and system phrases. **Master sound OFF** and volume 0 disable all audio. With Voice OFF, alerts use electronic sounds instead of speech. Spicy captions can remain on-screen independently of voice. The spoken clips are synthesized and have not been reviewed by ear yet.
 
 ## Dinner is earned
 

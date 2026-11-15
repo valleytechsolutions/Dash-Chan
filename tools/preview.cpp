@@ -1,4 +1,5 @@
 // PC preview of the buddy art and home screen. Run through tools/preview.py.
+#include "audio_view.h"
 #include "core.h"
 #include "home_view.h"
 #include "host_canvas.h"
@@ -195,6 +196,38 @@ int main(int argc, char **argv) {
   v.alertConfidence = "low";
   place(face, 2, 3, v);
   face.savePpm((out + "/face.ppm").c_str());
+
+  // Sound & Voice page: each voice mode, the TEST VOICE read-back, and the light theme.
+  {
+    HostCanvas audio = sheetOf(2, 2);
+    auto page = [&](int column, int row, Theme theme, const AudioView &state) {
+      AudioView view = state;
+      view.theme = theme;
+      view.colors = palette(theme);
+      HostCanvas screen(320, 240);
+      screen.fillScreen(view.colors.bg);
+      homeui::text(screen, "SOUND & VOICE", 12, 12, view.colors.accent); // As ui.cpp heading().
+      audioui::button(screen, view, 254, 5, 58, 27, "BACK");
+      drawAudio(screen, view);
+      audio.blit(screen, 4 + column * 324, 4 + row * 244);
+    };
+    AudioView a;
+    page(0, 0, Theme::Dark, a);
+    a.voice = VoiceMode::Alerts;
+    a.tested = true;
+    a.said = clipCaption(Clip::SpicyPig);
+    a.volume = 170;
+    page(1, 0, Theme::Dark, a);
+    a.voice = VoiceMode::All;
+    a.tested = false;
+    a.tone = "Chime";
+    page(0, 1, Theme::Light, a);
+    a.sound = false;
+    a.tested = true;
+    a.said = nullptr;
+    page(1, 1, Theme::Bwm, a);
+    audio.savePpm((out + "/audio.ppm").c_str());
+  }
 
   // Documentation screenshots, one screen each (site/assets/ui-*.png).
   auto shot = [&](const char *file, const HomeView &view) {

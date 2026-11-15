@@ -13,6 +13,7 @@
 #include "traffic.h"
 #include "travel.h"
 #include "upload_csv.h"
+#include "voice_tests.h"
 #include "watchlist.h"
 #include <cstdlib>
 #include <fstream>
@@ -135,6 +136,7 @@ static void checkGps() {
 }
 int main() {
   checkGps();
+  checkVoice();
   PetTouch head;
   CHECK(!head.update(0, false));
   CHECK(!head.update(600, false));

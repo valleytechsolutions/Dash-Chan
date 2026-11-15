@@ -7,6 +7,7 @@
 #include "progression.h"
 #include "recon.h"
 #include "themes.h"
+#include "voice.h"
 #include "watchlist.h"
 #include <Arduino.h>
 #include <atomic>
@@ -33,7 +34,8 @@ struct Settings {
   Theme theme = Theme::Dark;
   AlertTone tone = AlertTone::Personality;
   uint8_t volume = 245, motionStyle = 2;
-  bool voice = false, repeatAlerts = false;
+  VoiceMode voiceMode = VoiceMode::Off; // Speech stays opt-in: MENU > Sound & Voice.
+  bool repeatAlerts = false;
   uint32_t familyQuietMs = 60000;
   uint8_t customBase = 0, customAccessory = 0;
   uint16_t customBody = 0xff7a, customAccent = 0xfbb2;
@@ -149,6 +151,7 @@ void buddyDismiss();
 void buddyMotion(bool);
 void buddySoundPreview();
 void buddyDemo();
+const char *buddyVoiceTest();
 void uiBegin();
 void uiBoot();
 void uiTick();

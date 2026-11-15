@@ -1,4 +1,5 @@
 #include "app.h"
+#include "audio_view.h"
 #include "avatars.h"
 #include "boot_logos.h"
 #include "home_view.h"
@@ -265,22 +266,20 @@ static void buddies(uint32_t now) {
          app.settings.avatar == Avatar::Custom);
   button(222, 184, 90, 40, buddyPage ? "< ORIGINALS" : "WISP/EMBER >");
 }
+static const char *voiceTestSaid = nullptr; // Caption of the last TEST VOICE clip; null if muted.
+static uint32_t voiceTestAt = 0;
 static void audio() {
   heading("SOUND & VOICE");
-  char s[64];
-  snprintf(s, sizeof(s), "Alert tone: %s  >", tones[unsigned(app.settings.tone)]);
-  button(8, 44, 304, 36, s);
-  snprintf(s, sizeof(s), "Volume: %u / 255", app.settings.volume);
-  text(s, 12, 92, colors.muted);
-  constexpr uint8_t levels[] = {0, 100, 170, 220, 255};
-  for (int i = 0; i < 5; ++i) {
-    snprintf(s, sizeof(s), "%u", levels[i]);
-    button(8 + i * 62, 109, 56, 30, s, app.settings.volume == levels[i]);
-  }
-  button(8, 151, 148, 34, app.settings.sound ? "Master sound: ON" : "Master sound: OFF");
-  button(164, 151, 148, 34, app.settings.voice ? "Voice: ON" : "Voice: OFF");
-  button(8, 198, 148, 34, "PREVIEW TONE");
-  button(164, 198, 148, 34, "AXON DEMO", true);
+  AudioView v;
+  v.colors = colors;
+  v.theme = app.settings.theme;
+  v.tone = tones[unsigned(app.settings.tone)];
+  v.sound = app.settings.sound;
+  v.volume = app.settings.volume;
+  v.voice = app.settings.voiceMode;
+  v.tested = voiceTestAt && uint32_t(millis() - voiceTestAt) < 5000;
+  v.said = voiceTestSaid;
+  drawAudio(canvas, v);
 }
 // Settings for how the buddy behaves, plus its report card: tapping the vitals row lands here.
 static void behavior() {
@@ -611,30 +610,41 @@ static void touch(int x, int y) {
         app.settings.avatar = Avatar::Custom;
     }
     break;
-  case Audio:
-    if (row(y, 44))
+  case Audio: {
+    AudioTapTarget tap = audioTap(x, y);
+    switch (tap.action) {
+    case AudioTap::Tone:
       app.settings.tone = AlertTone((unsigned(app.settings.tone) + 1) % 5);
-    else if (row(y, 109, 30)) {
-      constexpr uint8_t levels[] = {0, 100, 170, 220, 255};
-      app.settings.volume = levels[std::min(4, std::max(0, (x - 8) / 62))];
-    } else if (row(y, 151, 34)) {
-      if (right) {
-        app.settings.voice = !app.settings.voice;
-        if (!app.settings.voice)
-          M5.Speaker.stop();
-      } else {
-        app.settings.sound = !app.settings.sound;
-        if (!app.settings.sound)
-          M5.Speaker.stop();
-      }
-    } else if (row(y, 198, 34)) {
-      if (right) {
-        buddyDemo();
-        page = Home;
-      } else
-        buddySoundPreview();
+      break;
+    case AudioTap::Volume:
+      app.settings.volume = tap.volume;
+      break;
+    case AudioTap::Sound:
+      app.settings.sound = !app.settings.sound;
+      if (!app.settings.sound)
+        M5.Speaker.stop();
+      break;
+    case AudioTap::Voice:
+      app.settings.voiceMode = nextVoiceMode(app.settings.voiceMode);
+      if (app.settings.voiceMode == VoiceMode::Off)
+        M5.Speaker.stop();
+      break;
+    case AudioTap::PreviewTone:
+      buddySoundPreview();
+      break;
+    case AudioTap::TestVoice:
+      voiceTestSaid = buddyVoiceTest();
+      voiceTestAt = millis() | 1; // Zero means "never pressed".
+      break;
+    case AudioTap::Demo:
+      buddyDemo();
+      page = Home;
+      break;
+    case AudioTap::None:
+      break;
     }
     break;
+  }
   case Behavior:
     if (row(y, 110, 34)) {
       if (!app.settings.motion) {

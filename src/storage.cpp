@@ -272,7 +272,8 @@ bool startDrive() {
   if (!app.sdReady)
     storageBegin();
   if (!app.sdReady) {
-    say(app.storageError);
+    // In Voice ALL the buddy says so out loud, and the screen leads with the same words.
+    say(voiceSpeak(Clip::NoSd, SpeechKind::Pet) ? NoCardHelp : app.storageError);
     return false;
   }
   Preferences p;

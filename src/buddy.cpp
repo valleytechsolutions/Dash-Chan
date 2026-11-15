@@ -7,7 +7,6 @@
 namespace dash {
 static uint32_t lastMotion = 0, lastNeed = 0, lastChatter = 0, lastSave = 0, lastSiren = 0;
 static Cooldown petTimer;
-static Cooldown loveVoiceTimer;
 static PetTouch headTouch;
 static uint32_t soundAt = 0, soundStepAt = 0;
 static unsigned soundStep = 0;
@@ -29,6 +28,7 @@ static bool greeted = false, burstCheered = false;
 static Milestone petMilestone, findMilestone;
 static DriveBest driveBest;
 static NapSettle napSettle;
+static GpsNews gpsNews;
 struct Note {
   uint16_t hz, ms;
 };
@@ -40,8 +40,89 @@ static const Note chirpPurr[] = {{880, 60}, {1046, 80}}, chirpCoo[] = {{988, 50}
 static const Note *jingle = nullptr;
 static unsigned jingleLeft = 0;
 static uint32_t jingleAt = 0, jingleWait = 0;
+// ---- Speech ---------------------------------------------------------------------------------
+// Clips play on speaker channel 0. Alert tones use channel 1 and pet chirps take a free channel
+// from the top, so "channel 0 is busy" always means "the buddy is talking".
+static SpeechGate speechGate;
+static const ClipData *speechQueued = nullptr; // Waiting for the attention chirp to finish.
+static SpeechKind speechKind = SpeechKind::Pet;
+static unsigned speechStep = 0;
+static uint32_t speechAt = 0, speechWait = 0;
+static const Note chirpAttention[] = {{1319, 55}, {1976, 85}};
+constexpr unsigned AttentionNotes = sizeof(chirpAttention) / sizeof(*chirpAttention);
+static SpeechSettings speechSettings() {
+  SpeechSettings s;
+  s.sound = app.settings.sound;
+  s.volume = app.settings.volume;
+  s.mode = app.settings.voiceMode;
+  s.silentTone = app.settings.tone == AlertTone::Silent;
+  return s;
+}
+static bool speaking() {
+  return speechQueued || M5.Speaker.isPlaying(0);
+}
+static void speechStop() {
+  speechQueued = nullptr;
+  M5.Speaker.stop(0);
+}
+static void speechTick(uint32_t now) {
+  if (speaking() && !speechEnabled(speechKind, speechSettings()))
+    speechStop(); // Muted or switched off mid-sentence.
+  if (!speechQueued || uint32_t(now - speechAt) < speechWait)
+    return;
+  speechAt = now;
+  if (speechStep < AttentionNotes) {
+    // The chirp says "listen". It stands in for the long alert tone, so the two never overlap.
+    const Note &note = chirpAttention[speechStep++];
+    M5.Speaker.tone(note.hz, note.ms, 1, true);
+    speechWait = note.ms + (speechStep == AttentionNotes ? 60 : 15);
+  } else {
+    M5.Speaker.playWav(speechQueued->wav, speechQueued->size, 1, 0, true);
+    speechQueued = nullptr;
+  }
+}
+bool voiceSpeak(Clip clip, SpeechKind kind) {
+  uint32_t now = millis();
+  if (unsigned(clip) >= ClipCount || !VoiceClips[unsigned(clip)].wav ||
+      !speechEnabled(kind, speechSettings()) ||
+      !speechGate.ready(kind, clip, now, app.alertOpen || soundActive))
+    return false;
+  speechGate.mark(kind, clip, now);
+  jingleLeft = 0;
+  soundActive = false;
+  M5.Speaker.stop();
+  M5.Speaker.setVolume(app.settings.volume);
+  speechQueued = &VoiceClips[unsigned(clip)];
+  speechKind = kind;
+  // Only detections get the attention chirp; pet phrases just start talking.
+  speechStep = kind == SpeechKind::Alert ? 0 : AttentionNotes;
+  speechAt = now;
+  speechWait = 0;
+  speechTick(now);
+  return true;
+}
+// A pet or system phrase. When it is spoken the bubble shows those words, so the screen and the
+// voice agree; when it is not (Voice below ALL, or too soon) the caller picks a line as before.
+static bool petSpeak(Clip clip) {
+  if (!voiceSpeak(clip, SpeechKind::Pet))
+    return false;
+  say(clipCaption(clip));
+  return true;
+}
+// Each press speaks the next clip, so the whole set can be heard from the Sound & Voice page.
+const char *buddyVoiceTest() {
+  static unsigned next = unsigned(Clip::Hello);
+  // Gentle banter never says the spicy lines, not even as a sample.
+  while (!app.settings.spicy && (Clip(next) == Clip::SpicyPig || Clip(next) == Clip::SpicyFuzz))
+    next = (next + 1) % ClipCount;
+  Clip clip = Clip(next);
+  if (!voiceSpeak(clip, SpeechKind::Test))
+    return nullptr;
+  next = (next + 1) % ClipCount;
+  return clipCaption(clip);
+}
 template <size_t N> static void chirp(const Note (&notes)[N]) {
-  if (!app.settings.sound || !app.settings.volume || soundActive || app.alertOpen ||
+  if (!app.settings.sound || !app.settings.volume || soundActive || app.alertOpen || speaking() ||
       M5.Speaker.isPlaying())
     return;
   jingle = notes;
@@ -74,8 +155,9 @@ static Mood restingMood(Feeling f) {
 // Any touch or tap counts as attention. A sleeping pet wakes up, a bit groggy.
 void buddyPoke() {
   lastTouch = millis();
-  if (app.feeling == Feeling::Napping && !app.alertOpen)
-    buddySay(Topic::Wake); // buddyTick re-evaluates the feeling on the next pass.
+  // buddyTick re-evaluates the feeling on the next pass.
+  if (app.feeling == Feeling::Napping && !app.alertOpen && !petSpeak(Clip::GoodMorning))
+    buddySay(Topic::Wake);
 }
 // Someone leaned in (proximity sensor). A hello, not a pet: it wakes the buddy and warms it a
 // little without counting toward pets or combos.
@@ -84,7 +166,8 @@ void buddyGreet() {
   lastTouch = millis();
   app.bond = std::min(100, int(app.bond) + 1);
   feel(Mood::Love, 2500);
-  buddySay(asleep ? Topic::Wake : Topic::Greet);
+  if (!petSpeak(asleep ? Clip::GoodMorning : Clip::Hello))
+    buddySay(asleep ? Topic::Wake : Topic::Greet);
 }
 // Wall-clock time, when anything has told us what it is. Seconds since 2000 UTC, or 0.
 static uint32_t clockBase = 0, clockAt = 0;
@@ -115,7 +198,8 @@ static bool catchUpOnTimeApart(uint32_t now) {
   if (greeted || app.alertOpen || !app.radioReady || *app.storageError ||
       !awayLine(text, sizeof(text), hours, esp_random()))
     return false;
-  say(text);
+  if (!petSpeak(Clip::MissedYou))
+    say(text);
   return true;
 }
 void buddyMotion(bool on) {
@@ -184,16 +268,17 @@ void buddyPet(bool allowVoice) {
   if (!allowVoice || !app.settings.sound || !app.settings.volume)
     return;
   M5.Speaker.setVolume(app.settings.volume);
-  // The recorded clip only plays when the pet actually says that line.
-  if (text == LoveYourFace && app.settings.voice && loveVoiceTimer.ready(now, 60000)) {
-    loveVoiceTimer.mark(now);
-    jingleLeft = 0;
-    M5.Speaker.playWav(voiceLove, sizeof(voiceLove), 1, 0, true);
+  // A clip only plays when the pet actually says that line: a counted milestone keeps its own
+  // text and gets the usual chirp.
+  bool plain = text != counted;
+  if (text == LoveYourFace && voiceSpeak(Clip::Love, SpeechKind::Pet)) {
   } else if (enough)
     chirp(chirpEnough);
-  else if (topic == Topic::Wake)
+  else if (topic == Topic::Wake && plain && petSpeak(Clip::GoodMorning)) {
+  } else if (topic == Topic::Wake)
     chirp(chirpYawn);
-  else if (topic == Topic::PetGiggle)
+  else if (topic == Topic::PetGiggle && plain && petSpeak(Clip::Tickles)) {
+  } else if (topic == Topic::PetGiggle)
     chirp(chirpGiggle);
   else
     switch (esp_random() % 3) {
@@ -209,6 +294,7 @@ void buddyPet(bool allowVoice) {
 }
 static void beginTone(AlertTone tone) {
   playingTone = tone;
+  speechQueued = nullptr;
   jingleLeft = 0;
   soundStep = 0;
   soundAt = millis();
@@ -237,7 +323,10 @@ void buddyDriveStart(bool fix) {
   driveBest.start(app.life.bestDrive);
   feel(Mood::Curious, 4000);
   // Without a fix nothing gets logged yet, so say that plainly instead of cheering.
-  say(fix ? line(Topic::DriveStart) : "Ready! Waiting for a good GPS fix.");
+  if (!fix)
+    say("Ready! Waiting for a good GPS fix.");
+  else if (!petSpeak(Clip::DriveStart))
+    say(line(Topic::DriveStart));
   // A dashboard drive often ends with the ignition, not the Stop button: count it now.
   lastSave = now;
   saveSettings();
@@ -247,7 +336,10 @@ void buddyDriveEnd(uint32_t finds) {
   bool record = driveBest.record(finds);
   DriveBest::found(app.life.bestDrive, finds);
   char text[64];
-  if (driveSummaryLine(text, sizeof(text), finds, record))
+  if (voiceSpeak(Clip::DriveSaved, SpeechKind::Pet)) {
+    driveSavedCaption(text, sizeof(text), finds, record);
+    say(text);
+  } else if (driveSummaryLine(text, sizeof(text), finds, record))
     say(text);
   else
     buddySay(Topic::DriveEmpty);
@@ -275,7 +367,7 @@ void buddyDiscovery(const uint8_t mac[6], const char *ssid, bool open) {
   earnDiscoveryXp(app.settings.xp);
   if (petLevel(app.settings.xp) != oldLevel) {
     app.levelUpAt = now;
-    if (!app.alertOpen)
+    if (!app.alertOpen && !petSpeak(Clip::LevelUp))
       buddySay(Topic::LevelUp);
     spoke = true;
     saveSettings();
@@ -305,9 +397,10 @@ void buddyDiscovery(const uint8_t mac[6], const char *ssid, bool open) {
     findMilestone.clear();
   } else if (spoke)
     return;
-  else if (fuss)
-    buddySay(stuffed ? Topic::Stuffed : Topic::Snack);
-  else if (snack)
+  else if (fuss) {
+    if (stuffed || !petSpeak(Clip::NewWifi))
+      buddySay(stuffed ? Topic::Stuffed : Topic::Snack);
+  } else if (snack)
     return;
   else if (jackpotDue(burstFinds, burstCheered, now - lastJackpot)) {
     lastJackpot = now;
@@ -344,9 +437,22 @@ void buddyAlert(const Alert &a, bool demo) {
   bool police = a.match.family == Family::Axon;
   unsigned line = demo ? 0 : esp_random() % 3;
   Family family = a.match.family;
-  if (police && app.settings.spicy) // These three are tied to the recorded voice clips below.
-    say(line == 0   ? "PIG DETECTED! ACT NATURAL!"
-        : line == 1 ? "Oh man, the fuzz!"
+  bool spicyCop = police && app.settings.spicy;
+  bool audible =
+      app.settings.sound && app.settings.volume && app.settings.tone != AlertTone::Silent;
+  Clip clip = alertClip(family, spicyCop ? int(line) : -1);
+  soundActive = false;
+  speechStop(); // A pet phrase gives way even when the alert itself is silent.
+  if (audible)
+    M5.Speaker.stop();
+  if (voiceSpeak(clip, SpeechKind::Alert)) {
+    // Spoken: the screen shows the same words, and the chirp stands in for the long tone.
+    say(clipCaption(clip));
+    return;
+  }
+  if (spicyCop) // The first two are the recorded lines, shown as text when they are not spoken.
+    say(line == 0   ? clipCaption(Clip::SpicyPig)
+        : line == 1 ? clipCaption(Clip::SpicyFuzz)
                     : "Wee-woo! Tiny copilot panic!");
   else
     buddySay(police ? Topic::AlertBodyCam
@@ -365,30 +471,25 @@ void buddyAlert(const Alert &a, bool demo) {
                      family == Family::Halehound
                  ? Topic::AlertGadget
                  : Topic::AlertOdd);
-  soundActive = false;
-  if (app.settings.sound && app.settings.volume && app.settings.tone != AlertTone::Silent) {
-    M5.Speaker.stop();
+  if (audible) {
     M5.Speaker.setVolume(app.settings.volume);
-    if (app.settings.voice && app.settings.tone == AlertTone::Personality && police &&
-        app.settings.spicy && line < 2) {
-      const uint8_t *wav = line == 0 ? voicePig : voiceFuzz;
-      size_t len = line == 0 ? sizeof(voicePig) : sizeof(voiceFuzz);
-      M5.Speaker.playWav(wav, len, 1, 0, true);
-    } else
-      beginTone(app.settings.tone);
+    beginTone(app.settings.tone);
   }
 }
 void buddyDismiss() {
   app.alertOpen = false;
   app.demo = false;
   feel(Mood::Curious, 4000);
+  speechQueued = nullptr;
   M5.Speaker.stop();
   soundActive = false;
   idleMotion.reset(millis(), 4500);
   gazeTarget = 0;
   if (app.settings.motion)
     M5StackChan.Motion.move(0, 200, 100);
-  buddySay(Topic::AllClear);
+  // A silent alert ends silently too.
+  if (app.settings.tone == AlertTone::Silent || !petSpeak(Clip::AllClear))
+    buddySay(Topic::AllClear);
 }
 void buddyTick() {
   uint32_t now = millis();
@@ -405,6 +506,9 @@ void buddyTick() {
     stoppedAt = now;
   if (fix || !app.session.armed)
     noFixAt = now;
+  Clip news = gpsNews.update(app.session.armed, fix, now);
+  if (news != Clip::Count && petSpeak(news))
+    gpsNews.told(news);
   Vitals vitals;
   vitals.energy = app.energy;
   vitals.bond = app.bond;
@@ -442,10 +546,11 @@ void buddyTick() {
     if (missedYou || *app.storageError || !app.radioReady) {
     } else if (app.life.boots <= 1 && !app.life.pets)
       say(FirstHello);
-    else
-      buddySay(app.energy < HungryBelow ? Topic::HelloHungry
-               : app.bond < LonelyBelow ? Topic::HelloLonely
-                                        : Topic::Hello);
+    else {
+      bool hungry = app.energy < HungryBelow, lonely = app.bond < LonelyBelow;
+      if (!petSpeak(hungry ? Clip::Hungry : lonely ? Clip::MissedYou : Clip::Hello))
+        buddySay(hungry ? Topic::HelloHungry : lonely ? Topic::HelloLonely : Topic::Hello);
+    }
   }
   // Unprompted chatter: irregular gaps, and never on top of a message someone is still reading.
   if (!app.alertOpen && uint32_t(now - lastChatter) > chatterGap &&
@@ -461,10 +566,16 @@ void buddyTick() {
     road.noFixMs = now - noFixAt;
     if (app.mood == Mood::Happy)
       feel(Mood::Curious, 5000);
-    buddySay(chatterTopic(app.feeling, road, esp_random()));
+    Topic topic = chatterTopic(app.feeling, road, esp_random());
+    Clip clip = topic == Topic::IdleHungry   ? Clip::Hungry
+                : topic == Topic::IdleDrowsy ? Clip::Sleepy
+                                             : Clip::Count;
+    if (clip == Clip::Count || !petSpeak(clip))
+      buddySay(topic);
   }
+  speechTick(now);
   if (jingleLeft && uint32_t(now - jingleAt) >= jingleWait) {
-    if (!app.settings.sound || !app.settings.volume || app.alertOpen || soundActive)
+    if (!app.settings.sound || !app.settings.volume || app.alertOpen || soundActive || speaking())
       jingleLeft = 0;
     else {
       M5.Speaker.setVolume(app.settings.volume);
@@ -495,8 +606,8 @@ void buddyTick() {
   // other off.
   if (!soundActive && app.alertOpen && app.settings.sound && app.settings.volume &&
       app.settings.spicy && app.settings.tone == AlertTone::Personality &&
-      app.active.match.family == Family::Axon && !M5.Speaker.isPlaying(0) &&
-      uint32_t(now - lastSiren) > 220 && uint32_t(now - app.alertAt) < 6500) {
+      app.active.match.family == Family::Axon && !speaking() && uint32_t(now - lastSiren) > 220 &&
+      uint32_t(now - app.alertAt) < 6500) {
     lastSiren = now;
     M5.Speaker.tone((now / 220) % 2 ? 650 : 1150, 180, 1, true);
   }
