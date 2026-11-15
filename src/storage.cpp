@@ -223,8 +223,7 @@ bool startDrive() {
   app.session.start();
   captureGeneration.store(app.session.generation);
   lastFlush = millis();
-  say(usableFix(app.fix) ? "Adventure time! Recording our discoveries."
-                         : "Ready! Waiting for a good GPS fix.");
+  buddyDriveStart(usableFix(app.fix));
   return true;
 }
 void stopDrive() {
@@ -235,8 +234,11 @@ void stopDrive() {
     drive.flush();
     drive.close();
   }
+  if (wasRecording)
+    buddyDriveEnd(app.food.discoveries());
+  else
+    say("Drive saved. I'm still keeping watch.");
   saveSettings();
-  say("Drive saved. I'm still keeping watch.");
   if (wasRecording && app.rows)
     uploadAfterDrive();
 }
@@ -293,7 +295,7 @@ void logObservation(Contact &c, const char *auth, uint32_t captureGen, uint32_t 
     ++app.wifiRows;
   // Only a fresh Wi-Fi network actually written with a valid fix can feed us.
   if (!c.ble)
-    buddyDiscovery(c.mac);
+    buddyDiscovery(c.mac, c.name, !strncmp(auth, "[OPEN]", 6));
 }
 void logAlert(const Alert &a) {
   if (!app.sdReady || uploadBusy())

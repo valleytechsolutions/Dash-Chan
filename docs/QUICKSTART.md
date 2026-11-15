@@ -17,7 +17,7 @@ The pet remains visible during alerts and recording. No event automatically open
 
 - **START DRIVE:** creates a new SD file and begins waiting for usable GPS observations.
 - **STOP & SAVE:** flushes and closes the file. Listening continues.
-- **Tap the face:** affection, heart eyes, and bond. If Voice is on, deliberate screen pets may say “i Love Your Face,” at most once a minute.
+- **Tap the face:** affection, heart eyes, and bond. Each pet gets a different reaction; rapid petting turns into giggles and then a request for a breather. A napping buddy wakes up when touched.
 - **Stroke/hold the top sensor:** visual affection. Head-sensor events never trigger speech. The sensor must settle released for 600 ms, then hold a meaningful touch for 250 ms; a held or noisy sensor cannot repeatedly fire.
 - **Tap the alert bubble:** dismiss the reaction. Listening and logging continue.
 - **FACE / RECON:** switch between a screen-filling expression and pet-with-nearby-clues. Tap a nearby clue for detail.

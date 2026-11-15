@@ -3,6 +3,7 @@
 #include "gps_support.h"
 #include "idle_motion.h"
 #include "nutrition.h"
+#include "personality.h"
 #include "petting.h"
 #include "profile.h"
 #include "progression.h"
@@ -14,6 +15,8 @@
 #include <fstream>
 #include <iostream>
 #include <random>
+#include <set>
+#include <string>
 #include <vector>
 using namespace dash;
 #define CHECK(expr)                                                                                \
@@ -480,6 +483,119 @@ int main() {
       !upgradeCsvRow("02:00:00:00:00:01,b,c,2026-10-17 12:00:00,99,-40,40,-75,12,5,WIFI", upgrade));
   CHECK(!parseCsvLine("\"broken", csvFields));
   CHECK(!parseCsvLine("\"closed\"junk", csvFields));
+  // Personality: every line fits the speech strip, and no pool repeats itself.
+  for (const auto &l : Lines) {
+    CHECK(*l.text && strlen(l.text) <= BubbleChars);
+    for (const char *c = l.text; *c; ++c)
+      CHECK(*c >= 32 && *c <= 126 && *c != '%');
+  }
+  for (unsigned t = 0; t < TopicCount; ++t)
+    for (unsigned avatar = 0; avatar < 5; ++avatar)
+      for (bool spicy : {false, true}) {
+        unsigned n = Banter::count(Topic(t), avatar, spicy);
+        CHECK(n >= 3 && n <= 32);
+        Banter deck;
+        std::string previous;
+        for (unsigned round = 0; round < 4; ++round) {
+          std::set<std::string> bag;
+          for (unsigned i = 0; i < n; ++i) {
+            std::string said = deck.pick(Topic(t), avatar, spicy, random());
+            CHECK(!said.empty() && said != previous);
+            previous = said;
+            bag.insert(said);
+          }
+          CHECK(bag.size() == n); // Every line is heard once before any line comes back.
+        }
+      }
+  CHECK(Banter::count(Topic::Idle, 0, true) > Banter::count(Topic::Idle, 0, false));
+  CHECK(!*Banter().pick(Topic::Count, 0, true, 1));
+  {
+    Vitals v;
+    CHECK(feelingFor(v) == Feeling::Content);
+    v.quietMs = BoredAfterMs;
+    CHECK(feelingFor(v) == Feeling::Bored);
+    v.quietMs = DrowsyAfterMs;
+    CHECK(feelingFor(v) == Feeling::Drowsy);
+    v.bond = LonelyBelow - 1;
+    CHECK(feelingFor(v) == Feeling::Lonely);
+    v.energy = HungryBelow - 1;
+    CHECK(feelingFor(v) == Feeling::Hungry);
+    v.quietMs = NapAfterMs;
+    CHECK(feelingFor(v) == Feeling::Napping);
+    v.onTheRoad = true; // No naps or sulking mid-drive, but hunger still shows.
+    CHECK(feelingFor(v) == Feeling::Hungry);
+    v.energy = 80;
+    CHECK(feelingFor(v) == Feeling::Content);
+    v.recentFinds = HypedFinds;
+    CHECK(feelingFor(v) == Feeling::Hyped);
+    uint8_t fuel = 50, bond = 50;
+    for (uint32_t minute = 1; minute <= 10; ++minute)
+      decayNeeds(fuel, bond, Feeling::Content, false, minute);
+    CHECK(fuel == 40 && bond == 45);
+    for (uint32_t minute = 1; minute <= 10; ++minute)
+      decayNeeds(fuel, bond, Feeling::Content, true, minute);
+    CHECK(fuel == 30 && bond == 45); // Driving together never costs affection.
+    for (uint32_t minute = 1; minute <= 10; ++minute)
+      decayNeeds(fuel, bond, Feeling::Napping, false, minute);
+    CHECK(fuel == 28 && bond == 45);
+    fuel = bond = 10;
+    decayNeeds(fuel, bond, Feeling::Content, false, 2);
+    CHECK(fuel == 10 && bond == 10);
+    PetCombo combo;
+    CHECK(combo.pet(1000) == 1 && combo.pet(2000) == 2 && combo.pet(3000) == 3);
+    CHECK(combo.pet(3000 + PetComboWindowMs) == 1);
+    PetCombo wrap;
+    CHECK(wrap.pet(0xfffffff0u) == 1 && wrap.pet(0x10) == 2);
+    CHECK(petBondGain(1) == 4 && petBondGain(GiggleAtStreak) == 2 &&
+          petBondGain(EnoughAtStreak) == 0);
+    CHECK(petTopic(1, Feeling::Napping, false, 70, 0) == Topic::Wake);
+    CHECK(petTopic(EnoughAtStreak, Feeling::Content, false, 70, 0) == Topic::PetEnough);
+    CHECK(petTopic(GiggleAtStreak, Feeling::Content, false, 70, 0) == Topic::PetGiggle);
+    CHECK(petTopic(1, Feeling::Lonely, false, 20, 0) == Topic::PetMissedYou);
+    CHECK(petTopic(1, Feeling::Content, true, 70, 1) == Topic::PetDriving);
+    CHECK(petTopic(1, Feeling::Hungry, false, 70, 1) == Topic::PetHungry);
+    CHECK(petTopic(1, Feeling::Content, false, AdoreAtBond, 0) == Topic::PetAdore);
+    CHECK(petTopic(1, Feeling::Content, false, AdoreAtBond - 1, 0) == Topic::Pet);
+    RoadView road;
+    CHECK(chatterTopic(Feeling::Napping, road, 1) == Topic::NapTalk);
+    CHECK(chatterTopic(Feeling::Hungry, road, 1) == Topic::IdleHungry);
+    CHECK(chatterTopic(Feeling::Bored, road, 1) == Topic::IdleBored);
+    road.moving = true;
+    CHECK(chatterTopic(Feeling::Content, road, 0) == Topic::NotLogging);
+    road.recording = true;
+    CHECK(chatterTopic(Feeling::Content, road, 1) == Topic::Cruise);
+    road.sinceFindMs = DryRoadMs;
+    CHECK(chatterTopic(Feeling::Content, road, 1) == Topic::DryRoad);
+    road.moving = false;
+    road.stoppedMs = RedLightMs;
+    road.fix = true;
+    CHECK(chatterTopic(Feeling::Content, road, 1) == Topic::RedLight);
+    road.fix = false;
+    road.noFixMs = NoSkyMs;
+    CHECK(chatterTopic(Feeling::Content, road, 1) == Topic::NoSky);
+    for (uint32_t r = 0; r < 1000; r += 37) {
+      CHECK(chatterGapMs(Feeling::Content, false, r) >= 30000);
+      CHECK(chatterGapMs(Feeling::Napping, false, r) >= 120000);
+    }
+    CHECK(milestone(10) && milestone(100) && milestone(3000) && !milestone(0) && !milestone(11));
+    char line[64];
+    for (uint32_t r = 0; r < 6; ++r) {
+      petMilestoneLine(line, sizeof(line), 4000000000u, r);
+      CHECK(strlen(line) <= BubbleChars);
+      findMilestoneLine(line, sizeof(line), 4000000000u, r);
+      CHECK(strlen(line) <= BubbleChars);
+      CHECK(ssidLine(line, sizeof(line), "An absurdly long network name % with\x01junk", r));
+      CHECK(strlen(line) <= BubbleChars && !strchr(line, '%') && !strchr(line, 1));
+      CHECK(ssidLine(line, sizeof(line), "Cafe", r) && strstr(line, "'Cafe'"));
+    }
+    CHECK(!ssidLine(line, sizeof(line), "", 0) && !ssidLine(line, sizeof(line), nullptr, 0));
+    CHECK(!ssidLine(line, sizeof(line), "  \x02 ", 0));
+    CHECK(!driveSummaryLine(line, sizeof(line), 0, false));
+    for (uint32_t finds : {1u, 24u, 149u, 4000000000u})
+      for (bool record : {false, true})
+        CHECK(driveSummaryLine(line, sizeof(line), finds, record) && strlen(line) <= BubbleChars);
+    CHECK(driveSummaryLine(line, sizeof(line), 42, true) && strstr(line, "Record"));
+  }
   for (int i = 0; i < 50000; ++i) {
     size_t n = random() % 768;
     std::vector<uint8_t> q(n);

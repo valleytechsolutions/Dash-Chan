@@ -229,6 +229,14 @@ static void meter(int x, int y, int w, unsigned value, unsigned max, uint16_t co
   if (value)
     canvas.fillRoundRect(x, y, std::min(w, int(uint64_t(value) * w / max)), 4, 2, color);
 }
+// Drifting Zs over a napping pet.
+static void snooze(uint32_t now, int x, int y) {
+  for (int i = 0; i < 3; ++i) {
+    int rise = (now / 110 + i * 9) % 27;
+    text(i == 2 ? "Z" : "z", x + i * 9 + rise / 5, y - i * 7 - rise / 3, colors.accent,
+         i == 2 ? 2 : 1);
+  }
+}
 static void home(uint32_t now) {
   char s[96];
   scene(now);
@@ -262,6 +270,8 @@ static void home(uint32_t now) {
                (unsigned long)(i ? app.bleCollection.discoveries() : app.food.discoveries()));
       text(s, x + 8, 36, i ? colors.heart : colors.accent);
     }
+    if (app.feeling == Feeling::Napping && !app.alertOpen)
+      snooze(now, 238, 78);
   } else {
     canvas.setClipRect(3, 29, 176, 116);
     pet(canvas, unsigned(app.settings.avatar), 91, 91 + int(app.tiltY), expression, gaze, blink,
@@ -271,6 +281,8 @@ static void home(uint32_t now) {
       heart(150, 71 - now / 140 % 13);
     }
     canvas.clearClipRect();
+    if (app.feeling == Feeling::Napping && !app.alertOpen)
+      snooze(now, 128, 58);
     if (app.alertOpen) {
       canvas.fillRoundRect(151, 37, 21, 25, 5, colors.danger);
       text("!", 156, 42, Ink, 2);
@@ -349,8 +361,8 @@ static void home(uint32_t now) {
     if (uint32_t(now - app.messageAt) < 6500)
       snprintf(s, sizeof(s), "%.47s", app.message);
     else
-      snprintf(s, sizeof(s), "XP %u/25   Fuel %u%%   Love %u%%", levelProgress(app.settings.xp),
-               app.energy, app.bond);
+      snprintf(s, sizeof(s), "XP %u/25  Fuel %u%%  Love %u%%  %s", levelProgress(app.settings.xp),
+               app.energy, app.bond, feelingName(app.feeling));
     text(s, 15, 181, colors.muted);
     meter(15, 195, 284, levelProgress(app.settings.xp), 25, colors.accent);
   }
@@ -503,8 +515,13 @@ static void behavior() {
                                          : "Head motion: Lively");
   button(8, 94, 304, 38, app.settings.spicy ? "Banter: Spicy panic" : "Banter: Gentle lookout");
   button(8, 144, 304, 38, "PET YOUR BUDDY", true);
-  wrap("Stroke the top sensor or tap the face for love. Only GPS-tagged wardriving feeds me!", 12,
-       199, 47, colors.muted);
+  char s[160];
+  snprintf(s, sizeof(s),
+           "Feeling %s. %lu pets, %lu snacks, %lu drives, best drive %lu networks. Pets build "
+           "love; only wardriving feeds me!",
+           feelingName(app.feeling), (unsigned long)app.life.pets, (unsigned long)app.life.snacks,
+           (unsigned long)app.life.drives, (unsigned long)app.life.bestDrive);
+  wrap(s, 12, 192, 47, colors.muted);
 }
 static void detection() {
   heading("DETECTION");
@@ -1034,8 +1051,10 @@ void uiSwitchView() {
   saveSettings();
 }
 void uiTap(int x, int y) {
-  if (x >= 0 && x < 320 && y >= 0 && y < 240)
+  if (x >= 0 && x < 320 && y >= 0 && y < 240) {
+    buddyPoke();
     touch(x, y);
+  }
 }
 void uiScreenshot() {
   if (!buffered)

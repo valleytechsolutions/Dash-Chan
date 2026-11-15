@@ -53,7 +53,7 @@ static void dress(const Outfit &o) {
   s.customEye = o.eye;
   memcpy(s.customName, o.name, sizeof(s.customName));
   saveSettings();
-  say("New outfit. Same tiny menace.");
+  buddySay(Topic::Outfit);
 }
 void nfcRememberOutfit() {
   if (app.session.armed || uploadBusy()) {
@@ -194,7 +194,7 @@ void hardwareTick() {
           (!app.greetAt || uint32_t(now - app.greetAt) > 60000)) {
         app.greetAt = now;
         buddyPet(false);
-        say("Oh! My favorite human-shaped signal.");
+        buddySay(Topic::Greet);
       }
       if (value > 250)
         near = true;

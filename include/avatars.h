@@ -146,6 +146,13 @@ void drawBuddy(G &g, int avatar, int cx, int cy, int mood, int gaze, bool blink,
     g.drawLine(ex - 31, ey - 24, ex - 16, ey - 29, eye);
     g.drawLine(ex + 16, ey - 29, ex + 31, ey - 24, eye);
     g.fillTriangle(cx + 58, cy - 26, cx + 64, cy - 11, cx + 52, cy - 11, 0x55ff);
+  } else if (mood == 6) { // Pout: worried brows and a small frown when hungry or lonely.
+    for (int n = 0; n < 2; ++n) {
+      g.drawLine(ex - 30, ey - 19 + n, ex - 16, ey - 24 + n, eye);
+      g.drawLine(ex + 16, ey - 24 + n, ex + 30, ey - 19 + n, eye);
+      g.drawLine(cx - 7, cy + 22 + n, cx, cy + 18 + n, eye);
+      g.drawLine(cx, cy + 18 + n, cx + 7, cy + 22 + n, eye);
+    }
   } else if (mood == 5 || mood == 3) {
     g.fillEllipse(cx, cy + 20, 10, 8, eye);
     g.fillEllipse(cx, cy + 24, 6, 3, blush);

@@ -16,7 +16,7 @@ try{
   await page.goto(url);await page.locator('#flash-status').filter({hasText:'Ready.'}).waitFor();
   assert.equal(await page.locator('#connect').isDisabled(),true);
   await page.locator('#hardware-confirm').check();assert.equal(await page.locator('#connect').isDisabled(),false);
-  await page.locator('[data-demo="1"]').click();assert.match(await page.locator('#hero-line').textContent(),/Love Your Face/);
+  await page.locator('[data-demo="1"]').click();assert.match(await page.locator('#hero-line').textContent(),/good spot/);
   await page.locator('[data-demo="2"]').click();
   await page.locator('.tabs a[href="#creator"]').click();
   await page.locator('input[name=name]').fill('Captain Mochi');

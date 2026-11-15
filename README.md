@@ -55,6 +55,18 @@ Curious brows, bright eye highlights, paw pads, heart reactions, and open-mouth 
 
 **Wardriving is the only way to feed Dash-Chan.** Every five new Wi-Fi BSSIDs successfully written with valid GPS in the current session earn +12 fuel. Each earns one XP. BLE, background watch, petting, and demos never feed it. Per-drive approximate deduplication prevents repeat-food farming within a session; it may conservatively miss a discovery on a very large drive. Stopping and starting creates a new food session.
 
+### A pet with moods, not a soundboard
+
+Dash-Chan keeps track of how it feels and talks about that instead of looping one phrase:
+
+- **Feelings:** Content, Hyped, Hungry, Lonely, Bored, Drowsy or Napping, shown beside the XP/Fuel/Love readout. Low fuel or low love brings a pouty face; ignore it for 12 minutes off the road and it dozes off with drifting Zs until you tap or pet it.
+- **No repeats:** more than 230 lines across 33 situations, with extra lines unique to each buddy and a sassier set when Banter is Spicy. Every line in a situation is used once before any comes back, and remarks arrive at irregular gaps.
+- **Petting has a combo:** a couple of pets earn love, quick repeats get giggles, and six in a row gets “Okay okay okay! I'm fully petted!” with no extra love.
+- **It notices the drive:** drive starts, red lights, dry stretches, sudden bursts of networks, missing GPS, per-drive milestones, and now and then the real name of a network it just logged (“Ooh, 'CoffeeShop'. Tasty.”).
+- **It remembers:** love, lifetime pets, snacks, drives and your best drive survive restarts. Beat your record and it says so. **MENU → Personality** shows the tally.
+
+Love fades slowly when it is awake and alone, never while you are driving together; every snack adds a little. To add or edit lines, open [`include/personality.h`](include/personality.h) — one row per line.
+
 This is a scripted personality engine, not cloud AI. No account, microphone processing, or internet connection is needed on the robot.
 
 ## Make a buddy that looks like yours
@@ -96,7 +108,7 @@ Spicy Axon reactions can display or speak **“PIG DETECTED! ACT NATURAL!”**, 
 - **Voice OFF** disables every spoken clip while keeping configured electronic alert tones available.
 - **Master sound OFF** immediately silences all audio. Preferences survive reboot and firmware updates.
 - Alert tones: **Personality, Siren, Arcade, Chime, Silent**; selectable volume through 255.
-- Deliberate screen petting can say **“i Love Your Face”** only when Voice is enabled, at most once per minute.
+- Deliberate screen pets get a short chirp and a line that changes every time. The one recorded pet clip, **“i Love Your Face”**, is now a rare treat at 85%+ Love with Voice enabled, at most once per minute.
 - Head-sensor petting gives visual affection without speech. Debounce and release-to-rearm prevent a held/noisy sensor from retriggering continuously.
 
 Choose **Off / Gentle / Lively** head motion and **Spicy / Gentle** banter under Personality. Head movement starts off on a new installation, uses the BSP's factory zero positions, and stays within bounded travel. Looking around is animation, not RF direction finding.

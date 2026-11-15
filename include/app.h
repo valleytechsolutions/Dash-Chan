@@ -3,6 +3,7 @@
 #include "core.h"
 #include "gps_support.h"
 #include "nutrition.h"
+#include "personality.h"
 #include "progression.h"
 #include "themes.h"
 #include "watchlist.h"
@@ -17,7 +18,8 @@ inline unsigned avatarBase(Avatar a, unsigned custom) {
          : a == Avatar::Ember ? 4
                               : unsigned(a);
 }
-enum class Mood : uint8_t { Happy, Curious, Sleepy, Love, Alarm };
+// Values double as face expressions in avatars.h; Cheer is the discovery bounce.
+enum class Mood : uint8_t { Happy, Curious, Sleepy, Love, Alarm, Cheer, Pout };
 enum class AlertTone : uint8_t { Personality, Siren, Arcade, Chime, Silent };
 struct Settings {
   Avatar avatar = Avatar::Mochi;
@@ -41,6 +43,10 @@ struct Settings {
   bool rgb = true, tilt = true, gestures = true, proximity = false, autoDim = false, nfc = false;
   uint8_t ledBrightness = 32;
   char customName[17] = "My buddy";
+};
+// Lifetime memories, saved with the settings so the pet remembers you across restarts.
+struct Life {
+  uint32_t pets = 0, drives = 0, snacks = 0, bestDrive = 0, boots = 0;
 };
 struct Contact {
   bool used = false, ble = false;
@@ -73,6 +79,8 @@ struct State {
            alerts = 0, sessionAt = 0, gpsChars = 0, gpsGood = 0, gpsBad = 0;
   uint8_t bond = 70, energy = 85;
   Mood mood = Mood::Happy;
+  Feeling feeling = Feeling::Content;
+  Life life;
   float gaze = 0;
   Alert active, history[HistoryCapacity];
   uint8_t historyCount = 0;
@@ -120,7 +128,11 @@ void radioTick();
 void buddyBegin();
 void buddyTick();
 void buddyPet(bool allowVoice = true);
-void buddyDiscovery(const uint8_t mac[6]);
+void buddyPoke();
+void buddySay(Topic);
+void buddyDriveStart(bool fix);
+void buddyDriveEnd(uint32_t finds);
+void buddyDiscovery(const uint8_t mac[6], const char *ssid = nullptr, bool open = false);
 void buddyAlert(const Alert &, bool demo = false);
 void buddyDismiss();
 void buddyMotion(bool);

@@ -86,7 +86,7 @@ export function initStudio({upload}) {
     catch(error){notice(error.name==='NotFoundError'?'Port selection canceled.':error.message,error.name!=='NotFoundError');}
   });
   const reduced=matchMedia('(prefers-reduced-motion: reduce)');
-  const heroLines=['You drive. I will keep watch.','i Love Your Face','Side quest: invisible snacks!','Discovery dance! Tiny paws up!'];
+  const heroLines=['You drive. I will keep watch.','Hehe. That is the good spot.','Side quest: invisible snacks!','Discovery dance! Tiny paws up!'];
   document.querySelectorAll('[data-demo]').forEach(button=>button.addEventListener('click',()=>{
     const action=Number(button.dataset.demo);heroMood=action===1?3:action===3?5:1;heroUntil=performance.now()+3200;
     if(action===2)heroWorld=(heroWorld+1)%4;

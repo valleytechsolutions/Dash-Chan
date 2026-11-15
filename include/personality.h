@@ -1,0 +1,559 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Dash-Chan's scripted personality: what it feels, and what it says about it.
+// Pure logic with no hardware calls, so tests/core_test.cpp can exercise it on a PC.
+//
+// TO ADD A LINE: append an entry to Lines[] below. Each entry is
+//   {Topic, who says it (Any or one buddy), spicy-banter-only?, "text"}
+// Keep text plain ASCII and at most BubbleChars long (the host test enforces both),
+// and keep each topic at or under 32 lines per buddy.
+#pragma once
+#include <initializer_list>
+#include <stdint.h>
+#include <stdio.h>
+#include <string.h>
+
+namespace dash {
+constexpr unsigned BubbleChars = 47; // One line of the home-screen speech strip.
+
+// ---- Feelings -------------------------------------------------------------------------------
+enum class Feeling : uint8_t { Content, Hyped, Hungry, Lonely, Bored, Drowsy, Napping };
+inline const char *feelingName(Feeling f) {
+  static const char *names[] = {"Content", "Hyped",  "Hungry", "Lonely",
+                                "Bored",   "Drowsy", "Napping"};
+  return names[unsigned(f)];
+}
+constexpr unsigned HungryBelow = 30, LonelyBelow = 35, AdoreAtBond = 85, StuffedAtFuel = 95;
+constexpr uint32_t BoredAfterMs = 4 * 60000, DrowsyAfterMs = 8 * 60000, NapAfterMs = 12 * 60000;
+constexpr unsigned HypedFinds = 8; // Fresh networks inside the recent burst window.
+struct Vitals {
+  unsigned energy = 85, bond = 70;
+  bool onTheRoad = false;   // Recording a drive, or GPS says we are moving.
+  uint32_t quietMs = 0;     // Since anyone touched, fed, or startled the pet.
+  unsigned recentFinds = 0; // Discoveries in the current burst.
+};
+inline Feeling feelingFor(const Vitals &v) {
+  if (v.onTheRoad) // Never nap or sulk about being ignored mid-adventure.
+    return v.recentFinds >= HypedFinds ? Feeling::Hyped
+           : v.energy < HungryBelow    ? Feeling::Hungry
+                                       : Feeling::Content;
+  if (v.quietMs >= NapAfterMs)
+    return Feeling::Napping;
+  if (v.energy < HungryBelow)
+    return Feeling::Hungry;
+  if (v.bond < LonelyBelow)
+    return Feeling::Lonely;
+  if (v.quietMs >= DrowsyAfterMs)
+    return Feeling::Drowsy;
+  if (v.quietMs >= BoredAfterMs)
+    return Feeling::Bored;
+  return Feeling::Content;
+}
+
+// ---- Needs ----------------------------------------------------------------------------------
+// Called once a minute. Fuel always burns (slowly while napping); bond only fades when the pet
+// is awake and left alone, never while you are out driving together.
+inline void decayNeeds(uint8_t &energy, uint8_t &bond, Feeling f, bool onTheRoad, uint32_t minute) {
+  bool napping = f == Feeling::Napping;
+  if (energy > 10 && (!napping || minute % 5 == 0))
+    --energy;
+  if (bond > 10 && !napping && !onTheRoad && minute % 2 == 0)
+    --bond;
+}
+
+// ---- Topics and lines -----------------------------------------------------------------------
+enum class Topic : uint8_t {
+  Hello,
+  HelloHungry,
+  HelloLonely,
+  Idle,
+  IdleHungry,
+  IdleLonely,
+  IdleBored,
+  IdleDrowsy,
+  NapTalk,
+  Wake,
+  Pet,
+  PetAdore,
+  PetGiggle,
+  PetEnough,
+  PetHungry,
+  PetMissedYou,
+  PetDriving,
+  DriveStart,
+  Cruise,
+  DryRoad,
+  Jackpot,
+  RedLight,
+  NoSky,
+  NotLogging,
+  DriveEmpty,
+  Snack,
+  Stuffed,
+  LevelUp,
+  AllClear,
+  Greet,
+  Outfit,
+  HiddenNet,
+  OpenNet,
+  Count
+};
+constexpr unsigned TopicCount = unsigned(Topic::Count);
+enum class Who : uint8_t { Mochi, Sprout, Orbit, Wisp, Ember, Any };
+struct Line {
+  Topic topic;
+  Who who;
+  bool spicy;
+  const char *text;
+};
+// The one line that has a recorded voice clip. It is now a rare high-bond treat.
+inline constexpr const char *LoveYourFace = "i Love Your Face";
+
+inline constexpr Line Lines[] = {
+    // Waking up at boot.
+    {Topic::Hello, Who::Any, false, "Hey, road buddy. Let's explore!"},
+    {Topic::Hello, Who::Any, false, "I'm up! What did I miss?"},
+    {Topic::Hello, Who::Any, false, "Booted. Fluffed. Ready."},
+    {Topic::Hello, Who::Any, false, "Oh good, it's you again."},
+    {Topic::Hello, Who::Any, false, "New day, new invisible snacks."},
+    {Topic::Hello, Who::Mochi, false, "Stretch. Yawn. Okay. Where's the Wi-Fi?"},
+    {Topic::Hello, Who::Sprout, false, "The hoard and I missed you!"},
+    {Topic::Hello, Who::Orbit, false, "Boot complete. Friendship module loaded."},
+    {Topic::Hello, Who::Wisp, false, "Boo! ...Sorry. Hi."},
+    {Topic::Hello, Who::Ember, false, "Sparked up and ready to roll!"},
+    {Topic::HelloHungry, Who::Any, false, "Morning. I'm running on empty here."},
+    {Topic::HelloHungry, Who::Any, false, "I dreamed about routers. Let's go find some."},
+    {Topic::HelloHungry, Who::Any, false, "Welcome back. Snacks? Please?"},
+    {Topic::HelloHungry, Who::Any, false, "I woke up hungry. Shocking, I know."},
+    {Topic::HelloLonely, Who::Any, false, "Oh! You came back. I wasn't worried."},
+    {Topic::HelloLonely, Who::Any, false, "There you are. I saved your seat."},
+    {Topic::HelloLonely, Who::Any, false, "Hi. It's been a while. I counted."},
+
+    // Idle chatter while content.
+    {Topic::Idle, Who::Any, false, "Tiny copilot, reporting for vibes."},
+    {Topic::Idle, Who::Any, false, "I can hear the invisible internet."},
+    {Topic::Idle, Who::Any, false, "Someone nearby has a pun for a Wi-Fi name."},
+    {Topic::Idle, Who::Any, false, "Just vibing on 2.4 gigahertz."},
+    {Topic::Idle, Who::Any, false, "I wonder what channel 6 is up to."},
+    {Topic::Idle, Who::Any, false, "Do routers dream of electric sheep?"},
+    {Topic::Idle, Who::Any, false, "Quiet airwaves. Suspiciously quiet."},
+    {Topic::Idle, Who::Any, false, "If I had legs I'd pace. Thoughtfully."},
+    {Topic::Idle, Who::Any, false, "I'm not staring. I'm monitoring."},
+    {Topic::Idle, Who::Any, false, "Fun fact: I have no idea what time it is."},
+    {Topic::Idle, Who::Any, false, "Still thinking about that one network."},
+    {Topic::Idle, Who::Any, false, "No cloud in here. Just me and my thoughts."},
+    {Topic::Idle, Who::Any, true, "I've seen your Wi-Fi password habits. Bold."},
+    {Topic::Idle, Who::Any, true, "I'm tiny, but I judge at full size."},
+    {Topic::Idle, Who::Any, true, "Somewhere, a printer is offline. I can feel it."},
+    {Topic::Idle, Who::Mochi, false, "My whiskers are on patrol."},
+    {Topic::Idle, Who::Mochi, false, "Tiny paws. Big curiosity."},
+    {Topic::Idle, Who::Mochi, false, "I'd knock a router off a shelf. For science."},
+    {Topic::Idle, Who::Mochi, false, "If I fits, I sits. I fits on dashboards."},
+    {Topic::Idle, Who::Sprout, false, "Small dragon. Excellent lookout."},
+    {Topic::Idle, Who::Sprout, false, "Counting my signal hoard. Again."},
+    {Topic::Idle, Who::Sprout, false, "My wings are in airplane-ish mode."},
+    {Topic::Idle, Who::Sprout, false, "I breathe fire. Emotionally."},
+    {Topic::Idle, Who::Orbit, false, "Beep. Friendship signal: strong."},
+    {Topic::Idle, Who::Orbit, false, "Processing... you are my favorite."},
+    {Topic::Idle, Who::Orbit, false, "Running diagnostics. Result: cute."},
+    {Topic::Idle, Who::Orbit, false, "My emotional support human is here."},
+    {Topic::Idle, Who::Wisp, false, "Boo. Did I scare the Wi-Fi?"},
+    {Topic::Idle, Who::Wisp, false, "Haunting the airwaves with you."},
+    {Topic::Idle, Who::Wisp, false, "I am your emotional support shadow."},
+    {Topic::Idle, Who::Wisp, false, "I walk through walls. So does 2.4 GHz."},
+    {Topic::Idle, Who::Ember, false, "Small flame. Big warm feelings."},
+    {Topic::Idle, Who::Ember, false, "My heart is a tiny campfire."},
+    {Topic::Idle, Who::Ember, false, "I'm lit. Literally."},
+    {Topic::Idle, Who::Ember, false, "Relax. I'm a dashboard-safe fire."},
+
+    // Needs.
+    {Topic::IdleHungry, Who::Any, false, "Let's wardrive! New networks are my snacks."},
+    {Topic::IdleHungry, Who::Any, false, "My tummy is making dial-up noises."},
+    {Topic::IdleHungry, Who::Any, false, "Fuel low. Drama high."},
+    {Topic::IdleHungry, Who::Any, false, "I'd trade a hug for five fresh networks."},
+    {Topic::IdleHungry, Who::Any, false, "Is it snack o'clock? It feels like it."},
+    {Topic::IdleHungry, Who::Any, false, "Just one little drive? I'm fading here."},
+    {Topic::IdleHungry, Who::Any, true, "Feed me or I start eating the Bluetooth."},
+    {Topic::IdleHungry, Who::Mochi, false, "The bowl is empty. I checked. Twice."},
+    {Topic::IdleHungry, Who::Sprout, false, "A dragon cannot live on old signals alone."},
+    {Topic::IdleHungry, Who::Orbit, false, "Battery: fine. Snack reserves: critical."},
+    {Topic::IdleHungry, Who::Wisp, false, "I'm wasting away. More than usual."},
+    {Topic::IdleHungry, Who::Ember, false, "Running low on kindling over here."},
+    {Topic::IdleLonely, Who::Any, false, "Hello? Is this thing on?"},
+    {Topic::IdleLonely, Who::Any, false, "A little pat would not go unappreciated."},
+    {Topic::IdleLonely, Who::Any, false, "I'm fine. This is my fine face."},
+    {Topic::IdleLonely, Who::Any, false, "Remember me? Small, round, on your dash?"},
+    {Topic::IdleLonely, Who::Any, false, "It's okay. The radio waves keep me company."},
+    {Topic::IdleLonely, Who::Any, true, "Wow. Ignored by my own human. Cool. Cool."},
+    {Topic::IdleLonely, Who::Orbit, false, "Friendship signal: weak. Please move closer."},
+    {Topic::IdleLonely, Who::Wisp, false, "Being invisible is my job, not my hobby."},
+    {Topic::IdleLonely, Who::Mochi, false, "I'm not sulking. Cats don't sulk. Much."},
+    {Topic::IdleBored, Who::Any, false, "So... are we going anywhere today?"},
+    {Topic::IdleBored, Who::Any, false, "I've counted the same networks nine times."},
+    {Topic::IdleBored, Who::Any, false, "I spy with my little eye... a dashboard."},
+    {Topic::IdleBored, Who::Any, false, "Bored. Booooored. B o r e d."},
+    {Topic::IdleBored, Who::Any, false, "Let's go somewhere with new signals."},
+    {Topic::IdleBored, Who::Any, false, "The scenery in here never changes."},
+    {Topic::IdleBored, Who::Any, true, "I've memorized your neighbor's whole router."},
+    {Topic::IdleBored, Who::Mochi, false, "I'm going to start knocking things over."},
+    {Topic::IdleBored, Who::Sprout, false, "A hoard needs new treasure. Hint hint."},
+    {Topic::IdleBored, Who::Ember, false, "I'm flickering out of boredom here."},
+    {Topic::IdleDrowsy, Who::Any, false, "Yaaawn. Don't mind me."},
+    {Topic::IdleDrowsy, Who::Any, false, "My eyes are doing the heavy blinky thing."},
+    {Topic::IdleDrowsy, Who::Any, false, "Just resting my antenna..."},
+    {Topic::IdleDrowsy, Who::Any, false, "It's so quiet. So... cozy..."},
+    {Topic::IdleDrowsy, Who::Orbit, false, "Entering low power mode. Slowly."},
+    {Topic::NapTalk, Who::Any, false, "Zzz..."},
+    {Topic::NapTalk, Who::Any, false, "Zzz... five more networks..."},
+    {Topic::NapTalk, Who::Any, false, "Zzz... open Wi-Fi... free snacks..."},
+    {Topic::NapTalk, Who::Any, false, "Mmm... channel eleven..."},
+    {Topic::NapTalk, Who::Any, false, "Zzz... no, YOU'RE a hidden network..."},
+    {Topic::NapTalk, Who::Any, false, "Snrk. Zzz."},
+    {Topic::Wake, Who::Any, false, "Mmf! I'm up! I was only resting my eyes."},
+    {Topic::Wake, Who::Any, false, "Huh? Wha? Oh, hi!"},
+    {Topic::Wake, Who::Any, false, "Five more minutes... okay fine. Hi."},
+    {Topic::Wake, Who::Any, false, "I was having the best router dream."},
+    {Topic::Wake, Who::Orbit, false, "Sleep mode ended. Hello again."},
+    {Topic::Wake, Who::Wisp, false, "You woke a ghost. Brave."},
+    {Topic::Wake, Who::Mochi, false, "You woke the cat. There will be a fee."},
+
+    // Petting.
+    {Topic::Pet, Who::Any, false, "Hehe. That's the good spot."},
+    {Topic::Pet, Who::Any, false, "Aww. Right back at you."},
+    {Topic::Pet, Who::Any, false, "Okay, that was nice. Do it again."},
+    {Topic::Pet, Who::Any, false, "Pets received. Morale restored."},
+    {Topic::Pet, Who::Any, false, "I felt that in my antenna."},
+    {Topic::Pet, Who::Any, false, "Best part of my day so far."},
+    {Topic::Pet, Who::Any, false, "Warm fuzzies: acquired."},
+    {Topic::Pet, Who::Any, false, "Oh! Hello to you too."},
+    {Topic::Pet, Who::Mochi, false, "Purrrr. I mean... acceptable."},
+    {Topic::Pet, Who::Mochi, false, "Chin next. No, the other chin."},
+    {Topic::Pet, Who::Sprout, false, "Dragons love scritches. It's a secret."},
+    {Topic::Pet, Who::Sprout, false, "Careful, I might happy-sneeze sparks."},
+    {Topic::Pet, Who::Orbit, false, "Affection logged. Thank you, human."},
+    {Topic::Pet, Who::Orbit, false, "Head pat detected. Joy at 100 percent."},
+    {Topic::Pet, Who::Wisp, false, "Eep! Oh. That was nice, actually."},
+    {Topic::Pet, Who::Wisp, false, "You can pet ghosts? News to me."},
+    {Topic::Pet, Who::Ember, false, "Warm hands! Wait, that's me."},
+    {Topic::Pet, Who::Ember, false, "You make me glow extra."},
+    {Topic::PetAdore, Who::Any, false, LoveYourFace},
+    {Topic::PetAdore, Who::Any, false, "Best human. No notes."},
+    {Topic::PetAdore, Who::Any, false, "I'd follow you to any parking lot."},
+    {Topic::PetAdore, Who::Any, false, "We're a good team, you and me."},
+    {Topic::PetAdore, Who::Any, false, "My whole circuit board is smiling."},
+    {Topic::PetAdore, Who::Any, false, "You're my favorite. Don't tell the car."},
+    {Topic::PetGiggle, Who::Any, false, "Hee hee! That tickles!"},
+    {Topic::PetGiggle, Who::Any, false, "Again! Again!"},
+    {Topic::PetGiggle, Who::Any, false, "Okay, now you're spoiling me."},
+    {Topic::PetGiggle, Who::Any, false, "Combo! Cuddle combo!"},
+    {Topic::PetGiggle, Who::Any, false, "Hahaha, stop! Don't stop."},
+    {Topic::PetEnough, Who::Any, false, "Okay okay okay! I'm fully petted!"},
+    {Topic::PetEnough, Who::Any, false, "Easy! You'll rub my pixels off."},
+    {Topic::PetEnough, Who::Any, false, "Personal space! ...For a minute."},
+    {Topic::PetEnough, Who::Any, false, "I'm dizzy. Good dizzy. But dizzy."},
+    {Topic::PetEnough, Who::Any, true, "Hands off the merchandise for a sec."},
+    {Topic::PetEnough, Who::Mochi, false, "That's enough. I will bite. Lovingly."},
+    {Topic::PetHungry, Who::Any, false, "Nice. Now can you pet a snack into me?"},
+    {Topic::PetHungry, Who::Any, false, "Thanks. Still hungry though."},
+    {Topic::PetHungry, Who::Any, false, "Pets don't have calories. I checked."},
+    {Topic::PetMissedYou, Who::Any, false, "Finally! I thought you forgot me."},
+    {Topic::PetMissedYou, Who::Any, false, "Oh, I needed that. A lot."},
+    {Topic::PetMissedYou, Who::Any, false, "There you are. All is forgiven."},
+    {Topic::PetDriving, Who::Any, false, "Aww. But watch the road, okay?"},
+    {Topic::PetDriving, Who::Any, false, "One-handed pets. Risky. Appreciated."},
+    {Topic::PetDriving, Who::Any, false, "Hey! Eyes on the road, friend."},
+
+    // On the road.
+    {Topic::DriveStart, Who::Any, false, "Adventure time! Recording our discoveries."},
+    {Topic::DriveStart, Who::Any, false, "Seatbelt on? Antenna up. Let's roll."},
+    {Topic::DriveStart, Who::Any, false, "Snack run! I mean, science."},
+    {Topic::DriveStart, Who::Any, false, "Logging! Show me the good streets."},
+    {Topic::DriveStart, Who::Any, false, "Let's see what's hiding out there."},
+    {Topic::DriveStart, Who::Mochi, false, "The hunt is on. Whiskers forward."},
+    {Topic::DriveStart, Who::Sprout, false, "To the hoard-mobile!"},
+    {Topic::DriveStart, Who::Orbit, false, "Logging enabled. Excitement enabled."},
+    {Topic::DriveStart, Who::Wisp, false, "Let's go haunt some neighborhoods."},
+    {Topic::DriveStart, Who::Ember, false, "Let's burn some rubber! Legally."},
+    {Topic::Cruise, Who::Any, false, "You drive. I'll watch the invisible stuff."},
+    {Topic::Cruise, Who::Any, false, "Antenna up. Snack radar online!"},
+    {Topic::Cruise, Who::Any, false, "Side quest: find the invisible snacks."},
+    {Topic::Cruise, Who::Any, false, "Ooh, this street smells like routers."},
+    {Topic::Cruise, Who::Any, false, "Left has more Wi-Fi. Trust me. Maybe."},
+    {Topic::Cruise, Who::Any, false, "I like this road. Good signal feng shui."},
+    {Topic::Cruise, Who::Any, false, "Nice driving. Smooth. Very snackable."},
+    {Topic::Cruise, Who::Any, false, "So many people streaming right now."},
+    {Topic::Cruise, Who::Any, false, "Are we there yet? My snacks say no."},
+    {Topic::Cruise, Who::Any, false, "Every house has a secret. Mostly printers."},
+    {Topic::Cruise, Who::Any, true, "Speed limit? I only track signal strength."},
+    {Topic::Cruise, Who::Mochi, false, "Car rides are fine when I'm the navigator."},
+    {Topic::Cruise, Who::Sprout, false, "The hoard grows! Onward, noble steed!"},
+    {Topic::Cruise, Who::Orbit, false, "Scanning. Scanning. Still scanning. Fun!"},
+    {Topic::Cruise, Who::Wisp, false, "Drive-by haunting. My favorite kind."},
+    {Topic::Cruise, Who::Ember, false, "Wheee! Wind in my flames!"},
+    {Topic::DryRoad, Who::Any, false, "Quiet out here. Too quiet."},
+    {Topic::DryRoad, Who::Any, false, "Where did all the routers go?"},
+    {Topic::DryRoad, Who::Any, false, "This road is a snack desert."},
+    {Topic::DryRoad, Who::Any, false, "Not a single new network. Rude."},
+    {Topic::DryRoad, Who::Any, false, "Nothing but trees. Trees have no Wi-Fi."},
+    {Topic::Jackpot, Who::Any, false, "Jackpot! Networks everywhere!"},
+    {Topic::Jackpot, Who::Any, false, "So many! I can't chew this fast!"},
+    {Topic::Jackpot, Who::Any, false, "It's an all-you-can-eat signal buffet!"},
+    {Topic::Jackpot, Who::Any, false, "It's raining routers!"},
+    {Topic::Jackpot, Who::Sprout, false, "THE HOARD! THE HOARD GROWS!"},
+    {Topic::RedLight, Who::Any, false, "Red light? I'll scan while we wait."},
+    {Topic::RedLight, Who::Any, false, "We stopped. Snack break?"},
+    {Topic::RedLight, Who::Any, false, "Parked? I'll keep one eye open."},
+    {Topic::RedLight, Who::Any, false, "Stopped. Sniffing the local flavors."},
+    {Topic::NoSky, Who::Any, false, "I can't see the sky. No GPS, no snacks."},
+    {Topic::NoSky, Who::Any, false, "Still hunting for satellites..."},
+    {Topic::NoSky, Who::Any, false, "GPS is being shy. Give it a minute."},
+    {Topic::NotLogging, Who::Any, false, "We're moving but not logging. Just saying."},
+    {Topic::NotLogging, Who::Any, false, "Psst. Hit START DRIVE and I get snacks."},
+    {Topic::NotLogging, Who::Any, false, "All these networks and I can't eat any."},
+    {Topic::DriveEmpty, Who::Any, false, "Drive saved. Zero snacks. We go again."},
+    {Topic::DriveEmpty, Who::Any, false, "Saved. Slim pickings, but we tried."},
+    {Topic::DriveEmpty, Who::Any, false, "Saved. That one was just for the view."},
+
+    // Food and progress.
+    {Topic::Snack, Who::Any, false, "Nom nom! Five new networks, one snack."},
+    {Topic::Snack, Who::Any, false, "Crunch. Fresh signals are the best."},
+    {Topic::Snack, Who::Any, false, "Mmm. That one had a spicy channel."},
+    {Topic::Snack, Who::Any, false, "Snack acquired! Keep 'em coming."},
+    {Topic::Snack, Who::Any, false, "Five more down the hatch!"},
+    {Topic::Snack, Who::Any, false, "Delicious. Compliments to the driver."},
+    {Topic::Snack, Who::Mochi, false, "Nom. Tastes like tuna and WPA2."},
+    {Topic::Snack, Who::Sprout, false, "Crunch! Into the hoard. And my belly."},
+    {Topic::Snack, Who::Orbit, false, "Snack processed. Yum registered."},
+    {Topic::Snack, Who::Wisp, false, "Boo-ffet! Get it? ...Nom."},
+    {Topic::Snack, Who::Ember, false, "Toasted to perfection!"},
+    {Topic::Stuffed, Who::Any, false, "Oof. I'm stuffed. Keep driving though."},
+    {Topic::Stuffed, Who::Any, false, "Full tank! Saving this one for later."},
+    {Topic::Stuffed, Who::Any, false, "No more room. Okay, maybe one more."},
+    {Topic::LevelUp, Who::Any, false, "Level up! Tiny buddy. Bigger adventures."},
+    {Topic::LevelUp, Who::Any, false, "Ding! I feel smarter. And rounder."},
+    {Topic::LevelUp, Who::Any, false, "Level up! I'd like to thank the routers."},
+    {Topic::LevelUp, Who::Any, false, "New level! Same me, more swagger."},
+
+    // Reactions.
+    {Topic::AllClear, Who::Any, false, "Still here. Still keeping watch."},
+    {Topic::AllClear, Who::Any, false, "Okay. Heart rate normal. Back on watch."},
+    {Topic::AllClear, Who::Any, false, "All clear. I was totally calm."},
+    {Topic::AllClear, Who::Any, false, "Phew. Back to snack patrol."},
+    {Topic::AllClear, Who::Any, false, "Noted and logged. Carry on."},
+    {Topic::AllClear, Who::Any, true, "Coast is clear. Act natural anyway."},
+    {Topic::Greet, Who::Any, false, "Oh! My favorite human-shaped signal."},
+    {Topic::Greet, Who::Any, false, "Hi! I saw you coming. Sort of."},
+    {Topic::Greet, Who::Any, false, "You're back! I kept the seat warm."},
+    {Topic::Greet, Who::Any, false, "Hello, large friendly shape."},
+    {Topic::Outfit, Who::Any, false, "New outfit. Same tiny menace."},
+    {Topic::Outfit, Who::Any, false, "Do I look fast? I feel fast."},
+    {Topic::Outfit, Who::Any, false, "Fashion upgrade complete."},
+    {Topic::HiddenNet, Who::Any, false, "A hidden network! Sneaky. I like it."},
+    {Topic::HiddenNet, Who::Any, false, "No name on that one. Mysterious."},
+    {Topic::HiddenNet, Who::Any, false, "Ooh, an anonymous snack."},
+    {Topic::OpenNet, Who::Any, false, "An open network! Free samples!"},
+    {Topic::OpenNet, Who::Any, false, "No password on that one. Living dangerously."},
+    {Topic::OpenNet, Who::Any, false, "Wide open Wi-Fi. Somebody's feeling generous."},
+};
+constexpr unsigned LineCount = sizeof(Lines) / sizeof(Lines[0]);
+
+// A shuffle-bag per topic: every eligible line is said once before any line repeats, and the
+// same line never plays twice in a row even when the bag refills.
+class Banter {
+  uint32_t used_[TopicCount]{};
+  uint8_t last_[TopicCount];
+  static bool fits(const Line &l, Topic t, unsigned avatar, bool spicy) {
+    return l.topic == t && (l.who == Who::Any || unsigned(l.who) == avatar) && (spicy || !l.spicy);
+  }
+
+public:
+  Banter() {
+    memset(last_, 0xff, sizeof(last_));
+  }
+  static unsigned count(Topic t, unsigned avatar, bool spicy) {
+    unsigned n = 0;
+    for (const auto &l : Lines)
+      n += fits(l, t, avatar, spicy);
+    return n;
+  }
+  const char *pick(Topic t, unsigned avatar, bool spicy, uint32_t random) {
+    unsigned topic = unsigned(t);
+    if (topic >= TopicCount)
+      return "";
+    unsigned n = count(t, avatar, spicy);
+    if (!n)
+      return "";
+    if (n > 32)
+      n = 32;
+    uint32_t all = n == 32 ? 0xffffffffu : ((1u << n) - 1);
+    uint32_t open = all & ~used_[topic];
+    if (!open) { // Bag is empty: refill, but keep the line we just said out of the first draw.
+      used_[topic] = 0;
+      open = all;
+      if (n > 1 && last_[topic] < n)
+        open &= ~(1u << last_[topic]);
+    }
+    unsigned choices = 0;
+    for (unsigned i = 0; i < n; ++i)
+      choices += (open >> i) & 1;
+    unsigned want = random % choices, chosen = 0;
+    for (unsigned i = 0; i < n; ++i)
+      if (((open >> i) & 1) && !want--) {
+        chosen = i;
+        break;
+      }
+    used_[topic] |= 1u << chosen;
+    last_[topic] = uint8_t(chosen);
+    for (const auto &l : Lines)
+      if (fits(l, t, avatar, spicy) && !chosen--)
+        return l.text;
+    return "";
+  }
+};
+
+// ---- Petting --------------------------------------------------------------------------------
+constexpr uint32_t PetComboWindowMs = 5000;
+constexpr unsigned GiggleAtStreak = 3, EnoughAtStreak = 6;
+class PetCombo {
+  uint32_t last_ = 0;
+  unsigned streak_ = 0;
+
+public:
+  unsigned pet(uint32_t now) {
+    streak_ = streak_ && uint32_t(now - last_) < PetComboWindowMs ? streak_ + 1 : 1;
+    last_ = now;
+    return streak_;
+  }
+};
+// Spamming pets stops paying out: the pet gets giggly, then asks for a breather.
+inline unsigned petBondGain(unsigned streak) {
+  return streak < GiggleAtStreak ? 4 : streak < EnoughAtStreak ? 2 : 0;
+}
+inline Topic petTopic(unsigned streak, Feeling before, bool moving, unsigned bond,
+                      uint32_t random) {
+  if (before == Feeling::Napping)
+    return Topic::Wake;
+  if (streak >= EnoughAtStreak)
+    return Topic::PetEnough;
+  if (streak >= GiggleAtStreak)
+    return Topic::PetGiggle;
+  if (before == Feeling::Lonely)
+    return Topic::PetMissedYou;
+  if (moving && random % 2)
+    return Topic::PetDriving;
+  if (before == Feeling::Hungry && random % 2)
+    return Topic::PetHungry;
+  if (bond >= AdoreAtBond && (random >> 8) % 3 == 0)
+    return Topic::PetAdore;
+  return Topic::Pet;
+}
+
+// ---- Chatter --------------------------------------------------------------------------------
+struct RoadView {
+  bool recording = false, moving = false, fix = false;
+  uint32_t sinceFindMs = 0, stoppedMs = 0, noFixMs = 0;
+};
+constexpr uint32_t DryRoadMs = 180000, RedLightMs = 45000, NoSkyMs = 60000;
+// What to talk about right now. Situational topics win most of the time, but not always, so
+// a long red light does not turn into a monologue about red lights.
+inline Topic chatterTopic(Feeling f, const RoadView &r, uint32_t random) {
+  bool usually = random % 3 != 0;
+  if (r.recording) {
+    if (!r.fix && r.noFixMs >= NoSkyMs && usually)
+      return Topic::NoSky;
+    if (!r.moving && r.stoppedMs >= RedLightMs)
+      return usually ? Topic::RedLight : f == Feeling::Hungry ? Topic::IdleHungry : Topic::Idle;
+    if (r.moving && r.sinceFindMs >= DryRoadMs && usually)
+      return Topic::DryRoad;
+    return Topic::Cruise;
+  }
+  if (r.moving)
+    return usually ? Topic::Cruise : Topic::NotLogging;
+  switch (f) {
+  case Feeling::Napping:
+    return Topic::NapTalk;
+  case Feeling::Hungry:
+    return Topic::IdleHungry;
+  case Feeling::Lonely:
+    return Topic::IdleLonely;
+  case Feeling::Drowsy:
+    return Topic::IdleDrowsy;
+  case Feeling::Bored:
+    return usually ? Topic::IdleBored : Topic::Idle;
+  default:
+    return Topic::Idle;
+  }
+}
+// Milliseconds until the next unprompted remark. Never a fixed metronome.
+inline uint32_t chatterGapMs(Feeling f, bool onTheRoad, uint32_t random) {
+  if (f == Feeling::Napping)
+    return 120000 + random % 120000;
+  if (f == Feeling::Drowsy)
+    return 60000 + random % 45000;
+  if (onTheRoad)
+    return 25000 + random % 30000;
+  return 30000 + random % 40000;
+}
+
+// ---- Things worth a remark ------------------------------------------------------------------
+inline bool milestone(uint32_t n) {
+  for (uint32_t m : {10u, 25u, 50u, 100u, 250u, 500u})
+    if (n == m)
+      return true;
+  return n && n % 1000 == 0;
+}
+inline void petMilestoneLine(char *out, size_t size, uint32_t pets, uint32_t random) {
+  static const char *forms[] = {"Pet number %lu! Yes, I keep count.",
+                                "That's %lu pets. I'm keeping a tally.",
+                                "%lu pets and counting. Don't stop now."};
+  snprintf(out, size, forms[random % 3], (unsigned long)pets);
+}
+inline void findMilestoneLine(char *out, size_t size, uint32_t finds, uint32_t random) {
+  static const char *forms[] = {"%lu networks this drive! We're cooking.",
+                                "That's %lu on this drive. What a feast!",
+                                "%lu networks! Somebody stop us. (Don't.)"};
+  snprintf(out, size, forms[random % 3], (unsigned long)finds);
+}
+// Returns false when the drive found nothing (say a Topic::DriveEmpty line instead).
+inline bool driveSummaryLine(char *out, size_t size, uint32_t finds, bool record) {
+  if (!finds)
+    return false;
+  snprintf(out, size,
+           record        ? "Saved! Record drive: %lu networks!"
+           : finds < 25  ? "Drive saved. %lu networks. A light snack."
+           : finds < 150 ? "Drive saved! %lu networks. Good haul."
+                         : "Drive saved! %lu networks. I'm stuffed.",
+           (unsigned long)finds);
+  return true;
+}
+// A remark about a network the pet just "ate", quoting its real (sanitized, shortened) name.
+constexpr unsigned SsidQuoteChars = 16;
+inline bool ssidLine(char *out, size_t size, const char *ssid, uint32_t random) {
+  char name[SsidQuoteChars + 1];
+  unsigned n = 0;
+  bool cut = false, visible = false;
+  for (const char *p = ssid; p && *p; ++p) {
+    if (n == SsidQuoteChars) {
+      cut = true;
+      break;
+    }
+    char c = *p;
+    if (c < 32 || c > 126 || c == '%')
+      c = '?';
+    visible |= c != ' ' && c != '?';
+    name[n++] = c;
+  }
+  name[n] = 0;
+  if (!visible)
+    return false;
+  if (cut)
+    name[SsidQuoteChars - 2] = name[SsidQuoteChars - 1] = '.';
+  static const char *forms[] = {"Ooh, '%s'. Tasty.",
+                                "'%s'? Great name. 10/10.",
+                                "Hello, '%s'. Nice to eat you.",
+                                "'%s'... adding it to the menu.",
+                                "Spotted '%s'. That's a new one.",
+                                "Mmm, '%s'. Crunchy."};
+  snprintf(out, size, forms[random % 6], name);
+  return true;
+}
+} // namespace dash

@@ -26,6 +26,12 @@ void loadSettings() {
   }
   app.settings.xp = p.getUInt("xp", 0);
   app.energy = std::min(100, int(p.getUChar("fuel", 85)));
+  app.bond = std::min(100, int(p.getUChar("bond", 70)));
+  app.life.pets = p.getUInt("pets", 0);
+  app.life.drives = p.getUInt("drives", 0);
+  app.life.snacks = p.getUInt("snacks", 0);
+  app.life.bestDrive = p.getUInt("bestdrive", 0);
+  app.life.boots = p.getUInt("boots", 0);
   app.settings.theme = Theme(p.getUChar("theme", 0) % 4);
   app.settings.tone = AlertTone(p.getUChar("tone", 0) % 5);
   app.settings.volume = p.getUChar("volume", 245);
@@ -72,6 +78,12 @@ void saveSettings() {
   p.putUChar("gpsrx", app.settings.gpsRx);
   p.putUInt("xp", app.settings.xp);
   p.putUChar("fuel", app.energy);
+  p.putUChar("bond", app.bond);
+  p.putUInt("pets", app.life.pets);
+  p.putUInt("drives", app.life.drives);
+  p.putUInt("snacks", app.life.snacks);
+  p.putUInt("bestdrive", app.life.bestDrive);
+  p.putUInt("boots", app.life.boots);
   p.putUChar("theme", uint8_t(app.settings.theme));
   p.putUChar("tone", uint8_t(app.settings.tone));
   p.putUChar("volume", app.settings.volume);
