@@ -13,7 +13,8 @@ void printStatus() {
       "\"gps_good\":%lu,\"gps_bad\":%lu,\"sd_bytes\":%llu,\"storage_error\":\"%s\","
       "\"theme\":%u,\"volume\":%u,\"tone\":%u,\"feeling\":\"%s\",\"bond\":%u,\"pets\":%lu,"
       "\"recent\":%u,\"suppressed\":%lu,"
-      "\"sound\":%s,\"voice\":%s,\"avatar_schema\":2,\"moving\":%s,\"speed_kph\":%.1f,"
+      "\"sound\":%s,\"voice\":%s,\"voice_mode\":%u,\"avatar_schema\":2,\"moving\":%s,\"speed_kph\":"
+      "%.1f,"
       "\"reset_reason\":%u,\"avatar_bases\":5,\"gps_profile\":%u,\"gps_port\":%u,"
       "\"gps_rx\":%d,\"gps_baud\":%lu,\"gps_active_baud\":%lu,\"gps_searching\":%s,"
       "\"view\":%u,\"backdrop\":%u,\"xp\":%lu,\"level\":%lu,\"upload_busy\":%s,"
@@ -31,9 +32,10 @@ void printStatus() {
       unsigned(app.settings.theme), app.settings.volume, unsigned(app.settings.tone),
       feelingName(app.feeling), app.bond, (unsigned long)app.pets, app.historyCount,
       (unsigned long)app.suppressed, app.settings.sound ? "true" : "false",
-      app.settings.voice ? "true" : "false", app.moving ? "true" : "false", app.speedKph,
-      unsigned(esp_reset_reason()), app.settings.gpsProfile, app.settings.gpsPort,
-      gpsRxPin(gpsConfig()), (unsigned long)app.settings.gpsBaud, (unsigned long)app.gpsActiveBaud,
+      app.settings.voiceMode != VoiceMode::Off ? "true" : "false", unsigned(app.settings.voiceMode),
+      app.moving ? "true" : "false", app.speedKph, unsigned(esp_reset_reason()),
+      app.settings.gpsProfile, app.settings.gpsPort, gpsRxPin(gpsConfig()),
+      (unsigned long)app.settings.gpsBaud, (unsigned long)app.gpsActiveBaud,
       app.gpsSearching ? "true" : "false", app.settings.view, app.settings.backdrop,
       (unsigned long)app.settings.xp, (unsigned long)petLevel(app.settings.xp),
       uploadBusy() ? "true" : "false", app.nfcReady ? "true" : "false",

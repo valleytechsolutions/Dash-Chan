@@ -1,0 +1,96 @@
+Dash-Chan spoken clips: sources, tools and licences
+====================================================
+
+Scope
+-----
+The WAV files in assets/voice/ and the same bytes compiled into the firmware
+from src/voice_data.cpp. The phrases are original Dash-Chan text, listed in
+tools/voice_phrases.tsv. Dash-Chan is GPL-3.0-or-later; the clips are
+distributed under the same licence as the rest of the project.
+
+Nobody has listened to these clips by ear. They were checked only with a
+speech recogniser (see "Verification"). Treat them as unreviewed until a
+person has auditioned them on the device (MENU > Sound & Voice > TEST VOICE
+steps through every clip).
+
+Speech engine (build-time tool only)
+------------------------------------
+piper-tts 1.8.0, https://github.com/OHF-Voice/piper1-gpl
+Licence: GPL-3.0-or-later. It embeds espeak-ng (GPL-3.0-or-later) to turn
+text into phonemes.
+The engine runs on a PC when tools/generate_voice.py is used. No part of the
+engine, of espeak-ng or of the voice model is included in the firmware, the
+flash bundle or this repository. Only the audio it produced is.
+
+Voice model
+-----------
+Name:    en_US-ljspeech-high
+Source:  https://huggingface.co/rhasspy/piper-voices
+         (en/en_US/ljspeech/high; the repository is tagged "license: mit";
+         repository revision 6b9cfaacb4fb2e02a9621227e3c1a48bec9710c3 when the
+         model card below was fetched on 2026-11-15)
+SHA-256: 5d4f08ba6a2a48c44592eed3ce56bf85e9de3dd4e20df90541ae68a8310c029a  en_US-ljspeech-high.onnx
+         7e1f4634af596d83cca997fb7a931ba80b70f8a316a2655ee69c55365e0ace14  en_US-ljspeech-high.onnx.json
+         289f7421072d689a3d91f6c632f486af46f9b8b04417536104a4ea667b8a394b  MODEL_CARD
+
+MODEL_CARD, verbatim:
+
+    # Model card for ljspeech (high)
+
+    * Language: en_US (English, United States)
+    * Speakers: 1
+    * Quality: high
+    * Samplerate: 22,050Hz
+
+    ## Dataset
+
+    * URL: https://keithito.com/LJ-Speech-Dataset/
+    * License: public domain
+
+    ## Training
+
+    See: https://brycebeattie.com/files/tts/
+
+    US English female voice. Single speaker. Trained from scratch for 1000 epochs on medium quality settings using the LJ Speech dataset. I reencoded the recordings to a bit rate of 22500 Hz so it would match other voices released for Piper TTS.
+
+Processing chain
+----------------
+tools/generate_voice.py runs, for each phrase:
+
+1. piper-tts with the model above: mono 22050 Hz 16-bit speech.
+2. ffmpeg 6.1.1 (LGPL/GPL build-time tool, with librubberband and soxr):
+   - silenceremove at -60 dB on both ends;
+   - pitch: about five semitones up in total. Two semitones by resampling
+     (asetrate 22050 * 1.12246), which also raises the formants; three
+     semitones with the rubberband filter (pitch 1.18921, formant preserved),
+     which also restores the engine's own speaking pace (tempo 1/1.12246);
+   - highpass 180 Hz, treble +3 dB at 3.5 kHz, compressor (3:1 above -18 dB),
+     limiter at 0.89, short fades at both ends;
+   - soxr resample to 16000 Hz with triangular dither, mono, 8-bit unsigned
+     PCM, canonical 44-byte RIFF header.
+3. With --asr, a take is kept only when both recognisers named under
+   "Verification" read it back word for word; otherwise the engine is run
+   again, up to 12 times, and the closest take is kept and reported.
+
+The engine adds random variation, so regenerating gives slightly different
+audio. The committed WAV files are the reference.
+
+Older recordings
+----------------
+spicy_pig.wav, spicy_fuzz.wav and love.wav were not made with piper. They were
+synthesized for earlier Dash-Chan releases with the Windows System.Speech
+(SAPI) engine through the former tools/generate_voice.ps1, using the phrases
+"Pig detected! Act natural! Act natural!", "Oh man! The fuzz! Act natural!"
+and "I love your face!". For this release they were trimmed and re-encoded
+from 22050 Hz 16-bit to the format above (no pitch change), from the arrays
+in include/voice.h as of release 0.5.0.
+
+Verification
+------------
+faster-whisper 1.2.1 (MIT), models small.en and base.en, build-time only.
+As committed on 2026-11-15, both read back 40 of the 44 clips word for word.
+Takes were chosen with these same two models, so that number flatters the
+clips; medium.en and tiny.en, which took no part in the choice, read back
+38 and 30. docs/DEVELOPMENT.md lists the misses. A recogniser reading a clip
+back is a sanity check; it is not a listening test, and it says nothing
+about how the clip sounds on the K151 speaker.

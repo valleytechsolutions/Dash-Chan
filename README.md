@@ -114,14 +114,18 @@ The radio now also examines client probes, selected management/action frames, an
 
 ![The pet remains visible during a synthetic Axon reaction](site/assets/ui-panic.png)
 
-Spicy Axon reactions can display or speak **“PIG DETECTED! ACT NATURAL!”**, **“Oh man, the fuzz!”**, or use a siren with a panicked face and quick double-takes. Other families get captions such as “Biscuit nearby! Wait… not a snack?” and “Spicy fruit on the airwaves!” The Axon demo is synthetic and never becomes a real detection or WiGLE observation.
+Spicy Axon reactions can display or speak **“PIG DETECTED! ACT NATURAL!”**, **“Oh man, the fuzz!”**, or use a siren with a panicked face and quick double-takes. Other families get captions such as “Biscuit nearby! Wait… not a snack?” and “Spicy fruit on the airwaves!”, or, with Voice on, a short spoken announcement in a small high voice: “Flock camera spotted!”, “Tracker spotted!”, “Drone overhead!” The Axon demo is synthetic and never becomes a real detection or WiGLE observation.
 
 **Speech defaults OFF.** In **MENU → Sound & Voice**:
 
-- **Voice OFF** disables every spoken clip while keeping configured electronic alert tones available.
+- **Voice: OFF / ALERTS / ALL.** OFF keeps the electronic alert tones and never speaks. ALERTS speaks one short announcement per detection family. ALL also speaks pet and system phrases: “Let's go for a drive!”, “Drive saved!”, “GPS locked!”, “GPS lost!”, “Level up! Nice!”, “I'm hungry!”, “That really tickles!”, “All clear!”, “No SD card!” and greetings.
+- Speech works with every alert tone except **Silent**: a two-note chirp, then the phrase, instead of the long tone. The screen shows the words being spoken.
+- Speech is rate-limited: at least 4 seconds between clips, one pet phrase per 20 seconds, the same pet phrase at most every 5 minutes. A detection interrupts a pet phrase, never the other way round.
+- **TEST VOICE** speaks the next clip each time you press it, so you can hear the whole set.
+- The voice is synthesized offline at build time and stored in the firmware; nothing is sent anywhere. The clips have been checked by speech recognition only. **Nobody has listened to them by ear yet**, so expect some to need rewording.
 - **Master sound OFF** immediately silences all audio. Preferences survive reboot and firmware updates.
 - Alert tones: **Personality, Siren, Arcade, Chime, Silent**; selectable volume through 255.
-- Deliberate screen pets get a short chirp and a line that changes every time. The one recorded pet clip, **“i Love Your Face”**, is now a rare treat at 85%+ Love with Voice enabled, at most once per minute.
+- Deliberate screen pets get a short chirp and a line that changes every time. The recorded **“i Love Your Face”** clip is a rare treat at 85%+ Love with Voice ALL.
 - Head-sensor petting gives visual affection without speech. Debounce and release-to-rearm prevent a held/noisy sensor from retriggering continuously.
 
 Choose **Off / Gentle / Lively** head motion and **Spicy / Gentle** banter under Personality. Head movement starts off on a new installation, uses the BSP's factory zero positions, and stays within bounded travel. Looking around is animation, not RF direction finding.
@@ -149,7 +153,7 @@ Use the [web flasher](https://valleytech-dash-chan.pages.dev/#install) in deskto
 | Face tap / top touch sensor | Affection; no food |
 | Alert speech bubble | Dismiss reaction; continue listening |
 | MENU → Buddy + Look | Five original buddies, custom buddy, four themes, Avatar Studio and field-kit preference |
-| MENU → Sound & Voice | Master mute, voice switch, tones, volume, preview/demo |
+| MENU → Sound & Voice | Master mute, voice mode (OFF / ALERTS / ALL), tones, volume, tone preview, TEST VOICE, demo |
 | MENU → Personality | Motion, banter, pet |
 | MENU → Detection | Confidence, family quiet period, optional reminders |
 | MENU → Recent Signals | Paginated evidence and last-seen details |

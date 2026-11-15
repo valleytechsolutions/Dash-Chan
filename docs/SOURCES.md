@@ -27,6 +27,12 @@ The BWM and Valley Tech Solutions PNG marks were supplied by the project owner f
 
 Runtime libraries are fetched with their original licenses: M5Unified/M5GFX/StackChan-BSP (MIT), NimBLE-Arduino (Apache-2.0 and included notices), TinyGPSPlus (LGPL-2.1), Arduino ESP32 (LGPL-2.1 with ESP-IDF component notices). Dash-Chan's GPL-3.0-or-later license does not replace those notices or imply that upstream authors endorse this project.
 
+## Spoken clips
+
+The clips in `assets/voice/` were synthesized offline with [piper-tts](https://github.com/OHF-Voice/piper1-gpl) 1.8.0 (GPL-3.0-or-later; it embeds espeak-ng, GPL-3.0-or-later) and the `en_US-ljspeech-high` voice from [rhasspy/piper-voices](https://huggingface.co/rhasspy/piper-voices) (repository tagged MIT), whose model card states that it was trained from scratch on the [LJ Speech dataset](https://keithito.com/LJ-Speech-Dataset/), "License: public domain". ffmpeg (with rubberband and soxr) trims each take, raises the pitch about five semitones and converts it to mono 16 kHz 8-bit PCM. These are build-time tools only: no engine, model or tool code is part of the firmware or the flash bundle. Three clips (`spicy_pig`, `spicy_fuzz`, `love`) are older recordings made with the Windows speech API and re-encoded to the same format. The phrases are original. The [voice notice](licenses/VOICE-NOTICE.txt) records the versions, the model card text, SHA-256 hashes and the processing chain. faster-whisper (MIT) was used only to check that the clips transcribe; no person has auditioned them yet.
+
+SquachWatch-CYD has no speech (its sounds are synthesized tones), so nothing was taken from it for this feature; its OFF / ALERTS / ALL sound policy was the reference for the three-way Voice mode.
+
 ## GPS preset research (0.4)
 
 The [GPS compatibility table](GPS.md) links each M5Stack receiver's official product documentation, the K151 pin map, and the ZhongKe ATGM336H-5N/-6N manufacturer manuals. Presets are original baud/connection metadata; the bounded NMEA framing and search implementation are original Dash-Chan code. No manufacturer firmware or manual artwork is bundled. The reviewed modules are UART/NMEA compatible with appropriate adapters; only Unit GPS v1.1 has been bench tested on this robot. Wisp and Ember are original vector characters rendered in firmware and the web studio.

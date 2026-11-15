@@ -25,3 +25,4 @@ assert rows[1]['Type']=='BLE' and rows[1]['Channel']=='0'
 assert float(rows[0]['AccuracyMeters'])==6.0
 print('WiGLE CSV round-trip passed (11 columns, quotes, BLE, UTC, accuracy units).')
 subprocess.run([sys.executable, 'tools/web_art.py', '--check'], check=True)
+subprocess.run([sys.executable, 'tools/pack_voice.py', '--check'], check=True)

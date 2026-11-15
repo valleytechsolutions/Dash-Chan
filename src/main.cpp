@@ -38,7 +38,8 @@ void loadSettings() {
   app.settings.tone = AlertTone(p.getUChar("tone", 0) % 5);
   app.settings.volume = p.getUChar("volume", 245);
   app.settings.motionStyle = std::min(2, int(p.getUChar("moves", 2)));
-  app.settings.voice = p.getBool("voice", false);
+  app.settings.voiceMode =
+      savedVoiceMode(p.isKey("voicemode"), p.getUChar("voicemode", 0), p.getBool("voice", false));
   app.settings.repeatAlerts = p.getBool("repeat", false);
   app.settings.familyQuietMs = constrain(p.getUInt("quietms", 60000), 15000u, 600000u);
   app.settings.customBase = p.getUChar("custombase", 0) % 5;
@@ -92,7 +93,9 @@ void saveSettings() {
   p.putUChar("tone", uint8_t(app.settings.tone));
   p.putUChar("volume", app.settings.volume);
   p.putUChar("moves", app.settings.motionStyle);
-  p.putBool("voice", app.settings.voice);
+  p.putUChar("voicemode", uint8_t(app.settings.voiceMode));
+  // Older firmware reads this switch; keep it truthful in case of a downgrade.
+  p.putBool("voice", app.settings.voiceMode != VoiceMode::Off);
   p.putBool("repeat", app.settings.repeatAlerts);
   p.putUInt("quietms", app.settings.familyQuietMs);
   p.putUChar("custombase", app.settings.customBase);

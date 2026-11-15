@@ -10,6 +10,7 @@ for name in ['firmware.bin','bootloader.bin','partitions.bin']:
     shutil.copy2(build/name,dest/name)
 shutil.copy2(root/'LICENSE', dest/'LICENSE')
 shutil.copytree(root/'docs/licenses', dest/'licenses', dirs_exist_ok=True)
+assert (dest/'licenses/VOICE-NOTICE.txt').is_file(), 'the spoken clips ship with their voice notice'
 shutil.copy2(root/'lib/opendroneid/LICENSE', dest/'licenses/OPENDRONEID-APACHE-2.0.txt')
 shutil.copy2(root/'lib/DashChanSD/LICENSE', dest/'licenses/SD-APACHE-2.0.txt')
 dependencies=root/'.pio/libdeps/stackchan'
