@@ -8,6 +8,33 @@ State app;
 Contact contacts[ContactCapacity];
 Watchlist watchlist;
 std::atomic<uint32_t> captureGeneration{0};
+// The ignore list and the lifetime per-family counters, as two small blobs.
+static void saveRecon(Preferences &p) {
+  uint8_t blob[IgnoreList::BlobBytes];
+  size_t n = reconPolicy().ignores.save(blob, sizeof(blob));
+  if (n)
+    p.putBytes("ignores", blob, n);
+  else if (p.isKey("ignores"))
+    p.remove("ignores");
+  n = reconTable().saveLifetime(blob, sizeof(blob));
+  if (n)
+    p.putBytes("seenfam", blob, n);
+}
+static void loadRecon(Preferences &p) {
+  uint8_t blob[IgnoreList::BlobBytes];
+  size_t n = p.isKey("ignores") ? p.getBytesLength("ignores") : 0;
+  if (n && n <= sizeof(blob) && p.getBytes("ignores", blob, n) == n)
+    reconPolicy().ignores.load(blob, n);
+  n = p.isKey("seenfam") ? p.getBytesLength("seenfam") : 0;
+  if (n && n <= sizeof(blob) && p.getBytes("seenfam", blob, n) == n)
+    reconTable().loadLifetime(blob, n);
+}
+void reconSave() {
+  Preferences p;
+  p.begin("dashchan", false);
+  saveRecon(p);
+  p.end();
+}
 void loadSettings() {
   Preferences p;
   p.begin("dashchan", true);
@@ -64,6 +91,12 @@ void loadSettings() {
   p.getString("petname", app.settings.customName, sizeof(app.settings.customName));
   if (!*app.settings.customName)
     strcpy(app.settings.customName, "My buddy");
+  // Stored as the families switched off, so one added by a later firmware starts on.
+  app.settings.typeFilter =
+      TypeFilter::fromDisabled(p.getUInt("typeoff", TypeFilter().disabled())).mask;
+  app.settings.quietRoad = p.getBool("quietroad", true);
+  app.settings.autoSnooze = autoSnoozeChoice(p.getUChar("autosnooze", 5));
+  loadRecon(p);
   p.end();
 }
 void saveSettings() {
@@ -115,6 +148,12 @@ void saveSettings() {
   p.putBool("nfc", app.settings.nfc);
   p.putUChar("ledbright", app.settings.ledBrightness);
   p.putString("petname", app.settings.customName);
+  TypeFilter filter;
+  filter.mask = app.settings.typeFilter;
+  p.putUInt("typeoff", filter.disabled());
+  p.putBool("quietroad", app.settings.quietRoad);
+  p.putUChar("autosnooze", app.settings.autoSnooze);
+  saveRecon(p);
   p.end();
 }
 void say(const char *text) {

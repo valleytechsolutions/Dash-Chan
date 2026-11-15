@@ -152,13 +152,14 @@ Address blocks that only Dragon carries keep Dragon's grade until someone re-rea
 
 ## Quiet encounters and recent signals
 
-- A separate 128-entry ledger keys encounters by MAC, transport, BLE address type, and family. Continuing observations update last-seen time and stay quiet after the first notification.
+- Every classified device gets a row in the recon table (256 rows, keyed by MAC, transport, BLE address type, and family), whatever the alert filter is set to. The filter only decides which rows may notify. Continuing observations update the row and stay quiet after the first notification.
 - Five minutes without a qualifying observation rearms an encounter. Stronger evidence can also notify after the global/family gates.
-- Default family quiet time is 60 seconds; 180 and 300 seconds are selectable. Global notification spacing is ten seconds. These apply even when a new rotating BLE address appears.
+- Default family quiet time is 60 seconds; 180 and 300 seconds are selectable. Global notification spacing is ten seconds, except that a higher category is let through (a camera is never swallowed by a tracker notification moments earlier). These apply even when a new rotating BLE address appears.
 - Optional continuing-encounter reminders every five minutes are **off** by default.
-- A 32-entry recent list updates counts/RSSI/last-seen information without replaying audio. Four entries per page are available; details show evidence and confidence.
-- The general observation cache holds 256 contacts and expires after two minutes unseen. Encounter suppression is separate, so ordinary contact-cache churn does not immediately rearm an alert. More than 128 relevant encounters can evict suppression entries.
-- Recent/encounter state is in RAM and resets on reboot. `/events/detections.csv` contains emitted non-demo alerts when SD is available. Raw advertisements are not persisted.
+- The recent list shows the first 32 rows: devices heard in the last minute first, then by category (surveillance, hacker gear, attack patterns, trackers, beacons), then most recent. It is refreshed twice a second so rows do not jump under a tap. "Seen N times" counts encounters (a return after two minutes of silence), not packets.
+- While a drive is recording or GPS says the car is moving, trackers and Ring cameras are listed without notifying. After five notifications a device must come at least 7 dB closer than its strongest notification to speak again; the allowance returns 30 minutes after its last one. Forty new addresses of one tracker family within a minute raise a single flood notification, then that family is quiet until five minutes pass without new addresses. A tracker heard at three places more than 500 m apart over more than ten minutes raises one "following" notification. These rules follow or extend SquachWatch-CYD; the settings exist in firmware (`typeoff`, `quietroad`, `autosnooze` in NVS) but have no menu page yet.
+- The general observation cache holds 256 contacts and expires after two minutes unseen. Notification state lives on the recon rows, so ordinary contact-cache churn does not immediately rearm an alert. When the table is full the least important row goes first (history, then out-of-range rows, then the lowest category); a device still in range is never dropped for a newcomer of a lower category.
+- With an SD card, `/events/recon.csv` records each device when first heard, on each return, and when it notifies, with time, position (when GPS has a fix), RSSI and channel. The 64 most recent devices from the end of that file are listed again after a restart. Without a card the list is RAM-only and resets on reboot. Raw advertisements are not persisted.
 
 ## Personal watchlist
 

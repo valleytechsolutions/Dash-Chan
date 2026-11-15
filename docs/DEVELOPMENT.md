@@ -22,6 +22,40 @@ Files flush every two seconds and on Stop. A failed row write stops recording an
 
 Food is credited only after successful Wi-Fi row writes. A per-session 2 KB Bloom filter prevents duplicate BSSIDs from earning repeat food, independent of the contact cache. Five discoveries add 12 fuel; each adds XP. Petting only affects bond. Fuel/preferences persist in NVS.
 
+## Recon table, alert policy and ledger
+
+`include/recon.h` is the hardware-free recon engine; `tests/recon_tests.h` exercises all of it on a PC. `radio.cpp` owns one `ReconTable` (256 rows of about 200 bytes in PSRAM, 64 rows of internal RAM as a fallback), one `AlertPolicy`, and exposes them through `reconTable()`, `reconPolicy()`, `reconCounts()`, `reconContext()`, `reconIgnore()` and `reconRefresh()` in `app.h`. Everything runs on the loop task.
+
+- **Listing** never depends on the alert threshold. `process()` passes every packet of a classified contact to `ReconTable::observe()` unless the family is switched off in the type filter (iBeacons are off by default). A row is keyed by MAC, transport, BLE address type and family. `encounters` grows only after 120 s of silence; `packets` counts frames. `reconLive()` means heard within 60 s; `reconTrend()` compares the latest RSSI with a sample about 2 s old (4 dB either way).
+- **Eviction** takes restored rows first, then rows out of range, then the lowest tier, then the longest unheard. A live row is never given up for a newcomer of a lower tier.
+- **Views**: `sorted()` fills a caller-provided index array without heap. `ReconSort::Priority` is live first, then tier, then most recent, where "most recent" for a live row is the start of its current encounter so rows do not reorder with every packet. `ReconSort::Recent` is strictly last-heard. `app.history` is the first 32 rows in priority order, copied twice a second.
+- **Alerts** go through `AlertPolicy::decide()`, which returns `Alert`, `Flood`, or a named quiet reason (`verdictName()`), also stored in `row.verdict`. Gates in order: type filter, ignore list, tracker flood gate, alert threshold, quiet road, same encounter, auto snooze, family quiet, global quiet. A strictly higher tier bypasses the ten-second global quiet.
+- **Follow detection** keeps up to four GPS places per tracker-tier row, each more than 500 m from the others. Three places and more than ten minutes between the first place and the latest fix set `row.following`; `followDue()` hands out one alert per device. Identity is the advertised address: rows are not folded by payload, because in Find My, SmartTag and Find Hub adverts the payload rotates with the address.
+- **Rollover**: all timers use unsigned subtraction; `maintain()` saturates ages at 2^30 ms so a device heard once cannot look fresh when `millis()` wraps.
+- **NVS** (namespace `dashchan`): `typeoff` (families switched off, so new families default on), `quietroad`, `autosnooze` (0/5/10), `ignores` (blob of 7-byte records: MAC + family, 64 at most), `seenfam` (blob of little-endian 32-bit lifetime counters, one per family, written at most once a minute).
+
+### `/events/recon.csv`
+
+Append-only CSV, one header line, written by `storage.cpp` in batches (every 5 s, or within 1 s of an alert; never while an upload is busy; rows wait in RAM while there is no card). A line is added when a device is first heard, when it returns after 120 s of silence, and when it alerts. An alert line repeats the boot and uptime of the encounter it belongs to, so readers can tell it from a new encounter. Addresses created during a tracker flood are not written.
+
+| Column | Meaning |
+| --- | --- |
+| `UTC` | `YYYY-MM-DD HH:MM:SS` of the last sighting, empty while the time is unknown |
+| `UptimeMs` | `millis()` at the start of the encounter |
+| `Boot` | Boot counter (`boots` in NVS), so uptimes from different power cycles are not confused |
+| `Family` | Stable token from `familyKey()`: `axon`, `flock`, `alpr`, `meta`, `tracker`, `flipper`, `biscuit`, `pineapple`, `pwnagotchi`, `nyanbox`, `halehound`, `skimmer`, `raven`, `drone`, `camera`, `beacon`, `deauth`, `eviltwin`, `blespam`, `watchlist`, `smarttag`, `googletag`, `tile`, `ring` |
+| `Confidence` | `low`, `medium` or `high` |
+| `Transport` | `WIFI`, `BLE` (public address) or `BLE1`..`BLE3` (NimBLE address type: random, public identity, random identity) |
+| `MAC` | `AA:BB:CC:DD:EE:FF` |
+| `Name` | Quoted advertised name or SSID; quotes doubled, unprintable bytes written as `?` |
+| `Label` | Quoted engine tag: empty, `following` or `flood` |
+| `RSSI` | dBm at write time |
+| `Channel` | Wi-Fi channel, `0` for BLE |
+| `Lat`, `Lon` | Latest usable GPS position during this encounter (six decimals), both empty if none |
+| `Alerted` | `1` once the device has raised an alert, else `0` |
+
+At the first successful card mount of a boot the last 16 KB of the file are read, lines are parsed oldest first with `ledgerParse()`, and the newest 64 distinct devices become `restored` rows: listed after everything from this boot, never live, first to be evicted. Hearing one again turns it into a normal row and counts as a return. Torn lines, the header and unknown family tokens are skipped. `/events/detections.csv` written by firmware up to 0.5.0-beta (`UTC,UptimeMs,Family,Confidence,MAC,Name,RSSI,Evidence`, emitted alerts only) is neither read nor modified.
+
 ## Web installer
 
 `site/flasher.mjs` contains the tested installation policy. It validates the manifest, exact file names, offsets, sizes, sector-rounded bounds, SHA-256 downloads, chip/flash size, post-write MD5 values, and the before/after NVS digest. `eraseAll` is always false. There are no image slots for `0x9000–0xDFFF`. The packaged bootloader is DIO/80 MHz/16 MB.
