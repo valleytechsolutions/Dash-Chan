@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "app.h"
+#include "profile.h"
 #include "uploads.h"
 #include <M5StackChan.h>
 #include <M5UnitUnified.h>
@@ -13,14 +14,16 @@ static m5::nfc::NFCLayerA nfc{nfcUnit};
 static bool triedNfc = false, enrolling = false, near = false;
 static uint32_t enrollAt = 0, lastCardAt = 0, tickAt = 0, nfcAt = 0;
 static String lastUid;
-struct Outfit {
-  uint8_t version = 1, avatar, base, eyes, head, glasses, neck, theme, scene;
-  uint16_t body, accent, eye;
-  char name[17];
-};
+using Outfit = OutfitCard; // Layout, versions and bounds live in profile.h, with host tests.
 static Outfit outfit() {
   auto &s = app.settings;
   Outfit o{};
+  o.mark = s.customMark;
+  o.back = s.customBack;
+  o.held = s.customHeld;
+  o.aura = s.customAura;
+  o.pack = s.customPack;
+  o.persona = s.customPersona;
   o.avatar = unsigned(s.avatar);
   o.base = s.customBase;
   o.eyes = s.customEyes;
@@ -35,11 +38,14 @@ static Outfit outfit() {
   memcpy(o.name, s.customName, sizeof(o.name));
   return o;
 }
-static void dress(const Outfit &o) {
-  if (o.version != 1 || o.avatar > 5 || o.base > 4 || o.eyes > 5 || o.head > 5 || o.glasses > 3 ||
-      o.neck > 3 || o.theme > 3 || o.scene > 3 || o.name[16])
-    return;
+static void dress(const Outfit &o) { // Already validated by readOutfitCard.
   auto &s = app.settings;
+  s.customMark = o.mark;
+  s.customBack = o.back;
+  s.customHeld = o.held;
+  s.customAura = o.aura;
+  s.customPack = o.pack;
+  s.customPersona = o.persona;
   s.avatar = Avatar(o.avatar);
   s.customBase = o.base;
   s.customEyes = o.eyes;
@@ -135,8 +141,12 @@ static void nfcTick(uint32_t now) {
   } else if (slot >= 0) {
     char key[8];
     snprintf(key, sizeof(key), "look%d", slot);
-    Outfit o{};
-    if (p.getBytesLength(key) == sizeof(o) && p.getBytes(key, &o, sizeof(o)) == sizeof(o))
+    // Cards linked by older firmware hold the shorter record; both sizes are understood.
+    uint8_t stored[sizeof(Outfit)];
+    size_t size = p.getBytesLength(key);
+    Outfit o;
+    if (size && size <= sizeof(stored) && p.getBytes(key, stored, size) == size &&
+        readOutfitCard(stored, size, o))
       dress(o);
   } else
     snprintf(app.nfcMessage, sizeof(app.nfcMessage), "New tag. Tap LINK to save this outfit.");

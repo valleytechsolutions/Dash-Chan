@@ -19,12 +19,7 @@
 #include <string.h>
 
 namespace dash {
-struct BuddyLook {
-  int base = 0; // 0 Mochi, 1 Sprout, 2 Orbit, 3 Wisp, 4 Ember.
-  bool custom = false;
-  uint16_t body = Paper, accent = Blush, eye = Ink;
-  int eyes = 0, headwear = 0, eyewear = 0, neckwear = 0;
-};
+using BuddyLook = Look; // The look itself lives with the art, in avatars.h.
 struct HomeClue {
   const char *family = "";
   bool ble = false, fresh = false;
@@ -63,14 +58,15 @@ inline uint16_t onDanger(Theme theme) {
   return theme == Theme::Light ? 0xffff : Ink;
 }
 // Full Face framing. The close-up fills the screen with the face; a custom buddy wearing a hat
-// is pulled back just enough that the hat (up to y -64 in buddy space) stays on the stage.
+// is pulled back just enough that the hat and its outline (up to y -68 in buddy space) stay on
+// the stage.
 struct FaceFit {
   int oy;
   float k;
   int bob; // Screen pixels per unit of body bob.
 };
 inline FaceFit faceFit(const BuddyLook &look) {
-  return look.custom && look.headwear ? FaceFit{128, 1.6f, 1} : FaceFit{96, 2.1f, 2};
+  return look.custom && look.headwear ? FaceFit{130, 1.55f, 1} : FaceFit{96, 2.1f, 2};
 }
 // The XP caption has to fit above its 74 px bar: 12 characters.
 inline void xpLabel(char *out, size_t size, unsigned level, unsigned xp) {
@@ -382,9 +378,14 @@ inline uint16_t feelingColor(const Palette &c, Feeling f) {
 template <class G>
 void drawBuddyLook(G &g, const BuddyLook &l, int x, int y, int mood, int gaze, bool blink, int bob,
                    int kit, int phase) {
-  drawBuddy(g, l.base, x, y, mood, gaze, blink, bob, l.body, l.accent, 0, l.custom,
-            l.custom ? l.eyes : 0, l.eye, l.custom ? l.headwear : 0, l.custom ? l.eyewear : 0,
-            l.custom ? l.neckwear : 0, kit, phase);
+  Pose pose;
+  pose.mood = mood;
+  pose.gaze = gaze;
+  pose.blink = blink;
+  pose.bounce = bob;
+  pose.kit = kit;
+  pose.phase = phase;
+  drawBuddy(g, l, x, y, pose);
 }
 
 template <class G> void drawHome(G &g, const HomeView &v) {

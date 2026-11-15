@@ -1,4 +1,5 @@
 #pragma once
+#include "avatar_limits.h"
 #include "config.h"
 #include "core.h"
 #include "gps_support.h"
@@ -50,6 +51,9 @@ struct Settings {
   uint32_t typeFilter = TypeFilter::Defaults; // Families tracked at all (TypeFilter mask).
   bool quietRoad = true;                      // Tags and Ring stay list-only while driving.
   uint8_t autoSnooze = 5; // Alerts per device before it must come closer: 0/5/10.
+  // Avatar Studio slots added with DCAV3. Counts live in avatar_limits.h.
+  uint8_t customMark = 0, customBack = 0, customHeld = 0, customAura = 0;
+  uint8_t customPack = 0, customPersona = 0;
 };
 // Lifetime memories, saved with the settings so the pet remembers you across restarts.
 struct Life {

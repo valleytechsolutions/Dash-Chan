@@ -69,16 +69,20 @@ void loadSettings() {
       savedVoiceMode(p.isKey("voicemode"), p.getUChar("voicemode", 0), p.getBool("voice", false));
   app.settings.repeatAlerts = p.getBool("repeat", false);
   app.settings.familyQuietMs = constrain(p.getUInt("quietms", 60000), 15000u, 600000u);
-  app.settings.customBase = p.getUChar("custombase", 0) % 5;
-  app.settings.customAccessory = p.getUChar("accessory", 0) % 4;
+  app.settings.customBase = inRange(p.getUChar("custombase", 0), limits::Bases);
+  app.settings.customAccessory = inRange(p.getUChar("accessory", 0), limits::V1Accessories);
   app.settings.customBody = p.getUShort("body", 0xff7a);
   app.settings.customAccent = p.getUShort("accent", 0xfbb2);
   auto legacy = app.settings.customAccessory;
-  app.settings.customEyes = p.getUChar("eyes", 0) % 6;
+  app.settings.customEyes = inRange(p.getUChar("eyes", 0), limits::Eyes);
   app.settings.customEye = p.getUShort("eyecolor", app.settings.customBase == 2 ? 0x87b6 : 0x1085);
-  app.settings.customHeadwear = p.getUChar("headwear", legacy == 1 ? 1 : legacy == 3 ? 2 : 0) % 6;
-  app.settings.customEyewear = p.getUChar("eyewear", 0) % 4;
-  app.settings.customNeckwear = p.getUChar("neckwear", legacy == 2 ? 1 : 0) % 4;
+  app.settings.customHeadwear = inRange(p.getUChar("headwear", legacy == 1   ? 1
+                                                               : legacy == 3 ? 2
+                                                                             : 0),
+                                        limits::Headwear);
+  app.settings.customEyewear = inRange(p.getUChar("eyewear", 0), limits::Eyewear);
+  app.settings.customNeckwear =
+      inRange(p.getUChar("neckwear", legacy == 2 ? 1 : 0), limits::Neckwear);
   app.settings.fieldKit = p.getUChar("fieldkit", 0) % 3;
   app.settings.view = p.getUChar("view", 0) % 2;
   app.settings.backdrop = p.getUChar("scene", 0) % 4;
@@ -98,6 +102,12 @@ void loadSettings() {
   app.settings.quietRoad = p.getBool("quietroad", true);
   app.settings.autoSnooze = autoSnoozeChoice(p.getUChar("autosnooze", 5));
   loadRecon(p);
+  app.settings.customMark = inRange(p.getUChar("avmark", 0), limits::Marks);
+  app.settings.customBack = inRange(p.getUChar("avback", 0), limits::Backs);
+  app.settings.customHeld = inRange(p.getUChar("avheld", 0), limits::Held);
+  app.settings.customAura = inRange(p.getUChar("avaura", 0), limits::Auras);
+  app.settings.customPack = inRange(p.getUChar("avpack", 0), limits::Packs);
+  app.settings.customPersona = inRange(p.getUChar("avpersona", 0), limits::Personas);
   p.end();
 }
 void saveSettings() {
@@ -157,6 +167,12 @@ void saveSettings() {
   p.putBool("quietroad", app.settings.quietRoad);
   p.putUChar("autosnooze", app.settings.autoSnooze);
   saveRecon(p);
+  p.putUChar("avmark", app.settings.customMark);
+  p.putUChar("avback", app.settings.customBack);
+  p.putUChar("avheld", app.settings.customHeld);
+  p.putUChar("avaura", app.settings.customAura);
+  p.putUChar("avpack", app.settings.customPack);
+  p.putUChar("avpersona", app.settings.customPersona);
   p.end();
 }
 void say(const char *text) {

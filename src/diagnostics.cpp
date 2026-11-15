@@ -13,7 +13,7 @@ void printStatus() {
       "\"gps_good\":%lu,\"gps_bad\":%lu,\"sd_bytes\":%llu,\"storage_error\":\"%s\","
       "\"theme\":%u,\"volume\":%u,\"tone\":%u,\"feeling\":\"%s\",\"bond\":%u,\"pets\":%lu,"
       "\"recent\":%u,\"suppressed\":%lu,"
-      "\"sound\":%s,\"voice\":%s,\"voice_mode\":%u,\"avatar_schema\":2,\"moving\":%s,\"speed_kph\":"
+      "\"sound\":%s,\"voice\":%s,\"voice_mode\":%u,\"avatar_schema\":3,\"moving\":%s,\"speed_kph\":"
       "%.1f,"
       "\"reset_reason\":%u,\"avatar_bases\":5,\"gps_profile\":%u,\"gps_port\":%u,"
       "\"gps_rx\":%d,\"gps_baud\":%lu,\"gps_active_baud\":%lu,\"gps_searching\":%s,"
@@ -43,7 +43,7 @@ void printStatus() {
       uploads.configured ? "true" : "false");
 }
 void serialTick() {
-  static char line[128];
+  static char line[160]; // Room for "AVATAR SET " plus the longest profile line.
   static size_t used = 0;
   static bool overflow = false;
   unsigned budget = 64;
