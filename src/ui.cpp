@@ -22,7 +22,8 @@ enum Page {
   Audio,
   Behavior,
   Detection,
-  History,
+  Types,
+  Recon,
   Diagnostics,
   GpsSetup,
   GpsModels,
@@ -33,12 +34,55 @@ enum Page {
   Uploads
 };
 static Page page = Home;
-static uint8_t historyPage = 0;
-static bool detailOpen = false;
 static bool fromHome = false; // The page was opened by a Home shortcut, so BACK returns Home.
 static bool confirmUpload = false;
-static Alert detail;
 static Palette colors;
+// Recon screens draw from copies of the table's rows, refreshed twice a second and after every
+// tap, so the row under a finger is the row that was drawn. Everything here runs on the loop
+// task, like the table's only writer (see app.h), so the copy needs no lock.
+namespace rv = reconview;
+static ReconHome homeRows;
+static ReconList listRows;
+static ReconStats statRows;
+static ReconRow detail;
+static rv::Tab reconTab = rv::Tab::Live;
+static unsigned reconPage = 0, statPage = 0, typePage = 0;
+static bool detailOpen = false, detailPresent = false, detailDirect = false, confirmClear = false;
+static uint32_t snapshotAt = 0;
+static uint16_t reconOrder[ReconCapacity];
+static void snapshot() {
+  uint32_t now = millis(), clock = reconClock();
+  snapshotAt = now;
+  auto &table = reconTable();
+  reconHome(homeRows, table, reconCounts(), now, clock);
+  if (page != Recon)
+    return;
+  if (detailOpen) {
+    const ReconDevice *row = reconFind(detail);
+    detailPresent = row != nullptr;
+    if (row)
+      detail = reconRow(*row, now, clock);
+  } else if (reconTab == rv::Tab::Stats)
+    reconStats(statRows, table, reconCounts(), reconPolicy().ignores.size(), app.ledger, statPage);
+  else {
+    reconList(listRows, table, reconTab, reconPage, now, clock, reconOrder, ReconCapacity);
+    reconPage = listRows.page;
+  }
+}
+static void openRecon(bool home) {
+  page = Recon;
+  fromHome = home;
+  detailOpen = false;
+  reconPage = statPage = 0;
+  // Start where there is something to read: what is in range, else what has been.
+  reconTab = homeRows.live || !homeRows.total ? rv::Tab::Live : rv::Tab::Seen;
+}
+static void openDevice(const ReconRow &row, bool direct) {
+  page = Recon;
+  detail = row;
+  detailOpen = detailPresent = true;
+  detailDirect = direct; // Opened straight from Home: closing the card goes back there.
+}
 static const char *names[] = {"Mochi", "Sprout", "Orbit", "Wisp", "Ember"};
 static unsigned buddyPage = 0, gpsModelPage = 0;
 static GpsConfig gpsDraft;
@@ -126,8 +170,13 @@ static void home(uint32_t now) {
   v.levelAge = app.levelUpAt ? uint32_t(now - app.levelUpAt) : UINT32_MAX;
   v.alert = app.alertOpen;
   v.demo = app.demo;
-  v.alertFamily = familyName(app.active.match.family);
-  v.alertConfidence = confidenceName(app.active.match.confidence);
+  v.card.kind = app.active.kind;
+  v.card.family = app.active.match.family;
+  v.card.confidence = app.active.match.confidence;
+  v.card.label = app.active.label;
+  v.card.rssi = app.active.rssi;
+  v.card.followS = app.active.followMs / 1000;
+  v.card.followMeters = app.active.followMeters;
   v.fix = usableFix(app.fix);
   v.sats = app.fix.sats;
   v.recording = app.session.armed;
@@ -140,23 +189,13 @@ static void home(uint32_t now) {
   v.stateUrgent = !app.radioReady || !app.sdReady || (app.session.armed && !v.fix);
   v.wifiSaved = app.food.discoveries();
   v.bleSaved = app.bleCollection.discoveries();
-  v.clueCount = std::min(3u, unsigned(app.historyCount));
-  for (unsigned i = 0; i < v.clueCount; ++i) {
-    auto &a = app.history[i];
-    v.clues[i].family = familyShort(a.match.family);
-    v.clues[i].ble = a.ble;
-    v.clues[i].rssi = a.rssi;
-    v.clues[i].fresh = uint32_t(now - a.at) < 300000;
-    v.clues[i].confidence = a.match.confidence == Confidence::High     ? "HIGH"
-                            : a.match.confidence == Confidence::Medium ? "MED"
-                                                                       : "LOW";
-  }
+  v.recon = homeRows;
   drawHome(canvas, v);
 }
 static void menu() {
   heading("DASH-CHAN");
   const char *labels[] = {"BUDDY + LOOK", "SOUND + VOICE", "PERSONALITY",   "DETECTION",
-                          "RECENT CLUES", "GPS + SD",      "DISPLAY + FUN", "UPLOAD DRIVES"};
+                          "RECON LIST",   "GPS + SD",      "DISPLAY + FUN", "UPLOAD DRIVES"};
   for (int i = 0; i < 8; ++i) {
     int x = 8 + i % 2 * 156, y = 42 + i / 2 * 47;
     button(x, y, 148, 39, labels[i]);
@@ -375,59 +414,81 @@ static void behavior() {
   button(8, 190, 304, 34, "PET YOUR BUDDY", true);
   text("Pets build love. Only wardriving feeds me.", 12, 229, colors.muted);
 }
-static void detection() {
-  heading("DETECTION");
-  char s[70];
-  snprintf(s, sizeof(s), "Notify: %s confidence or higher", confidenceName(app.settings.threshold));
-  button(8, 44, 304, 36, s);
-  snprintf(s, sizeof(s), "Same-family quiet: %lu seconds",
-           (unsigned long)(app.settings.familyQuietMs / 1000));
-  button(8, 90, 304, 36, s);
-  button(8, 136, 304, 36,
-         app.settings.repeatAlerts ? "Reminders: every 5 min" : "Reminders: OFF (new encounters)");
-  wrap("Same device stays quiet until absent 5 min. Stronger evidence may alert again. Signals are "
-       "clues, not proof of identity.",
-       12, 190, 47, colors.muted);
+static rv::Style reconStyle() {
+  return {colors, app.settings.theme};
 }
-static void history() {
-  heading("RECENT SIGNALS");
-  char s[90];
+static void detection() {
+  rv::SettingsView v;
+  v.threshold = app.settings.threshold;
+  v.familyQuietMs = app.settings.familyQuietMs;
+  v.typeFilter = app.settings.typeFilter;
+  v.repeat = app.settings.repeatAlerts;
+  v.quietRoad = app.settings.quietRoad;
+  v.autoSnooze = app.settings.autoSnooze;
+  v.ignored = reconPolicy().ignores.size();
+  v.confirmClear = confirmClear;
+  rv::drawReconSettings(canvas, reconStyle(), v);
+}
+static void recon() {
+  if (detailOpen)
+    rv::drawReconDetail(canvas, reconStyle(), detail, detailPresent);
+  else if (reconTab == rv::Tab::Stats)
+    rv::drawReconStats(canvas, reconStyle(), statRows);
+  else {
+    rv::ListContext ctx;
+    ctx.card = app.sdReady;
+    ctx.radio = app.radioReady;
+    ctx.seenTotal = reconCounts().total;
+    rv::drawReconList(canvas, reconStyle(), reconTab, listRows, ctx);
+  }
+}
+// Taps on the Recon page and the device card. Both handle their own BACK.
+static void reconTouch(int x, int y) {
   if (detailOpen) {
-    for (unsigned i = 0; i < app.historyCount; ++i) {
-      const auto &a = app.history[i];
-      if (a.ble == detail.ble && a.addressType == detail.addressType &&
-          a.match.family == detail.match.family && !strcmp(a.mac, detail.mac)) {
-        detail = a;
-        break;
+    switch (rv::detailTap(x, y)) {
+    case rv::DetailHit::Ignore:
+      if (ReconDevice *row = reconFind(detail)) {
+        bool ignore = !row->ignored;
+        if (reconIgnore(*row, ignore) && ignore)
+          buddyReconIgnored();
       }
+      break;
+    case rv::DetailHit::Back:
+    case rv::DetailHit::Close:
+      detailOpen = false;
+      if (detailDirect) {
+        page = Home;
+        fromHome = false;
+      }
+      break;
+    case rv::DetailHit::None:
+      break;
     }
-    text(familyName(detail.match.family), 12, 46, colors.text);
-    snprintf(s, sizeof(s), "%s | %s | %d dBm", confidenceName(detail.match.confidence),
-             detail.ble ? "BLE" : "WiFi", detail.rssi);
-    text(s, 12, 65, colors.accent);
-    wrap(*detail.name ? detail.name : "(no advertised name)", 12, 86, 47, colors.text, 1);
-    text(detail.mac, 12, 105, colors.muted);
-    wrap(detail.match.evidence, 12, 126, 47, colors.muted);
-    snprintf(s, sizeof(s), "Seen %lu times | last %lus ago", (unsigned long)detail.sightings,
-             (unsigned long)((millis() - detail.at) / 1000));
-    text(s, 12, 170, colors.accent);
-    button(8, 198, 304, 34, "BACK TO RECENT");
     return;
   }
-  if (!app.historyCount)
-    wrap("Nothing matched your alert filter yet. Your buddy is still watching Wi-Fi and BLE.", 12,
-         70, 45, colors.muted);
-  unsigned pages = std::max(1u, (app.historyCount + 3u) / 4);
-  historyPage = std::min(unsigned(historyPage), pages - 1);
-  for (unsigned i = 0; i < 4 && historyPage * 4 + i < app.historyCount; ++i) {
-    auto &a = app.history[historyPage * 4 + i];
-    snprintf(s, sizeof(s), "%s | %d dBm", familyName(a.match.family), a.rssi);
-    button(8, 43 + i * 36, 304, 31, s);
+  bool stats = reconTab == rv::Tab::Stats;
+  unsigned pages = stats ? rv::StatPages : listRows.pages;
+  rv::ListTarget t = rv::listTap(x, y, stats ? 0 : listRows.count, pages);
+  switch (t.hit) {
+  case rv::ListHit::Back:
+    page = fromHome ? Home : Menu;
+    fromHome = false;
+    break;
+  case rv::ListHit::Tab:
+    reconTab = rv::Tab(t.index);
+    reconPage = statPage = 0;
+    break;
+  case rv::ListHit::Row:
+    openDevice(listRows.rows[t.index], false);
+    break;
+  case rv::ListHit::Prev:
+  case rv::ListHit::Next:
+    (stats ? statPage : reconPage) =
+        rv::stepPage(stats ? statPage : reconPage, pages, t.hit == rv::ListHit::Next);
+    break;
+  case rv::ListHit::None:
+    break;
   }
-  button(8, 199, 84, 33, "PREV");
-  button(228, 199, 84, 33, "NEXT");
-  snprintf(s, sizeof(s), "%u / %u", historyPage + 1, pages);
-  text(s, 144, 212, colors.muted);
 }
 static void diagnostics() {
   heading("GPS & SD");
@@ -513,7 +574,13 @@ static bool row(int y, int top, int height = 36) {
 static void touch(int x, int y) {
   buddyPoke(); // Any tap counts as attention: it keeps the buddy awake.
   if (page == Home) {
-    HomeTapTarget tap = homeTap(x, y, app.settings.view == 1, app.alertOpen, app.historyCount);
+    HomeTapState state;
+    state.face = app.settings.view == 1;
+    state.alert = app.alertOpen;
+    state.demo = app.demo;
+    state.recording = app.session.armed;
+    state.rows = homeRows.count;
+    HomeTapTarget tap = homeTap(x, y, state);
     switch (tap.action) {
     case HomeTap::Menu:
       page = Menu;
@@ -527,17 +594,31 @@ static void touch(int x, int y) {
       else
         startDrive();
       break;
-    case HomeTap::Clue:
-    case HomeTap::ClueList:
-      if (app.alertOpen) // Do not leave the alert running behind the History page.
+    case HomeTap::Row:
+      if (app.alertOpen) // Do not leave the alert running behind the card.
         buddyDismiss();
-      detailOpen = tap.action == HomeTap::Clue;
-      if (detailOpen)
-        detail = app.history[tap.clue];
-      historyPage = 0;
-      page = History;
-      fromHome = true;
+      openDevice(homeRows.rows[tap.row], true);
       break;
+    case HomeTap::Recon: {
+      openRecon(true);
+      // Voice ALL names the top thing in range (an existing family clip), at most once per tap.
+      const ReconRow &top = homeRows.rows[0];
+      buddyReconPeek(homeRows.count && top.live && !top.ignored ? top.family : Family::None);
+      break;
+    }
+    case HomeTap::AlertDetail: {
+      // The card of the device behind the open alert, if its row is still in the table.
+      ReconRow wanted;
+      memcpy(wanted.mac, app.active.addr, 6);
+      wanted.ble = app.active.ble;
+      wanted.addressType = app.active.addressType;
+      wanted.family = app.active.match.family;
+      const ReconDevice *row = reconFind(wanted);
+      buddyDismiss();
+      if (row)
+        openDevice(reconRow(*row, millis(), reconClock()), true);
+      break;
+    }
     case HomeTap::Stats: // The vitals row opens the buddy's stats.
       page = Behavior;
       fromHome = true;
@@ -551,17 +632,24 @@ static void touch(int x, int y) {
     case HomeTap::None:
       break;
     }
+    snapshot();
     return;
   }
-  if (y < 34 && x >= 250) {
-    page = page == Menu || (fromHome && (page == Behavior || page == History)) ? Home
-           : (page == Buddies || page == Studio)                               ? Appearance
-           : (page == GpsModels || page == GpsWiring)                          ? GpsSetup
-           : (page == Reactions || page == NfcCards)                           ? DisplaySetup
-           : page == GpsSetup                                                  ? Diagnostics
-                                                                               : Menu;
-    detailOpen = false;
+  if (page == Recon) {
+    reconTouch(x, y);
+    snapshot();
+    return;
+  }
+  if (rv::BackZone.has(x, y)) {
+    page = page == Menu || (fromHome && page == Behavior) ? Home
+           : page == Types                                ? Detection
+           : (page == Buddies || page == Studio)          ? Appearance
+           : (page == GpsModels || page == GpsWiring)     ? GpsSetup
+           : (page == Reactions || page == NfcCards)      ? DisplaySetup
+           : page == GpsSetup                             ? Diagnostics
+                                                          : Menu;
     fromHome = false;
+    confirmClear = false;
     return;
   }
   bool right = x >= 160;
@@ -569,16 +657,18 @@ static void touch(int x, int y) {
   case Menu:
     if (y >= 42 && y < 230) {
       static const Page pages[] = {Appearance, Audio,       Behavior,     Detection,
-                                   History,    Diagnostics, DisplaySetup, Uploads};
+                                   Recon,      Diagnostics, DisplaySetup, Uploads};
       unsigned n = (y - 42) / 47 * 2 + unsigned(right);
       if (n < 8 && (y - 42) % 47 < 39) {
         page = pages[n];
         fromHome = false;
-        detailOpen = false;
-        historyPage = 0;
-        confirmUpload = false;
+        confirmUpload = confirmClear = false;
         if (page == Uploads)
           uploadRefresh();
+        if (page == Recon) {
+          openRecon(false);
+          snapshot();
+        }
       }
     }
     break;
@@ -733,34 +823,55 @@ static void touch(int x, int y) {
       page = Home;
     }
     break;
-  case Detection:
-    if (row(y, 44))
+  case Detection: {
+    rv::SettingsHit hit = rv::settingsTap(x, y);
+    bool clearing = hit == rv::SettingsHit::Clear && reconPolicy().ignores.size();
+    switch (hit) {
+    case rv::SettingsHit::Notify:
       app.settings.threshold = Confidence(unsigned(app.settings.threshold) % 3 + 1);
-    else if (row(y, 90))
-      app.settings.familyQuietMs = app.settings.familyQuietMs == 60000    ? 180000
-                                   : app.settings.familyQuietMs == 180000 ? 300000
-                                                                          : 60000;
-    else if (row(y, 136))
+      break;
+    case rv::SettingsHit::FamilyQuiet:
+      app.settings.familyQuietMs = rv::nextFamilyQuiet(app.settings.familyQuietMs);
+      break;
+    case rv::SettingsHit::Reminders:
       app.settings.repeatAlerts = !app.settings.repeatAlerts;
+      break;
+    case rv::SettingsHit::QuietRoad:
+      app.settings.quietRoad = !app.settings.quietRoad;
+      break;
+    case rv::SettingsHit::Snooze:
+      app.settings.autoSnooze = rv::nextSnooze(app.settings.autoSnooze);
+      break;
+    case rv::SettingsHit::Types:
+      page = Types;
+      typePage = 0;
+      break;
+    case rv::SettingsHit::Clear:
+      if (clearing && confirmClear) // The second tap does it.
+        reconClearIgnores();
+      break;
+    default:
+      break;
+    }
+    confirmClear = clearing && !confirmClear;
     break;
-  case History:
-    if (detailOpen) {
-      if (row(y, 198, 34))
-        detailOpen = false;
-    } else if (row(y, 199, 33)) {
-      unsigned pages = std::max(1u, (app.historyCount + 3u) / 4);
-      if (x < 100)
-        historyPage = (historyPage + pages - 1) % pages;
-      else if (x > 220)
-        historyPage = (historyPage + 1) % pages;
-    } else if (y >= 43 && y < 187) {
-      unsigned i = historyPage * 4 + (y - 43) / 36;
-      if (i < app.historyCount) {
-        detail = app.history[i];
-        detailOpen = true;
-      }
+  }
+  case Types: {
+    rv::TypesTarget t = rv::typesTap(x, y, typePage);
+    TypeFilter filter;
+    filter.mask = app.settings.typeFilter & TypeFilter::All;
+    if (t.hit == rv::TypesHit::Tier)
+      filter.mask = rv::toggleTier(filter.mask, Tier(t.index));
+    else if (t.hit == rv::TypesHit::Family)
+      filter.set(t.family, !filter.tracks(t.family));
+    else if (t.hit == rv::TypesHit::Prev || t.hit == rv::TypesHit::Next)
+      typePage = rv::stepPage(typePage, rv::TypePages, t.hit == rv::TypesHit::Next);
+    if (filter.mask != app.settings.typeFilter) {
+      app.settings.typeFilter = filter.mask;
+      reconRefresh(); // Rows of a family that was switched off leave the list now.
     }
     break;
+  }
   case Diagnostics:
     if (row(y, 151, 34)) {
       gpsDraft = gpsConfig();
@@ -868,6 +979,8 @@ void uiTick() {
   if (uint32_t(now - painted) < 50)
     return;
   painted = now;
+  if (uint32_t(now - snapshotAt) >= 500)
+    snapshot();
   colors = palette(app.settings.theme);
   canvas.fillSprite(colors.bg);
   switch (page) {
@@ -907,8 +1020,11 @@ void uiTick() {
   case Detection:
     detection();
     break;
-  case History:
-    history();
+  case Types:
+    rv::drawReconTypes(canvas, reconStyle(), app.settings.typeFilter, typePage);
+    break;
+  case Recon:
+    recon();
     break;
   case Diagnostics:
     diagnostics();

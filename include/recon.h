@@ -184,8 +184,10 @@ struct ReconDevice {
   Confidence confidence = Confidence::None; // Best seen for this row.
   const char *evidence = "";                // Static text from the classifier; never freed.
   char name[32]{};                          // Advertised name or SSID; empty if none.
-  char label[24]{};                         // Short tag from the engine or the user ("following").
-  uint8_t channel = 0;                      // Wi-Fi channel; 0 for BLE.
+  // Product inside the family, from the signature ("Axon Body 3", "Chipolo"). Rows read back from
+  // the ledger may instead hold the engine's own tag for that line; see ledgerTag().
+  char label[24]{};
+  uint8_t channel = 0;                         // Wi-Fi channel; 0 for BLE.
   int8_t rssi = 0, prevRssi = 0, peakRssi = 0; // Latest, the ~2 s old comparison sample, strongest.
   // millis() times. For a restored row firstAt/lastAt hold the uptime of the boot that wrote it and
   // are only informative: use utc and boot instead.
@@ -197,6 +199,7 @@ struct ReconDevice {
   bool ignored = false;   // On the ignore list: listed and counted, never alerts.
   bool restored = false;  // Loaded from the ledger and not heard again since this boot began.
   bool following = false; // Tracker seen at several separate places over time (see followNote).
+  bool flood = false;     // This address tripped a tracker flood alert.
   uint32_t utc = 0;       // Seconds since 2000 (UTC) of the last sighting; 0 if unknown.
   float lat = 0, lon = 0; // Last GPS position it was heard at this encounter; 0,0 if none.
   uint32_t boot = 0;      // Boot counter at the last sighting.
@@ -218,6 +221,29 @@ inline bool reconLive(const ReconDevice &d, uint32_t now) {
 inline int reconTrend(const ReconDevice &d) {
   int change = int(d.rssi) - int(d.prevRssi);
   return change >= ReconTrendDb ? 1 : change <= -ReconTrendDb ? -1 : 0;
+}
+// What kind of address a row is keyed by, which decides how much "seen again" can mean.
+enum class AddressKind : uint8_t {
+  Fixed,       // Public BLE or a burned-in Wi-Fi address: the same device every time.
+  Rotating,    // BLE private address: changes every few minutes to a day.
+  StaticRandom // BLE static random, or a locally administered Wi-Fi address: stable until the
+               // device is reset or (Wi-Fi) joins another network.
+};
+inline AddressKind addressKind(bool ble, uint8_t addressType, const uint8_t *mac) {
+  if (!ble)
+    return mac[0] & 2 ? AddressKind::StaticRandom : AddressKind::Fixed;
+  if (addressType != 1) // 0 public, 2 and 3 are identity addresses resolved by the stack.
+    return AddressKind::Fixed;
+  return (mac[0] & 0xc0) == 0xc0 ? AddressKind::StaticRandom : AddressKind::Rotating;
+}
+inline const char *addressKindName(AddressKind k) { // At most 16 characters.
+  return k == AddressKind::Rotating       ? "rotating address"
+         : k == AddressKind::StaticRandom ? "random address"
+                                          : "fixed address";
+}
+// The engine's own ledger tags. A row restored from the ledger can carry one in `label`.
+inline bool ledgerTag(const char *label) {
+  return label && (!strcmp(label, "following") || !strcmp(label, "flood"));
 }
 inline void macText(char out[18], const uint8_t *mac) {
   snprintf(out, 18, "%02X:%02X:%02X:%02X:%02X:%02X", mac[0], mac[1], mac[2], mac[3], mac[4],
@@ -271,6 +297,15 @@ inline bool followNote(ReconDevice &row, float lat, float lon, uint32_t now) {
 }
 inline uint32_t followSpanMs(const ReconDevice &row) {
   return row.pointCount ? uint32_t(row.fixAt - row.points[0].at) : 0;
+}
+// Length of the remembered trail: place to place, oldest first. A lower bound on the distance
+// travelled together, since only up to FollowPointCount places are kept.
+inline float followSpanMeters(const ReconDevice &row) {
+  float sum = 0;
+  for (unsigned i = 1; i < row.pointCount && i < FollowPointCount; ++i)
+    sum += metersBetween(row.points[i - 1].lat, row.points[i - 1].lon, row.points[i].lat,
+                         row.points[i].lon);
+  return sum;
 }
 
 // ---- Type filter ----------------------------------------------------------------------------
@@ -459,7 +494,8 @@ inline size_t ledgerRow(char *out, size_t capacity, const ReconDevice &d, uint32
     snprintf(position, sizeof(position), "%.6f,%.6f", double(d.lat), double(d.lon));
   // Quoted text fields: quotes are doubled and anything unprintable becomes '?'.
   char quoted[2][70];
-  const char *texts[2] = {d.name, d.label};
+  // The engine's tag for this line wins the Label column; otherwise the product label is kept.
+  const char *texts[2] = {d.name, d.following ? "following" : d.flood ? "flood" : d.label};
   for (unsigned k = 0; k < 2; ++k) {
     size_t n = 0;
     quoted[k][n++] = '"';
@@ -630,9 +666,20 @@ enum class ReconSort : uint8_t {
 };
 struct ReconCounts {
   uint16_t total = 0, live = 0, restored = 0, following = 0;
+  uint16_t followingLive = 0; // Flagged as following and still in range.
+  uint16_t ignored = 0;       // Rows on the ignore list (live or not).
   uint16_t liveTier[TierCount]{}, totalTier[TierCount]{};
+  uint16_t watchTier[TierCount]{}; // Live and not ignored: what the pet should care about.
   uint16_t liveFamily[FamilyCount]{};
 };
+// How much the pet should mind what is in range (ignored devices do not count): 0 nothing,
+// 1 only trackers or beacons, 2 surveillance, hacker gear or an attack.
+inline unsigned watchLevel(const ReconCounts &c) {
+  if (c.watchTier[unsigned(Tier::Surveillance)] || c.watchTier[unsigned(Tier::Hacker)] ||
+      c.watchTier[unsigned(Tier::Attack)])
+    return 2;
+  return c.watchTier[unsigned(Tier::Tracker)] || c.watchTier[unsigned(Tier::Beacon)] ? 1 : 0;
+}
 class ReconTable {
 public:
   // The caller owns the storage (PSRAM on the device, a plain array in tests); attach() takes it
@@ -879,9 +926,12 @@ public:
       ++out.totalTier[tier];
       out.restored += d.restored;
       out.following += d.following;
+      out.ignored += d.ignored;
       if (reconLive(d, now)) {
         ++out.live;
         ++out.liveTier[tier];
+        out.followingLive += d.following;
+        out.watchTier[tier] += !d.ignored;
         if (unsigned(d.family) < FamilyCount)
           ++out.liveFamily[unsigned(d.family)];
       }

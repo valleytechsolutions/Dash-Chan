@@ -119,6 +119,11 @@ static void ledgerRestore() {
 // there is no card or an upload owns it.
 static void ledgerTick() {
   uint32_t now = millis();
+  // For the Recon page and STATUS: no card, taking rows, or the last write failed.
+  if (!app.sdReady)
+    app.ledger = LedgerState::NoCard;
+  else if (app.ledger == LedgerState::NoCard)
+    app.ledger = LedgerState::Ready;
   if (uint32_t(now - ledgerAt) < (ledgerSoon ? std::min<uint32_t>(ledgerWait, 1000) : ledgerWait))
     return;
   ledgerAt = now;
@@ -155,9 +160,12 @@ static void ledgerTick() {
     file.close();
   if (failed) { // A pulled or full card can stall each attempt; do not hammer it.
     snprintf(app.storageError, sizeof(app.storageError), "Event log write failed");
+    app.ledger = LedgerState::Failed;
     ledgerWait = 60000;
     return;
   }
+  if (written)
+    app.ledger = LedgerState::Ready;
   if (written && !strcmp(app.storageError, "Event log write failed"))
     app.storageError[0] = 0; // The card is taking rows again.
   if (written == 16)         // More are waiting: come back sooner.

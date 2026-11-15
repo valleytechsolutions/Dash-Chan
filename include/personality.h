@@ -104,6 +104,12 @@ enum class Topic : uint8_t {
   AlertDrone,
   AlertWatchlist,
   AlertOdd,
+  ReconQuiet,   // Nothing classified in range for a long while.
+  ReconFirst,   // The first classified device of this session.
+  ReconCrowd,   // Several surveillance devices in range at once.
+  ReconLost,    // The last device in range has gone.
+  ReconIgnore,  // The owner marked a device as their own.
+  ReconCleared, // A tag that was flagged as following has gone.
   Count
 };
 constexpr unsigned TopicCount = unsigned(Topic::Count);
@@ -393,6 +399,69 @@ inline constexpr Line Lines[] = {
     {Topic::AlertOdd, Who::Any, false, "Hm. The airwaves just did something weird."},
     {Topic::AlertOdd, Who::Any, false, "That's unusual. Logging it."},
     {Topic::AlertOdd, Who::Any, false, "Something odd nearby. Stay curious."},
+
+    // Recon small talk. Rate limited by ReconBanter below, so none of it can spam.
+    {Topic::ReconQuiet, Who::Any, false, "Recon report: nothing. A lovely nothing."},
+    {Topic::ReconQuiet, Who::Any, false, "No cameras, no tags, no gadgets. Just us."},
+    {Topic::ReconQuiet, Who::Any, false, "The list is empty. I checked it twice."},
+    {Topic::ReconQuiet, Who::Any, false, "All quiet on every channel I can hear."},
+    {Topic::ReconQuiet, Who::Any, true, "Nobody is watching us. Kind of insulting."},
+    {Topic::ReconQuiet, Who::Mochi, false, "Nothing to pounce on. Ears still up."},
+    {Topic::ReconQuiet, Who::Sprout, false, "No intruders near the hoard. Good."},
+    {Topic::ReconQuiet, Who::Orbit, false, "Scan complete. Zero contacts. Again."},
+    {Topic::ReconQuiet, Who::Wisp, false, "Nothing here but us ghosts."},
+    {Topic::ReconQuiet, Who::Ember, false, "Not a spark on the radar."},
+    {Topic::ReconFirst, Who::Any, false, "First contact of the day. It's on the list."},
+    {Topic::ReconFirst, Who::Any, false, "Got one! Check the list on the right."},
+    {Topic::ReconFirst, Who::Any, false, "Something just showed up. I wrote it down."},
+    {Topic::ReconFirst, Who::Any, false, "And we have a visitor. Listed it for you."},
+    {Topic::ReconFirst, Who::Any, true, "First catch of the day. Smile, whoever you are."},
+    {Topic::ReconFirst, Who::Mochi, false, "My whiskers twitched. First one's listed."},
+    {Topic::ReconFirst, Who::Sprout, false, "A new shiny for the list!"},
+    {Topic::ReconFirst, Who::Orbit, false, "Contact one acquired. Logging."},
+    {Topic::ReconFirst, Who::Wisp, false, "Ooh. Something else is haunting this spot."},
+    {Topic::ReconFirst, Who::Ember, false, "First spark on the radar!"},
+    {Topic::ReconCrowd, Who::Any, false, "That's a lot of cameras for one street."},
+    {Topic::ReconCrowd, Who::Any, false, "Busy spot. Several watchers in range."},
+    {Topic::ReconCrowd, Who::Any, false, "The list is filling up. Popular place."},
+    {Topic::ReconCrowd, Who::Any, false, "Several watchers at once. Noted, all of them."},
+    {Topic::ReconCrowd, Who::Any, true, "Wow. Who invited all the cameras?"},
+    {Topic::ReconCrowd, Who::Any, true, "We're very popular here. Suspiciously so."},
+    {Topic::ReconCrowd, Who::Mochi, false, "Too many eyes. My tail is puffing up."},
+    {Topic::ReconCrowd, Who::Sprout, false, "So many watchers. Guard the hoard!"},
+    {Topic::ReconCrowd, Who::Orbit, false, "Multiple contacts. Counting. Still counting."},
+    {Topic::ReconCrowd, Who::Wisp, false, "This many eyes and I'm the spooky one?"},
+    {Topic::ReconCrowd, Who::Ember, false, "It's getting crowded on the radar."},
+    {Topic::ReconLost, Who::Any, false, "Lost it. Out of range now."},
+    {Topic::ReconLost, Who::Any, false, "And it's gone. Still on the SEEN list."},
+    {Topic::ReconLost, Who::Any, false, "Signal faded. Nothing in range again."},
+    {Topic::ReconLost, Who::Any, false, "That one's behind us now."},
+    {Topic::ReconLost, Who::Any, true, "Lost it. It never even said goodbye."},
+    {Topic::ReconLost, Who::Mochi, false, "It got away. I was only watching anyway."},
+    {Topic::ReconLost, Who::Sprout, false, "Gone! It was scared of dragons, clearly."},
+    {Topic::ReconLost, Who::Orbit, false, "Contact lost. Resuming quiet scan."},
+    {Topic::ReconLost, Who::Wisp, false, "It vanished. Hey, that's my move."},
+    {Topic::ReconLost, Who::Ember, false, "Fizzled out. Radar's clear."},
+    {Topic::ReconIgnore, Who::Any, false, "Okay, that one's ours. I'll stay quiet."},
+    {Topic::ReconIgnore, Who::Any, false, "Got it. Friendly. No more fuss from me."},
+    {Topic::ReconIgnore, Who::Any, false, "Marked as yours. I'll still list it."},
+    {Topic::ReconIgnore, Who::Any, false, "Noted: that one belongs with us."},
+    {Topic::ReconIgnore, Who::Any, true, "Fine, it's yours. I was being thorough."},
+    {Topic::ReconIgnore, Who::Mochi, false, "Yours? Fine. I'll stop hissing at it."},
+    {Topic::ReconIgnore, Who::Sprout, false, "Part of the hoard, then. Understood!"},
+    {Topic::ReconIgnore, Who::Orbit, false, "Added to the friendly list. Beep."},
+    {Topic::ReconIgnore, Who::Wisp, false, "A friendly spirit. I'll leave it be."},
+    {Topic::ReconIgnore, Who::Ember, false, "One of ours. No sparks from me."},
+    {Topic::ReconCleared, Who::Any, false, "That tag is gone. Suspicion cleared."},
+    {Topic::ReconCleared, Who::Any, false, "The tag dropped off. We're on our own again."},
+    {Topic::ReconCleared, Who::Any, false, "No more tag tagging along. Good."},
+    {Topic::ReconCleared, Who::Any, false, "It stopped following. I'll keep an eye out."},
+    {Topic::ReconCleared, Who::Any, true, "Our little stalker gave up. Amateur."},
+    {Topic::ReconCleared, Who::Mochi, false, "It quit following. Nobody tails a cat."},
+    {Topic::ReconCleared, Who::Sprout, false, "The tag fled! The hoard is safe."},
+    {Topic::ReconCleared, Who::Orbit, false, "Follow flag cleared. Tag out of range."},
+    {Topic::ReconCleared, Who::Wisp, false, "It stopped haunting us. That's my job."},
+    {Topic::ReconCleared, Who::Ember, false, "Shook it off. Trail's gone cold."},
 };
 constexpr unsigned LineCount = sizeof(Lines) / sizeof(Lines[0]);
 
@@ -547,6 +616,91 @@ inline uint32_t chatterGapMs(Feeling f, bool onTheRoad, uint32_t random) {
     return 25000 + random % 30000;
   return 30000 + random % 40000;
 }
+
+// ---- Recon small talk -----------------------------------------------------------------------
+// What the bubble says for the two alerts that are about behaviour, when no clip is spoken.
+inline constexpr const char *FloodLine = "Tracker flood! Probably spoofed.";
+inline void followLine(char *out, size_t size, uint32_t seconds, uint32_t meters) {
+  snprintf(out, size, "This tag has been with us %lu min / %lu.%lu km.",
+           (unsigned long)(seconds / 60 > 999 ? 999 : seconds / 60),
+           (unsigned long)(meters / 1000 > 99 ? 99 : meters / 1000),
+           (unsigned long)(meters % 1000 / 100));
+}
+// What is in range that the owner has not marked as their own.
+struct ReconPulse {
+  unsigned live = 0, surveillance = 0, following = 0;
+};
+constexpr uint32_t ReconQuietMs = 20 * 60000;    // "Quiet for a long time".
+constexpr uint32_t ReconRemarkGapMs = 90000;     // Between any two recon remarks.
+constexpr uint32_t ReconCrowdGapMs = 10 * 60000; // Between two remarks about a crowd.
+constexpr uint32_t ReconLostGapMs = 5 * 60000;   // Between two "lost it" remarks.
+constexpr uint32_t ReconClearMs = 5 * 60000;     // A following tag unheard this long is "gone".
+constexpr unsigned ReconCrowdAt = 3;             // Surveillance devices in range at once.
+// Turns the live counts into at most one remark at a time. Call it about twice a second; it
+// returns Topic::Count when there is nothing to say. While `busy` (an alert is open, the pet is
+// asleep, or the bubble is still being read) nothing is said, and news that goes stale is dropped
+// rather than queued.
+class ReconBanter {
+public:
+  void begin(uint32_t now) {
+    quietAt_ = now;
+    started_ = true;
+  }
+  Topic update(const ReconPulse &p, uint32_t now, bool busy) {
+    if (!started_)
+      begin(now);
+    Topic topic = Topic::Count;
+    bool gap = !spoke_ || uint32_t(now - lastAt_) >= ReconRemarkGapMs;
+    if (p.following) {
+      following_ = true;
+      followAt_ = now;
+    } else if (following_ && uint32_t(now - followAt_) >= ReconClearMs) {
+      following_ = false;
+      topic = Topic::ReconCleared; // Worth saying even late, so it waits for a free moment.
+      if (busy || !gap) {
+        following_ = true;
+        topic = Topic::Count;
+      }
+    }
+    if (p.live && !first_) {
+      first_ = true; // If an alert is announcing it, that is the announcement.
+      if (topic == Topic::Count && !busy && gap)
+        topic = Topic::ReconFirst;
+    }
+    bool crowd = p.surveillance >= ReconCrowdAt;
+    if (crowd && !crowd_ && topic == Topic::Count && !busy && gap &&
+        (!crowdSaid_ || uint32_t(now - crowdAt_) >= ReconCrowdGapMs)) {
+      crowdSaid_ = true;
+      crowdAt_ = now;
+      topic = Topic::ReconCrowd;
+    }
+    crowd_ = crowd;
+    if (!p.live && live_ && topic == Topic::Count && !busy && gap &&
+        (!lostSaid_ || uint32_t(now - lostAt_) >= ReconLostGapMs)) {
+      lostSaid_ = true;
+      lostAt_ = now;
+      topic = Topic::ReconLost;
+    }
+    if (p.live || live_)
+      quietAt_ = now; // The quiet spell starts when the last device leaves.
+    live_ = p.live != 0;
+    if (!p.live && topic == Topic::Count && !busy && gap &&
+        uint32_t(now - quietAt_) >= ReconQuietMs) {
+      quietAt_ = now;
+      topic = Topic::ReconQuiet;
+    }
+    if (topic != Topic::Count) {
+      spoke_ = true;
+      lastAt_ = now;
+    }
+    return topic;
+  }
+
+private:
+  bool started_ = false, spoke_ = false, first_ = false, live_ = false, crowd_ = false,
+       crowdSaid_ = false, lostSaid_ = false, following_ = false;
+  uint32_t lastAt_ = 0, quietAt_ = 0, crowdAt_ = 0, lostAt_ = 0, followAt_ = 0;
+};
 
 // ---- Things worth a remark ------------------------------------------------------------------
 inline bool milestone(uint32_t n) {

@@ -3,15 +3,17 @@
 // (M5Canvas) and the PC preview (tools/preview.cpp) render exactly the same layout.
 //
 //   0- 23  top bar: buddy name and rank, GPS, recording state
-//  24-175  stage: backdrop, buddy, feeling tag, speech bubble (+ NEARBY clues in Recon view)
+//  24-175  stage: backdrop, buddy, feeling tag, speech bubble. Recon view adds the RECON panel
+//          on the right (recon_view.h); Full Face adds a small recon chip, bottom right.
 //          Recon: the bubble sits under the buddy. Full Face: it sits at the top of the stage,
 //          in place of the feeling tag, so the mouth stays visible while the buddy talks.
-// 178-203  vitals: FOOD, LOVE and XP meters, always visible
+// 178-203  vitals: FOOD, LOVE and XP meters; the tier-coloured alert card while an alert is open
 // 208-236  buttons
 #pragma once
 #include "avatars.h"
 #include "personality.h"
 #include "progression.h"
+#include "recon_view.h"
 #include "themes.h"
 #include <math.h>
 #include <stdint.h>
@@ -20,12 +22,6 @@
 
 namespace dash {
 using BuddyLook = Look; // The look itself lives with the art, in avatars.h.
-struct HomeClue {
-  const char *family = "";
-  bool ble = false, fresh = false;
-  int rssi = 0;
-  const char *confidence = "";
-};
 struct HomeView {
   uint32_t now = 0;
   Palette colors{};
@@ -43,14 +39,13 @@ struct HomeView {
   bool speaking = false;
   uint32_t discoveryAge = UINT32_MAX, levelAge = UINT32_MAX;
   bool alert = false, demo = false;
-  const char *alertFamily = "", *alertConfidence = "";
+  reconview::AlertCardView card; // What the open alert is about.
   // Status.
   const char *state = "WATCHING";
   bool stateUrgent = false, recording = false, moving = false, fix = false;
   unsigned sats = 0;
   uint32_t wifiSaved = 0, bleSaved = 0;
-  HomeClue clues[3];
-  unsigned clueCount = 0;
+  ReconHome recon; // Copied from the table by the caller; drawing never reads the table.
 };
 
 // Text drawn on the danger colour. The Light theme's danger is a deep red that needs white.
@@ -77,30 +72,55 @@ inline void xpLabel(char *out, size_t size, unsigned level, unsigned xp) {
 }
 
 // Where a tap on the home screen goes. Kept free of hardware so the routing can be tested.
-enum class HomeTap : uint8_t { None, Drive, SwitchView, Menu, Clue, ClueList, Dismiss, Stats, Pet };
+enum class HomeTap : uint8_t {
+  None,
+  Drive,
+  SwitchView,
+  Menu,
+  Row,         // A device row in the RECON panel: open its card.
+  Recon,       // The RECON panel or the Full Face chip: open the Recon page.
+  AlertDetail, // DETAILS on the alert card: open the card of the device that alerted.
+  Dismiss,
+  Stats,
+  Pet
+};
 struct HomeTapTarget {
   HomeTap action = HomeTap::None;
-  unsigned clue = 0; // Row index for HomeTap::Clue.
+  unsigned row = 0; // Row index for HomeTap::Row.
 };
-inline HomeTapTarget homeTap(int x, int y, bool face, bool alert, unsigned clueCount) {
+struct HomeTapState {
+  bool face = false, alert = false, demo = false, recording = false;
+  unsigned rows = 0; // Rows the snapshot holds (ReconHome::count).
+};
+inline HomeTapTarget homeTap(int x, int y, const HomeTapState &s) {
+  namespace rv = reconview;
   if (y >= 208 && y < 236)
     return {x >= 244            ? HomeTap::Menu
             : x >= 168          ? HomeTap::SwitchView
             : x >= 8 && x < 162 ? HomeTap::Drive
                                 : HomeTap::None};
-  if (!face && x >= 184 && y >= 29 && y < 175) { // The whole NEARBY panel, header included.
-    unsigned row = y >= 53 && y < 173 ? unsigned(y - 53) / 40 : 3;
-    if (row < (clueCount < 3 ? clueCount : 3))
-      return {HomeTap::Clue, row};
-    return {alert ? HomeTap::Dismiss : HomeTap::ClueList};
+  if (s.alert && !s.demo && rv::AlertDetailsZone.has(x, y))
+    return {HomeTap::AlertDetail};
+  if (!s.face && rv::Panel.has(x, y)) { // The whole panel, header included.
+    unsigned limit = rv::homeRowLimit(s.recording), shown = s.rows < limit ? s.rows : limit;
+    for (unsigned i = 0; i < shown; ++i)
+      if (rv::homeRow(s.recording, shown, i).has(x, y))
+        return {HomeTap::Row, i};
+    return {s.alert ? HomeTap::Dismiss : HomeTap::Recon};
   }
+  if (s.face && !s.alert && rv::FaceChipZone.has(x, y))
+    return {HomeTap::Recon};
   if (y >= 178)
-    return {alert ? HomeTap::Dismiss : HomeTap::Stats};
-  if (y >= 28 && y < 176 && (face || x < 182))
-    return {alert ? HomeTap::Dismiss : HomeTap::Pet};
+    return {s.alert ? HomeTap::Dismiss : HomeTap::Stats};
+  if (y >= 28 && y < 176 && (s.face || x < 182))
+    return {s.alert ? HomeTap::Dismiss : HomeTap::Pet};
   return {};
 }
 
+// An alert wears its tier's colour. A follow warning counts as the top tier.
+inline uint16_t alertColor(const HomeView &v) {
+  return tierColor(v.theme, v.card.kind == 2 ? Tier::Surveillance : tierOf(v.card.family));
+}
 namespace homeui {
 using art::mix;
 template <class G> void text(G &g, const char *s, int x, int y, uint16_t color, int size = 1) {
@@ -321,8 +341,8 @@ template <class G> void bubble(G &g, const HomeView &v, const char *msg) {
   BubbleBox b;
   if (!layoutBubble(msg, v.face, b))
     return;
-  uint16_t fill = v.alert ? v.colors.danger : v.theme == Theme::Light ? 0xffff : v.colors.text;
-  uint16_t ink = v.alert ? onDanger(v.theme) : v.theme != Theme::Light ? Ink : v.colors.text;
+  uint16_t fill = v.alert ? alertColor(v) : v.theme == Theme::Light ? 0xffff : v.colors.text;
+  uint16_t ink = v.alert ? onTier(v.theme) : v.theme != Theme::Light ? Ink : v.colors.text;
   uint16_t edge = v.theme == Theme::Light ? v.colors.muted : Ink;
   int base = b.tailDown ? b.y + b.h - 1 : b.y, dir = b.tailDown ? 1 : -1;
   g.fillRoundRect(b.x - 1, b.y - 1, b.w + 2, b.h + 2, 8, edge);
@@ -437,8 +457,8 @@ template <class G> void drawHome(G &g, const HomeView &v) {
   if (v.face && talking) {
     // The Full Face speech bubble occupies this strip while the buddy talks.
   } else if (v.alert) {
-    g.fillRoundRect(6, 29, 21, 22, 5, colors.danger);
-    text(g, "!", 11, 33, onDanger(v.theme), 2);
+    g.fillRoundRect(6, 29, 21, 22, 5, alertColor(v));
+    text(g, "!", 11, 33, onTier(v.theme), 2);
   } else if (cheering || levelUp) {
     const char *badge = levelUp ? "LEVEL UP!" : "+1 XP";
     int w = int(strlen(badge)) * 6 + 12;
@@ -453,7 +473,8 @@ template <class G> void drawHome(G &g, const HomeView &v) {
     text(g, feeling, 22, 33, colors.text);
   }
   // Drive counters sit under the buddy once there is a drive to count.
-  bool counters = v.recording || v.wifiSaved || v.bleSaved;
+  // (In Recon view a drive in progress shows them in the panel instead, clear of the bubble.)
+  bool counters = (v.recording || v.wifiSaved || v.bleSaved) && (v.face || !v.recording);
   if (talking)
     bubble(g, v, v.message);
   else if (counters) {
@@ -468,31 +489,17 @@ template <class G> void drawHome(G &g, const HomeView &v) {
       text(g, s, x + 17, 159, colors.text);
     }
   }
-  if (!v.face) {
-    g.fillRoundRect(184, 29, 130, 146, 10, colors.bg);
-    text(g, "NEARBY", 193, 37, colors.accent);
-    if (!v.clueCount) {
-      for (int r : {12, 22, 31})
-        g.drawCircle(249, 95, r, colors.panel);
-      float sweep = now / 1800.0f;
-      g.drawLine(249, 95, 249 + int(cos(sweep) * 29), 95 + int(sin(sweep) * 29), colors.accent);
-      g.fillCircle(249, 95, 2, colors.accent);
-      centered(g, "All quiet", 249, 137, colors.text);
-      centered(g, "Clues show up here", 249, 152, colors.muted);
-    } else
-      text(g, "tap for more", 234, 37, colors.muted);
-    for (unsigned i = 0; i < v.clueCount && i < 3; ++i) {
-      const HomeClue &c = v.clues[i];
-      int y = 53 + int(i) * 40;
-      g.fillRoundRect(189, y, 120, 36, 6, colors.panel);
-      g.fillRoundRect(189, y, 4, 36, 2,
-                      c.fresh ? (c.ble ? colors.heart : colors.accent) : colors.muted);
-      snprintf(s, sizeof(s), "%.18s", c.family);
-      text(g, s, 197, y + 6, c.fresh ? colors.text : colors.muted);
-      snprintf(s, sizeof(s), "%s %ddB %s", c.ble ? "BLE" : "WiFi", c.rssi,
-               c.fresh ? c.confidence : "OLD");
-      text(g, s, 197, y + 21, c.fresh ? colors.danger : colors.muted);
-    }
+  reconview::Style style{colors, v.theme};
+  if (v.face)
+    reconview::drawFaceChip(g, style, v.recon);
+  else {
+    reconview::ReconPanel panel;
+    panel.style = style;
+    panel.now = now;
+    panel.recording = v.recording;
+    panel.wifiSaved = v.wifiSaved;
+    panel.bleSaved = v.bleSaved;
+    reconview::drawHomePanel(g, panel, v.recon);
   }
   // Top bar.
   g.fillRect(0, 0, 320, 24, colors.bg);
@@ -516,10 +523,9 @@ template <class G> void drawHome(G &g, const HomeView &v) {
   // Vitals row.
   g.fillRoundRect(6, 178, 308, 26, 8, colors.bg);
   if (v.alert) {
-    snprintf(s, sizeof(s), "%s  %.22s", v.demo ? "DEMO" : "CLUE", v.alertFamily);
-    text(g, s, 15, 182, colors.danger);
-    snprintf(s, sizeof(s), "Confidence: %s. Tap to dismiss.", v.alertConfidence);
-    text(g, s, 15, 193, colors.text);
+    reconview::AlertCardView card = v.card;
+    card.demo = v.demo;
+    reconview::drawAlertCard(g, style, card);
   } else if (levelUp) {
     snprintf(s, sizeof(s), "LEVEL %u!", v.level);
     text(g, s, 15, 182, colors.accent);

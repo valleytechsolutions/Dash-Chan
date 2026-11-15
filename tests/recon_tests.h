@@ -1065,7 +1065,96 @@ inline void wraparound() {
               uint32_t(now + 20 - old->firstAt) == ReconClampMs); // First seen: "ages ago".
 }
 
+// What the recon screens needed that the table did not yet say.
+inline void screenFacts() {
+  // Address kinds: how much "the same address again" can mean.
+  const uint8_t burned[6] = {0x00, 0x25, 0xdf, 1, 2, 3}, local[6] = {0x02, 0, 0, 1, 2, 3};
+  const uint8_t resolvable[6] = {0x5a, 0, 0, 1, 2, 3}, nonResolvable[6] = {0x1a, 0, 0, 1, 2, 3};
+  const uint8_t fixedRandom[6] = {0xc4, 0, 0, 1, 2, 3};
+  RECON_CHECK(addressKind(false, 0, burned) == AddressKind::Fixed &&
+              addressKind(false, 0, local) == AddressKind::StaticRandom);
+  RECON_CHECK(addressKind(true, 0, resolvable) ==
+                  AddressKind::Fixed && // Public: bits mean nothing.
+              addressKind(true, 2, resolvable) == AddressKind::Fixed &&
+              addressKind(true, 3, fixedRandom) == AddressKind::Fixed);
+  RECON_CHECK(addressKind(true, 1, resolvable) == AddressKind::Rotating &&
+              addressKind(true, 1, nonResolvable) == AddressKind::Rotating &&
+              addressKind(true, 1, fixedRandom) == AddressKind::StaticRandom);
+  for (AddressKind k : {AddressKind::Fixed, AddressKind::Rotating, AddressKind::StaticRandom})
+    RECON_CHECK(*addressKindName(k) && strlen(addressKindName(k)) <= 16);
+  RECON_CHECK(ledgerTag("following") && ledgerTag("flood") && !ledgerTag("") &&
+              !ledgerTag(nullptr) && !ledgerTag("Flood") && !ledgerTag("following me"));
+
+  // The trail's length is the sum of its legs, and nothing for a tag heard at one place.
+  ReconDevice tag;
+  RECON_CHECK(followSpanMeters(tag) == 0);
+  tag.pointCount = 1;
+  tag.points[0] = {40.0f, -75.0f, 0};
+  RECON_CHECK(followSpanMeters(tag) == 0);
+  tag.pointCount = 3;
+  tag.points[1] = {40.01f, -75.0f, 1000};
+  tag.points[2] = {40.01f, -75.02f, 2000};
+  float legs =
+      metersBetween(40.0f, -75.0f, 40.01f, -75.0f) + metersBetween(40.01f, -75.0f, 40.01f, -75.02f);
+  RECON_CHECK(fabsf(followSpanMeters(tag) - legs) < 1 && legs > 2700 && legs < 2900);
+
+  // The ledger's Label column: the engine's tag for a following or flood line, otherwise the
+  // product label, which a tag no longer overwrites on the row.
+  ReconDevice d;
+  d.family = Family::GoogleTag;
+  d.confidence = Confidence::High;
+  d.ble = true;
+  snprintf(d.label, sizeof(d.label), "Chipolo");
+  char line[LedgerRowMax];
+  LedgerEntry e;
+  RECON_CHECK(ledgerRow(line, sizeof(line), d, 1, 1) && ledgerParse(line, e) &&
+              !strcmp(e.label, "Chipolo"));
+  d.flood = true;
+  RECON_CHECK(ledgerRow(line, sizeof(line), d, 1, 1) && ledgerParse(line, e) &&
+              !strcmp(e.label, "flood"));
+  d.following = true;
+  RECON_CHECK(ledgerRow(line, sizeof(line), d, 1, 1) && ledgerParse(line, e) &&
+              !strcmp(e.label, "following") && !strcmp(d.label, "Chipolo"));
+
+  // Counts for the pet and the STATS tab: ignored devices are listed but not minded.
+  Bench b;
+  ReconCounts c;
+  b.table.counts(c, 1000);
+  RECON_CHECK(watchLevel(c) == 0 && !c.ignored && !c.followingLive);
+  enum { Tag = 1, Mine, Cam };
+  b.see(Tag, Family::Tile, 1000);
+  b.table.counts(c, 1000);
+  RECON_CHECK(watchLevel(c) == 1 && c.watchTier[unsigned(Tier::Tracker)] == 1);
+  ReconDevice *mine = b.see(Mine, Family::Flock, 1000).row;
+  b.table.counts(c, 1000);
+  RECON_CHECK(watchLevel(c) == 2);
+  b.policy.ignores.add(mine->mac, mine->family);
+  b.table.applyIgnores(b.policy.ignores);
+  b.table.counts(c, 1000);
+  RECON_CHECK(watchLevel(c) == 1 && c.ignored == 1 && c.live == 2 &&
+              c.liveTier[unsigned(Tier::Surveillance)] == 1 &&
+              c.watchTier[unsigned(Tier::Surveillance)] == 0);
+  ReconDevice *tile = b.table.find(mine->mac, true, 1, Family::Flock);
+  RECON_CHECK(tile == mine);
+  b.see(Tag, Family::Tile, 2000).row->following = true;
+  b.table.counts(c, 2000);
+  RECON_CHECK(c.following == 1 && c.followingLive == 1);
+  b.table.counts(c, 2000 + ReconLiveMs); // Out of range: still flagged, no longer live.
+  RECON_CHECK(c.following == 1 && c.followingLive == 0 && watchLevel(c) == 0 && c.ignored == 1);
+  for (Family f : {Family::Flipper, Family::Deauth, Family::Watchlist}) {
+    Bench one;
+    one.see(Cam, f, 1000);
+    one.table.counts(c, 1000);
+    RECON_CHECK(watchLevel(c) == 2);
+  }
+  Bench beacon;
+  beacon.see(Cam, Family::Beacon, 1000);
+  beacon.table.counts(c, 1000);
+  RECON_CHECK(watchLevel(c) == 1);
+}
+
 inline void run() {
+  screenFacts();
   tiersAndLabels();
   keyingAndEncounters();
   trendAndLive();

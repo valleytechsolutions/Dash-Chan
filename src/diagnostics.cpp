@@ -3,7 +3,25 @@
 #include <M5StackChan.h>
 #include <esp_system.h>
 namespace dash {
+// RECON: every table row as one JSON line, most important first, for bench testing.
+static void printRecon() {
+  static uint16_t order[ReconCapacity];
+  auto &table = reconTable();
+  uint32_t now = millis(), clock = reconClock();
+  unsigned n = table.sorted(order, ReconCapacity, now, ReconSort::Priority);
+  char line[640];
+  for (unsigned i = 0; i < n; ++i) {
+    if (reconview::rowJson(line, sizeof(line), reconRow(table.at(order[i]), now, clock), i)) {
+      Serial.print("RECON ");
+      Serial.println(line);
+    }
+    if (i % 8 == 7)
+      Serial.flush(); // Let USB drain; a full table is far more than the TX buffer.
+  }
+  Serial.printf("RECON_END %u\n", n);
+}
 void printStatus() {
+  const ReconCounts &recon = reconCounts();
   Serial.printf(
       "STATUS "
       "{\"version\":\"%s\",\"board\":%u,\"width\":%d,\"height\":%d,\"psram\":%lu,\"heap\":%lu,"
@@ -19,7 +37,8 @@ void printStatus() {
       "\"gps_rx\":%d,\"gps_baud\":%lu,\"gps_active_baud\":%lu,\"gps_searching\":%s,"
       "\"view\":%u,\"backdrop\":%u,\"xp\":%lu,\"level\":%lu,\"upload_busy\":%s,"
       "\"nfc_ready\":%s,\"proximity_ready\":%s,\"ble_saved\":%lu,\"setup_schema\":1,\"upload_"
-      "configured\":%s}\n",
+      "configured\":%s,\"recon_live\":%u,\"recon_total\":%u,\"recon_tiers\":[%u,%u,%u,%u,%u],"
+      "\"recon_following\":%u,\"recon_ignored\":%u,\"ledger_ok\":%s}\n",
       Version, unsigned(M5.getBoard()), M5.Display.width(), M5.Display.height(),
       (unsigned long)ESP.getPsramSize(), (unsigned long)ESP.getFreeHeap(),
       app.radioReady ? "true" : "false", app.sdReady ? "true" : "false",
@@ -30,7 +49,7 @@ void printStatus() {
       (unsigned long)app.food.discoveries(), (unsigned long)millis(), (unsigned long)app.gpsGood,
       (unsigned long)app.gpsBad, (unsigned long long)storageCardSize(), app.storageError,
       unsigned(app.settings.theme), app.settings.volume, unsigned(app.settings.tone),
-      feelingName(app.feeling), app.bond, (unsigned long)app.pets, app.historyCount,
+      feelingName(app.feeling), app.bond, (unsigned long)app.pets, unsigned(recon.total),
       (unsigned long)app.suppressed, app.settings.sound ? "true" : "false",
       app.settings.voiceMode != VoiceMode::Off ? "true" : "false", unsigned(app.settings.voiceMode),
       app.moving ? "true" : "false", app.speedKph, unsigned(esp_reset_reason()),
@@ -40,7 +59,10 @@ void printStatus() {
       (unsigned long)app.settings.xp, (unsigned long)petLevel(app.settings.xp),
       uploadBusy() ? "true" : "false", app.nfcReady ? "true" : "false",
       app.proximityReady ? "true" : "false", (unsigned long)app.bleCollection.discoveries(),
-      uploads.configured ? "true" : "false");
+      uploads.configured ? "true" : "false", unsigned(recon.live), unsigned(recon.total),
+      unsigned(recon.liveTier[0]), unsigned(recon.liveTier[1]), unsigned(recon.liveTier[2]),
+      unsigned(recon.liveTier[3]), unsigned(recon.liveTier[4]), unsigned(recon.following),
+      reconPolicy().ignores.size(), app.ledger == LedgerState::Ready ? "true" : "false");
 }
 void serialTick() {
   static char line[160]; // Room for "AVATAR SET " plus the longest profile line.
@@ -57,6 +79,8 @@ void serialTick() {
         if (uploadSetupCommand(line)) {
         } else if (!strcmp(line, "STATUS"))
           printStatus();
+        else if (!strcmp(line, "RECON"))
+          printRecon();
         else if (!strcmp(line, "SCREEN"))
           uiScreenshot();
         else if (!strcmp(line, "STOP"))

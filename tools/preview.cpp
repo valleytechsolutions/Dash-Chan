@@ -5,10 +5,105 @@
 #include "home_view.h"
 #include "host_canvas.h"
 #include "profile.h"
+#include "recon_view.h"
 #include "studio_view.h"
 #include <string>
+#include <vector>
 using namespace dash;
 static std::string out;
+// A real recon table fed with made-up sightings, so the sheets exercise the same snapshot code
+// the firmware runs. Times are millis(); `clock` is seconds since 2000 for ledger rows.
+struct Scene {
+  std::vector<ReconDevice> rows;
+  ReconTable table;
+  AlertPolicy policy;
+  AlertContext ctx;
+  uint32_t now = 900000, clock = 846000000;
+  unsigned next = 1;
+  Scene() : rows(96) {
+    table.attach(rows.data(), 96);
+  }
+  // Heard `ago` ms before now. A second, stronger or weaker reading sets the trend arrow.
+  ReconDevice *hear(Family family, int rssi, uint32_t ago = 1000, bool ble = false,
+                    const char *label = "", const char *name = "", int trend = 0,
+                    Confidence confidence = Confidence::Medium, uint32_t since = 20000) {
+    uint8_t mac[6] = {uint8_t(ble ? 0x5a : 0x00), 0x25,         0xdf, uint8_t(next * 37),
+                      uint8_t(next * 91),         uint8_t(next)};
+    ++next;
+    ReconSighting s;
+    s.mac = mac;
+    s.ble = ble;
+    s.addressType = ble ? 1 : 0;
+    s.match = {family, confidence, "Preview sighting; nothing was detected"};
+    s.label = label;
+    s.name = name;
+    s.channel = ble ? 0 : 6;
+    s.rssi = rssi - trend * 6;
+    uint32_t first = now - ago - since;
+    ReconSeen seen = table.observe(s, first);
+    if (!seen.row)
+      return nullptr;
+    policy.decide(*seen.row, seen, ctx, first);
+    s.rssi = rssi;
+    seen = table.observe(s, now - ago);
+    policy.decide(*seen.row, seen, ctx, now - ago);
+    return seen.row;
+  }
+  void ledger(Family family, int rssi, uint32_t secondsAgo, bool ble, const char *label = "",
+              bool alerted = false) {
+    LedgerEntry e;
+    e.utc = secondsAgo ? clock - secondsAgo : 0;
+    e.uptimeMs = 5000 + next * 1000;
+    e.boot = 3;
+    e.family = family;
+    e.confidence = Confidence::Medium;
+    e.ble = ble;
+    e.addressType = ble ? 1 : 0;
+    e.mac[0] = 0x7a;
+    e.mac[5] = uint8_t(next++);
+    e.rssi = int8_t(rssi);
+    e.alerted = alerted;
+    snprintf(e.label, sizeof(e.label), "%s", label);
+    table.restore(e);
+  }
+  // A tag heard at four places over twenty minutes: the follow rule trips.
+  ReconDevice *follower() {
+    uint8_t mac[6] = {0x5e, 0x11, 0x22, 0x33, 0x44, 0x55};
+    ReconSeen seen;
+    for (int place = 0; place < 4; ++place) {
+      ReconSighting s;
+      s.mac = mac;
+      s.ble = true;
+      s.addressType = 1;
+      s.match = {Family::Tracker, Confidence::High, "Apple Find My advert, separated from owner"};
+      s.rssi = -58 - place;
+      s.fix = true;
+      s.lat = 39.9526f + 0.011f * float(place);
+      s.lon = -75.1652f + 0.006f * float(place);
+      uint32_t at = now - 1200000 + uint32_t(place) * 399000;
+      seen = table.observe(s, at);
+      policy.decide(*seen.row, seen, ctx, at);
+    }
+    table.followDue(*seen.row);
+    return seen.row;
+  }
+  ReconCounts counts() const {
+    ReconCounts c;
+    table.counts(c, now);
+    return c;
+  }
+  ReconHome home() const {
+    ReconHome h;
+    reconHome(h, table, counts(), now, clock);
+    return h;
+  }
+};
+// The usual street: a plate reader, a tag, a Flipper that has gone, plus one from the ledger.
+static void street(Scene &s) {
+  s.hear(Family::Tracker, -59, 1500, true, "", "", 1);
+  s.hear(Family::Alpr, -49, 800, false, "Motorola Vigilant", "", 0, Confidence::High);
+  s.hear(Family::Flipper, -80, 240000, true, "", "Flipper Rokeo");
+}
 static HostCanvas sheetOf(int columns, int rows) {
   return HostCanvas(columns * 324 + 4, rows * 244 + 4);
 }
@@ -155,8 +250,313 @@ static void studioScreens() {
     }
   sheet.savePpm((out + "/studio.ppm").c_str());
 }
+// A busy block: every tier at once, more rows than the panel holds.
+static void crowd(Scene &s) {
+  s.hear(Family::Flock, -47, 600, false, "Flock Falcon", "", 1, Confidence::High);
+  s.hear(Family::Axon, -63, 900, true, "Axon Body 3", "", 0, Confidence::High);
+  s.hear(Family::Meta, -71, 1200, true, "Ray-Ban Meta", "", -1);
+  s.hear(Family::Flipper, -66, 700, true, "", "Flipper Rokeo");
+  s.hear(Family::Deauth, -58, 2000, false);
+  s.hear(Family::Tracker, -52, 400, true, "", "", 1);
+  s.hear(Family::Ring, -77, 1500, false, "", "Ring-9f2a11");
+  s.hear(Family::Drone, -84, 3000, false, "1581F5FJD228K00A", "", 0, Confidence::High);
+  s.hear(Family::Tile, -88, 90000, true);
+  s.ledger(Family::Alpr, -61, 5400, false, "Genetec AutoVu", true);
+}
+static void reconSheets() {
+  using namespace reconview;
+  auto styleOf = [](Theme theme) { return Style{palette(theme), theme}; };
+  auto fresh = [](Theme theme) {
+    HostCanvas screen(320, 240);
+    screen.fillScreen(palette(theme).bg);
+    return screen;
+  };
+  auto put = [](HostCanvas &sheet, int column, int row, const HostCanvas &screen) {
+    sheet.blit(screen, 4 + column * 324, 4 + row * 244);
+  };
+  auto save = [](const HostCanvas &screen, const char *file) {
+    screen.savePpm((out + "/" + file + ".ppm").c_str());
+  };
+  auto homeOf = [](Theme theme, const Scene &s) {
+    HomeView v = base(theme);
+    v.now = s.now;
+    v.recon = s.home();
+    return v;
+  };
+  auto driving = [](HomeView &v) {
+    v.recording = v.moving = v.fix = true;
+    v.sats = 9;
+    v.state = "REC";
+    v.kit = 2;
+    v.wifiSaved = 148;
+    v.bleSaved = 37;
+    v.look.base = 4;
+    v.name = "Ember";
+    v.backdrop = 1;
+  };
+
+  // 1. The home panel in every state.
+  {
+    HostCanvas sheet = sheetOf(3, 4);
+    Scene empty;
+    place(sheet, 0, 0, homeOf(Theme::Dark, empty));
+    Scene one;
+    one.hear(Family::Tracker, -59, 1500, true, "", "", 1);
+    place(sheet, 1, 0, homeOf(Theme::Dark, one));
+    Scene two;
+    two.hear(Family::Alpr, -49, 800, false, "Motorola Vigilant", "", 1, Confidence::High);
+    two.hear(Family::GoogleTag, -72, 2500, true, "Chipolo", "", -1);
+    place(sheet, 2, 0, homeOf(Theme::Dark, two));
+    Scene many;
+    crowd(many);
+    HomeView v = homeOf(Theme::Dark, many);
+    v.mood = 1;
+    place(sheet, 0, 1, v);
+    Scene old; // Nothing in range: a stale row from this boot and rows from the ledger.
+    old.hear(Family::Flipper, -80, 240000, true, "", "Flipper Rokeo");
+    old.hear(Family::Flock, -70, 3900000, false, "Flock Falcon", "", 0, Confidence::High);
+    old.ledger(Family::Alpr, -61, 5400, false, "Genetec AutoVu", true);
+    old.ledger(Family::Tracker, -66, 200000, true);
+    old.ledger(Family::Ring, -80, 0, false);
+    place(sheet, 1, 1, homeOf(Theme::Dark, old));
+    Scene mixed; // An ignored tag, a tag that is following, and the worst-case row texts.
+    ReconDevice *mine = mixed.hear(Family::SamsungTag, -44, 900, true);
+    mixed.policy.ignores.add(mine->mac, mine->family);
+    mixed.table.applyIgnores(mixed.policy.ignores);
+    mixed.follower();
+    ReconDevice *far = mixed.hear(Family::Raven, -100, 500, false, "", "", -1);
+    far->encounters = 1200;
+    mixed.hear(Family::Pwnagotchi, -90, 1800, false, "pwnagotchi-of-doom-9000");
+    place(sheet, 2, 1, homeOf(Theme::Dark, mixed));
+    v = homeOf(Theme::Dark, many); // Recording: the top two threats and the drive counters.
+    driving(v);
+    place(sheet, 0, 2, v);
+    v = homeOf(Theme::Dark, empty);
+    driving(v);
+    v.wifiSaved = 0;
+    v.bleSaved = 0;
+    place(sheet, 1, 2, v);
+    v = homeOf(Theme::Dark, one);
+    driving(v);
+    v.wifiSaved = 99999;
+    v.bleSaved = 4321;
+    v.speaking = true;
+    v.message = "Spotted 'NETGEAR-Guest-5G..'. That's a new one.";
+    place(sheet, 2, 2, v);
+    v = homeOf(Theme::Dark, empty); // Full Face: the chip, quiet.
+    v.face = true;
+    place(sheet, 0, 3, v);
+    v = homeOf(Theme::Dark, many);
+    driving(v);
+    v.face = true;
+    place(sheet, 1, 3, v);
+    v = homeOf(Theme::Bwm, one);
+    v.face = true;
+    v.speaking = true;
+    v.message = "Something just showed up. I wrote it down.";
+    place(sheet, 2, 3, v);
+    save(sheet, "recon-home");
+  }
+  // 2. Alert cards: a device, a flood, a follower, Full Face, Light, and the demo.
+  {
+    HostCanvas sheet = sheetOf(3, 2);
+    Scene many;
+    crowd(many);
+    HomeView v = homeOf(Theme::Dark, many);
+    v.mood = 4;
+    v.alert = v.speaking = true;
+    v.message = "Plate camera spotted!";
+    v.card.family = Family::Alpr;
+    v.card.confidence = Confidence::High;
+    v.card.label = "Motorola Vigilant";
+    v.card.rssi = -49;
+    place(sheet, 0, 0, v);
+    v.message = FloodLine;
+    v.card = {};
+    v.card.kind = 1;
+    v.card.family = Family::Tracker;
+    v.card.confidence = Confidence::Medium;
+    v.card.rssi = -71;
+    place(sheet, 1, 0, v);
+    Scene tailed;
+    tailed.follower();
+    v = homeOf(Theme::Dark, tailed);
+    v.mood = 4;
+    v.alert = v.speaking = true;
+    v.message = "This tag has been with us 19 min / 4.4 km.";
+    v.card.kind = 2;
+    v.card.family = Family::Tracker;
+    v.card.confidence = Confidence::High;
+    v.card.rssi = -61;
+    v.card.followS = 1197;
+    v.card.followMeters = 4400;
+    place(sheet, 2, 0, v);
+    v.face = true;
+    v.message = "We're being followed!";
+    place(sheet, 0, 1, v);
+    v = homeOf(Theme::Light, many);
+    v.mood = 4;
+    v.alert = v.speaking = true;
+    v.message = "A wild dolphin gadget appeared!";
+    v.card.family = Family::Flipper;
+    v.card.confidence = Confidence::Medium;
+    v.card.rssi = -66;
+    place(sheet, 1, 1, v);
+    v = homeOf(Theme::Matrix, many);
+    v.mood = 4;
+    v.alert = v.demo = v.speaking = true;
+    v.message = "PIG DETECTED! ACT NATURAL!";
+    v.card.family = Family::Axon;
+    v.card.confidence = Confidence::Medium;
+    v.card.rssi = -45;
+    place(sheet, 2, 1, v);
+    save(sheet, "recon-alerts");
+  }
+  // 3. Four themes: the home panel and the LIVE list.
+  {
+    HostCanvas sheet = sheetOf(4, 2);
+    const Theme themes[] = {Theme::Dark, Theme::Light, Theme::Matrix, Theme::Bwm};
+    static uint16_t order[96];
+    for (int i = 0; i < 4; ++i) {
+      Scene s;
+      crowd(s);
+      place(sheet, i, 0, homeOf(themes[i], s));
+      HostCanvas screen = fresh(themes[i]);
+      ReconList list;
+      reconList(list, s.table, Tab::Live, 0, s.now, s.clock, order, 96);
+      ListContext ctx;
+      drawReconList(screen, styleOf(themes[i]), Tab::Live, list, ctx);
+      put(sheet, i, 1, screen);
+    }
+    save(sheet, "recon-themes");
+  }
+  // 4. The Recon page and the device card.
+  {
+    HostCanvas sheet = sheetOf(3, 4);
+    static uint16_t order[96];
+    Style dark = styleOf(Theme::Dark);
+    Scene s;
+    crowd(s);
+    ReconDevice *mine = s.hear(Family::SamsungTag, -44, 900, true);
+    s.policy.ignores.add(mine->mac, mine->family);
+    s.table.applyIgnores(s.policy.ignores);
+    ReconDevice *tail = s.follower();
+    uint8_t watched[6] = {0x00, 0x1b, 0x63, 0x84, 0x45, 0xe6};
+    ReconSighting w;
+    w.mac = watched;
+    w.match = {Family::Watchlist, Confidence::High, "Watchlist rule: exact address"};
+    w.name = "Unmarked-Van-AP";
+    w.channel = 11;
+    w.rssi = -55;
+    ReconSeen seen = s.table.observe(w, s.now - 700);
+    s.policy.decide(*seen.row, seen, s.ctx, s.now - 700);
+    ReconDevice *van = seen.row;
+    ReconDevice *plate =
+        s.hear(Family::Alpr, -49, 800, false, "Motorola Vigilant", "", 1, Confidence::High, 760000);
+    plate->lat = 39.95258f;
+    plate->lon = -75.16522f;
+    plate->encounters = 4;
+    plate->evidence = "Motorola Solutions OUI; ALPR vendor radio seen as an access point";
+    ReconList list;
+    ListContext ctx;
+    ctx.seenTotal = s.counts().total;
+    HostCanvas screen = fresh(Theme::Dark);
+    reconList(list, s.table, Tab::Live, 0, s.now, s.clock, order, 96);
+    drawReconList(screen, dark, Tab::Live, list, ctx);
+    put(sheet, 0, 0, screen);
+    save(screen, "ui-recon-list");
+    screen = fresh(Theme::Dark);
+    reconList(list, s.table, Tab::Seen, 2, s.now, s.clock, order, 96);
+    drawReconList(screen, dark, Tab::Seen, list, ctx);
+    put(sheet, 1, 0, screen);
+    ReconStats stats;
+    reconStats(stats, s.table, s.counts(), s.policy.ignores.size(), LedgerState::Ready, 0);
+    stats.lifetime[unsigned(Family::Tracker)] = 412;
+    stats.lifetime[unsigned(Family::Flock)] = 57;
+    stats.lifetime[unsigned(Family::Ring)] = 131;
+    stats.lifetimeTotal = 623;
+    screen = fresh(Theme::Dark);
+    drawReconStats(screen, dark, stats);
+    put(sheet, 2, 0, screen);
+    Scene quiet; // Empty states.
+    quiet.ledger(Family::Alpr, -61, 5400, false, "Genetec AutoVu", true);
+    quiet.ledger(Family::Tracker, -66, 200000, true);
+    screen = fresh(Theme::Dark);
+    reconList(list, quiet.table, Tab::Live, 0, quiet.now, quiet.clock, order, 96);
+    ctx.seenTotal = 2;
+    drawReconList(screen, dark, Tab::Live, list, ctx);
+    put(sheet, 0, 1, screen);
+    Scene none;
+    screen = fresh(Theme::Dark);
+    reconList(list, none.table, Tab::Seen, 0, none.now, none.clock, order, 96);
+    ctx = {};
+    ctx.card = false;
+    drawReconList(screen, dark, Tab::Seen, list, ctx);
+    put(sheet, 1, 1, screen);
+    stats.page = 2;
+    stats.ledger = LedgerState::Failed;
+    screen = fresh(Theme::Dark);
+    drawReconStats(screen, dark, stats);
+    put(sheet, 2, 1, screen);
+    screen = fresh(Theme::Dark); // Device cards.
+    drawReconDetail(screen, dark, reconRow(*plate, s.now, s.clock), true);
+    put(sheet, 0, 2, screen);
+    save(screen, "ui-recon-device");
+    screen = fresh(Theme::Dark);
+    drawReconDetail(screen, dark, reconRow(*tail, s.now, s.clock), true);
+    put(sheet, 1, 2, screen);
+    screen = fresh(Theme::Dark);
+    drawReconDetail(screen, dark, reconRow(*van, s.now, s.clock), true);
+    put(sheet, 2, 2, screen);
+    screen = fresh(Theme::Light); // An ignored tag, a ledger row, and a row that has gone.
+    drawReconDetail(screen, styleOf(Theme::Light), reconRow(*mine, s.now, s.clock), true);
+    put(sheet, 0, 3, screen);
+    screen = fresh(Theme::Matrix);
+    reconList(list, quiet.table, Tab::Seen, 0, quiet.now, quiet.clock, order, 96);
+    drawReconDetail(screen, styleOf(Theme::Matrix), list.rows[1], true);
+    put(sheet, 1, 3, screen);
+    screen = fresh(Theme::Bwm);
+    drawReconDetail(screen, styleOf(Theme::Bwm), reconRow(*van, s.now, s.clock), false);
+    put(sheet, 2, 3, screen);
+    save(sheet, "recon-pages");
+  }
+  // 5. Detection settings and the type filter.
+  {
+    HostCanvas sheet = sheetOf(3, 2);
+    SettingsView v;
+    v.ignored = 3;
+    HostCanvas screen = fresh(Theme::Dark);
+    drawReconSettings(screen, styleOf(Theme::Dark), v);
+    put(sheet, 0, 0, screen);
+    save(screen, "ui-recon-settings");
+    v.confirmClear = true;
+    v.autoSnooze = 0;
+    v.quietRoad = false;
+    v.repeat = true;
+    v.familyQuietMs = 300000;
+    v.threshold = Confidence::High;
+    v.ignored = 64;
+    screen = fresh(Theme::Dark);
+    drawReconSettings(screen, styleOf(Theme::Dark), v);
+    put(sheet, 1, 0, screen);
+    v = {};
+    v.autoSnooze = 10;
+    screen = fresh(Theme::Light);
+    drawReconSettings(screen, styleOf(Theme::Light), v);
+    put(sheet, 2, 0, screen);
+    uint32_t filter = TypeFilter::Defaults & ~TypeFilter::flag(Family::Ring);
+    for (unsigned page = 0; page < TypePages; ++page) {
+      Theme theme = page == 2 ? Theme::Matrix : Theme::Dark;
+      screen = fresh(theme);
+      drawReconTypes(screen, styleOf(theme), filter, page);
+      put(sheet, int(page), 1, screen);
+    }
+    save(sheet, "recon-settings");
+  }
+}
 int main(int argc, char **argv) {
   out = argc > 1 ? argv[1] : ".";
+  reconSheets();
   studioScreens();
   packSheets();
   closeUps();
@@ -198,10 +598,11 @@ int main(int argc, char **argv) {
   v.love = 31;
   v.speaking = true;
   v.message = "My tummy is making dial-up noises.";
-  v.clueCount = 3;
-  v.clues[0] = {familyShort(Family::Tracker), true, true, -59, "MED"};
-  v.clues[1] = {familyShort(Family::Raven), false, true, -49, "HIGH"};
-  v.clues[2] = {familyShort(Family::Flipper), true, false, -80, "LOW"};
+  {
+    Scene s;
+    street(s);
+    v.recon = s.home();
+  }
   place(home, 2, 0, v);
   v = base(); // 4. Recording a drive.
   v.look.base = 4;
@@ -227,8 +628,9 @@ int main(int argc, char **argv) {
   v.mood = 4;
   v.alert = v.speaking = true;
   v.message = "A wild dolphin gadget appeared!";
-  v.alertFamily = "Flipper Zero";
-  v.alertConfidence = "high";
+  v.card.family = Family::Flipper;
+  v.card.confidence = Confidence::High;
+  v.card.rssi = -61;
   v.backdrop = 2;
   place(home, 2, 1, v);
   v = base(); // 7. Napping.
@@ -261,13 +663,19 @@ int main(int argc, char **argv) {
   v.mood = 4;
   v.alert = v.speaking = true;
   v.message = "Tracker nearby. Yours, I hope?";
-  v.alertFamily = familyName(Family::SamsungTag);
-  v.alertConfidence = "high";
+  v.card.family = Family::SamsungTag;
+  v.card.confidence = Confidence::High;
+  v.card.rssi = -52;
   v.recording = v.fix = true;
   v.sats = 6;
   v.state = "REC";
-  v.clueCount = 1;
-  v.clues[0] = {familyShort(Family::SamsungTag), true, true, -52, "HIGH"};
+  v.wifiSaved = 31;
+  v.bleSaved = 9;
+  {
+    Scene s;
+    s.hear(Family::SamsungTag, -52, 500, true, "", "", 1, Confidence::High);
+    v.recon = s.home();
+  }
   place(home, 1, 3, v);
   v = base(); // 12. A veteran: the XP caption must stay inside its panel.
   v.level = 1000;
@@ -324,8 +732,9 @@ int main(int argc, char **argv) {
     if (hat == 5) {
       v.alert = v.speaking = true;
       v.message = "Possible body-camera signal nearby.";
-      v.alertFamily = familyName(Family::Axon);
-      v.alertConfidence = "medium";
+      v.card.family = Family::Axon;
+      v.card.confidence = Confidence::Medium;
+      v.card.rssi = -66;
     }
     place(face, (hat - 1) % 3, 2 + (hat - 1) / 3, v);
   }
@@ -339,8 +748,9 @@ int main(int argc, char **argv) {
   v.alert = v.speaking = true;
   v.mood = 0;
   v.message = "Something odd nearby. Stay curious. This one wraps onto a second row.";
-  v.alertFamily = familyName(Family::None);
-  v.alertConfidence = "low";
+  v.card.family = Family::Deauth;
+  v.card.confidence = Confidence::Low;
+  v.card.rssi = -74;
   place(face, 2, 3, v);
   face.savePpm((out + "/face.ppm").c_str());
 
@@ -384,10 +794,9 @@ int main(int argc, char **argv) {
     screen.savePpm((out + "/ui-" + file + ".ppm").c_str());
   };
   auto clues = [](HomeView &view) {
-    view.clueCount = 3;
-    view.clues[0] = {familyShort(Family::Tracker), true, true, -59, "MED"};
-    view.clues[1] = {familyShort(Family::Camera), false, true, -49, "HIGH"};
-    view.clues[2] = {familyShort(Family::Flipper), true, false, -80, "LOW"};
+    Scene s;
+    street(s);
+    view.recon = s.home();
   };
   v = base();
   clues(v);
@@ -438,16 +847,18 @@ int main(int argc, char **argv) {
   v.mood = 4;
   v.alert = v.speaking = true;
   v.message = "A little tracker signal just popped up!";
-  v.alertFamily = "Find My / tracker";
-  v.alertConfidence = "medium";
+  v.card.family = Family::Tracker;
+  v.card.confidence = Confidence::Medium;
+  v.card.rssi = -59;
   clues(v);
   shot("alert", v);
   v = base();
   v.mood = 4;
   v.alert = v.demo = v.speaking = true;
   v.message = "PIG DETECTED! ACT NATURAL!";
-  v.alertFamily = "Axon / body camera";
-  v.alertConfidence = "medium";
+  v.card.family = Family::Axon;
+  v.card.confidence = Confidence::Medium;
+  v.card.rssi = -45;
   shot("panic", v);
   HomeView kit = base();
   kit.look.custom = true;
@@ -465,8 +876,10 @@ int main(int argc, char **argv) {
   v.mood = 4;
   v.alert = v.speaking = true;
   v.message = "Smart glasses nearby. Act cool.";
-  v.alertFamily = "Camera glasses";
-  v.alertConfidence = "high";
+  v.card.family = Family::Meta;
+  v.card.confidence = Confidence::High;
+  v.card.label = "Ray-Ban Meta";
+  v.card.rssi = -57;
   shot("fieldkit-alert", v);
   v = base();
   v.recording = v.fix = true;

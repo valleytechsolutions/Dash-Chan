@@ -8,8 +8,9 @@
 #include "petting.h"
 #include "profile.h"
 #include "progression.h"
-#include "signature_tests.h"
 #include "recon_tests.h"
+#include "recon_view_tests.h"
+#include "signature_tests.h"
 #include "studio_tests.h"
 #include "traffic.h"
 #include "travel.h"
@@ -820,35 +821,25 @@ int main() {
       FaceFit fit = faceFit(look);
       CHECK(fit.oy - 64 * fit.k >= 24 && fit.oy + 25 * fit.k <= 174);
     }
-    // Taps. Buttons first.
-    auto tap = [](int x, int y, bool face, bool alert, unsigned clues) {
-      return homeTap(x, y, face, alert, clues).action;
+    // Taps. Buttons first; the RECON panel, the chip and the alert card are covered pixel by
+    // pixel in recon_view_tests.h.
+    auto tap = [](int x, int y, bool face, bool alert) {
+      HomeTapState state;
+      state.face = face;
+      state.alert = alert;
+      return homeTap(x, y, state).action;
     };
-    CHECK(tap(80, 220, false, false, 0) == HomeTap::Drive);
-    CHECK(tap(200, 220, false, true, 0) == HomeTap::SwitchView);
-    CHECK(tap(280, 220, true, false, 0) == HomeTap::Menu &&
-          tap(4, 220, true, false, 0) == HomeTap::None);
-    // The NEARBY panel: populated rows open their clue; the header, the hint and empty space
-    // open the list, or dismiss while an alert is showing.
-    CHECK(tap(250, 40, false, false, 3) == HomeTap::ClueList);
-    CHECK(tap(250, 30, false, false, 0) == HomeTap::ClueList);
-    CHECK(tap(250, 100, false, false, 0) == HomeTap::ClueList);
-    CHECK(tap(250, 150, false, false, 2) == HomeTap::ClueList);
-    CHECK(tap(250, 174, false, false, 3) == HomeTap::ClueList);
-    for (unsigned i = 0; i < 3; ++i)
-      for (bool alert : {false, true}) {
-        HomeTapTarget t = homeTap(250, 60 + int(i) * 40, false, alert, 9);
-        CHECK(t.action == HomeTap::Clue && t.clue == i);
-      }
-    CHECK(tap(250, 40, false, true, 3) == HomeTap::Dismiss);
-    CHECK(tap(250, 100, false, true, 0) == HomeTap::Dismiss);
-    CHECK(tap(250, 150, false, true, 2) == HomeTap::Dismiss);
-    CHECK(tap(250, 100, true, false, 3) == HomeTap::Pet); // No panel in Full Face.
-    CHECK(tap(90, 100, false, false, 3) == HomeTap::Pet &&
-          tap(90, 100, false, true, 3) == HomeTap::Dismiss);
-    CHECK(tap(160, 190, false, false, 0) == HomeTap::Stats &&
-          tap(160, 190, true, true, 0) == HomeTap::Dismiss);
-    CHECK(tap(160, 10, false, false, 0) == HomeTap::None);
+    CHECK(tap(80, 220, false, false) == HomeTap::Drive);
+    CHECK(tap(200, 220, false, true) == HomeTap::SwitchView);
+    CHECK(tap(280, 220, true, false) == HomeTap::Menu && tap(4, 220, true, false) == HomeTap::None);
+    CHECK(tap(250, 100, false, false) == HomeTap::Recon &&
+          tap(250, 100, false, true) == HomeTap::Dismiss);
+    CHECK(tap(250, 100, true, false) == HomeTap::Pet); // No panel in Full Face.
+    CHECK(tap(90, 100, false, false) == HomeTap::Pet &&
+          tap(90, 100, false, true) == HomeTap::Dismiss);
+    CHECK(tap(160, 190, false, false) == HomeTap::Stats &&
+          tap(160, 190, true, true) == HomeTap::Dismiss);
+    CHECK(tap(160, 10, false, false) == HomeTap::None);
   }
   {
     // A napping buddy gets one settle cue, then the servos are left alone until it wakes.
@@ -950,5 +941,6 @@ int main() {
     classifyWifi(q.data(), q.size());
   }
   reconTests();
+  reconViewTests();
   std::cout << "Core regression checks and 50,000 malformed-packet cases passed\n";
 }

@@ -13,14 +13,15 @@ Dash-Chan turns the official M5Stack StackChan K151 into an offline companion fo
 
 ## The face is home
 
-The pet remains visible during alerts and recording. No event automatically opens a different page. A compact signal ribbon shows the family and confidence; the face reacts, and the speech bubble shows its personality.
+The pet remains visible during alerts and recording. No event automatically opens a different page. An alert replaces the FOOD/LOVE/XP row with a card in the device's tier colour: its name, signal strength, tier and confidence. The face reacts, and the speech bubble shows its personality.
 
 - **START DRIVE:** creates a new SD file and begins waiting for usable GPS observations.
 - **STOP & SAVE:** flushes and closes the file. Listening continues.
 - **Tap the face:** affection, heart eyes, and bond. Each pet gets a different reaction; rapid petting turns into giggles and then a request for a breather. A napping buddy wakes up when touched.
 - **Stroke/hold the top sensor:** visual affection. Head-sensor events never trigger speech. The sensor must settle released for 600 ms, then hold a meaningful touch for 250 ms; a held or noisy sensor cannot repeatedly fire.
-- **Tap the alert bubble:** dismiss the reaction. Listening and logging continue.
-- **FACE / RECON:** switch between a screen-filling expression and pet-with-nearby-clues. Tap a nearby clue for detail.
+- **Tap the alert:** dismiss the reaction. Listening and logging continue. **DETAILS** on the alert card opens the device's card instead.
+- **FACE / RECON:** switch between a screen-filling expression and the pet beside the RECON panel.
+- **RECON panel:** a radar and up to four device rows while watching; the top two rows and the drive counters while recording. Tap a row for that device, or anywhere else on the panel for the Recon page. In Full Face, tap the **RECON n** chip.
 - **MENU:** opens the eight main controls. BACK returns through the menu to the face.
 
 ## Settings map
@@ -30,11 +31,20 @@ The pet remains visible during alerts and recording. No event automatically open
 | Buddy + Look | Mochi, Sprout, Orbit, Wisp, Ember, or a custom buddy; Dark, Light, Matrix, BWM; Avatar Studio with a live preview, style packs, eyes, layered outfits, extras, and Auto/Always/Off field gear |
 | Sound & Voice | Personality, Siren, Arcade, Chime, Silent; volume 0/100/170/220/255; Master sound; Voice OFF / ALERTS / ALL; tone preview; TEST VOICE; synthetic Axon demo |
 | Personality | Head motion Off/Gentle/Lively; Spicy panic/Gentle lookout; pet button |
-| Detection | Confidence filter; same-family quiet period 60/180/300 seconds; optional five-minute reminders |
-| Recent Clues | Up to 32 entries, four per page; transport, RSSI, name/address, evidence, count, last-seen age |
+| Detection | Confidence filter; same-family quiet period 60/180/300 seconds; optional five-minute reminders; Quiet road ON/OFF; Auto snooze OFF/5/10; device types (whole tiers or single families); ignored-device count with CLEAR ALL (tap twice) |
+| Recon List | **LIVE**: devices in range, most important first. **SEEN**: everything listed, newest first, including rows restored from the SD card. **STATS**: live/listed per tier, devices ever seen per family, following and ignored counts, ledger state. Five rows per page; tap a row for the device card |
 | Display + Fun | Recon/Face, four backgrounds, mood lights, tilt, head swipe, wave hello, auto brightness, NFC outfit cards |
 | Upload drives | Latest 24 drive files, configured destinations, explicit confirmation, cancel, refresh; [setup guide](UPLOADS.md) |
 | GPS & SD | Fix/satellites/HDOP, received NMEA characters, rows, queue drops, storage errors, module presets, port/RX, baud finder, wiring help, SD retry |
+
+### Reading the Recon screens
+
+- **Tier colours:** red surveillance (cameras, plate readers, body cameras, camera glasses, drones, watchlist hits), violet hacker gear (Flipper, Pineapple and friends), amber attack patterns, blue trackers, grey beacons.
+- **A row:** name (the specific product when the signature names one, such as a body-camera model), signal in dBm, an up arrow when it is getting stronger and a down arrow when weaker, and `xN` when it has been met more than once. A dimmed row is out of range and shows how long ago it was heard; `earlier` means it came from the SD ledger and the clock is not set yet.
+- **Device card:** full name and tier, model and advertised name, address and whether it is a fixed, random or rotating one, signal now and at its strongest, first and last heard, encounters, why it did or did not alert, where it was last heard if GPS had a fix, and a plain description of what that kind of device is.
+- **IGNORE (IT'S MINE):** your own tag or dashcam stays listed, dimmed, and never alerts again. UNIGNORE reverses it. The list is saved on the robot.
+- A rotating Bluetooth address changes every few minutes to a day, so the same tag can appear as several rows over time.
+- Everything here is a classification from radio metadata. It is a hint about what is nearby, not proof of who owns it or what it is doing.
 
 **Silent** is a detection-tone choice. **Voice OFF** disables every spoken clip; **ALERTS** speaks detection announcements with any tone except Silent; **ALL** adds pet and system phrases. **Master sound OFF** and volume 0 disable all audio. With Voice OFF, alerts use electronic sounds instead of speech. Spicy captions can remain on-screen independently of voice. The spoken clips are synthesized and have not been reviewed by ear yet.
 

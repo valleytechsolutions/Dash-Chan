@@ -18,6 +18,9 @@ static uint32_t lastGaze = 0;
 static unsigned panicStep = 0;
 static uint32_t panicWait = 0;
 static Banter banter;
+static ReconBanter reconBanter;
+static uint32_t reconAt = 0, ignoreSaidAt = 0;
+static unsigned alertFlinch = 100; // Percent of the full panic gesture for the open alert.
 static PetCombo petCombo;
 // lastTouch is the "someone is paying attention to me" clock that drives boredom and naps.
 static uint32_t lastTouch = 0, chatterGap = 20000, moodAt = 0, moodHold = 0, burstAt = 0,
@@ -152,6 +155,16 @@ static Mood restingMood(Feeling f) {
   return f == Feeling::Napping || f == Feeling::Drowsy  ? Mood::Sleepy
          : f == Feeling::Hungry || f == Feeling::Lonely ? Mood::Pout
                                                         : Mood::Happy;
+}
+// The face while nothing else is going on. Something in range makes the buddy curious: a tag or
+// a beacon only when it was otherwise content, a camera or a hacker gadget even mid-sulk. A
+// sleepy buddy stays sleepy, and Alarm is kept for real alerts.
+static Mood watchfulMood(Feeling f) {
+  Mood mood = restingMood(f);
+  unsigned level = watchLevel(reconCounts());
+  if (mood == Mood::Sleepy || !level)
+    return mood;
+  return level == 2 || mood == Mood::Happy ? Mood::Curious : mood;
 }
 // Any touch or tap counts as attention. A sleeping pet wakes up, a bit groggy.
 void buddyPoke() {
@@ -314,6 +327,20 @@ void buddyDemo() {
   strcpy(a.name, "Demo body-camera signal");
   buddyAlert(a, true);
 }
+// Opening the Recon page in Voice ALL names the top thing in range, with one of the family
+// clips that already exist. The pet-phrase limits apply, so it cannot chatter.
+void buddyReconPeek(Family top) {
+  if (top == Family::None || app.alertOpen || app.feeling == Feeling::Napping)
+    return;
+  petSpeak(clipFor(top));
+}
+void buddyReconIgnored() {
+  uint32_t now = millis();
+  if (app.alertOpen || (ignoreSaidAt && uint32_t(now - ignoreSaidAt) < 5000))
+    return;
+  ignoreSaidAt = now | 1;
+  buddySay(Topic::ReconIgnore);
+}
 void buddyDriveStart(bool fix) {
   uint32_t now = millis();
   lastTouch = lastFindAt = stoppedAt = noFixAt = now;
@@ -441,7 +468,15 @@ void buddyAlert(const Alert &a, bool demo) {
   bool spicyCop = police && app.settings.spicy;
   bool audible =
       app.settings.sound && app.settings.volume && app.settings.tone != AlertTone::Silent;
-  Clip clip = alertClip(family, spicyCop ? int(line) : -1);
+  AlertTwist twist = a.kind == AlertFollowing ? AlertTwist::Following
+                     : a.kind == AlertFlood   ? AlertTwist::Flood
+                                              : AlertTwist::None;
+  if (twist != AlertTwist::None)
+    spicyCop = false; // The behaviour is the news, not the brand.
+  Clip clip = alertClip(family, spicyCop ? int(line) : -1, twist);
+  // A follow warning is the top tier whatever the tag is; a flood is only as urgent as a tag.
+  alertFlinch = flinchPercent(twist == AlertTwist::Following ? 0 : unsigned(tierOf(family)),
+                              demo ? -50 : a.rssi);
   soundActive = false;
   speechStop(); // A pet phrase gives way even when the alert itself is silent.
   if (audible)
@@ -451,7 +486,13 @@ void buddyAlert(const Alert &a, bool demo) {
     say(clipCaption(clip));
     return;
   }
-  if (spicyCop) // The first two are the recorded lines, shown as text when they are not spoken.
+  char text[64];
+  if (twist == AlertTwist::Flood)
+    say(FloodLine);
+  else if (twist == AlertTwist::Following) {
+    followLine(text, sizeof(text), a.followMs / 1000, a.followMeters);
+    say(text);
+  } else if (spicyCop) // The first two are the recorded lines, shown as text when not spoken.
     say(line == 0   ? clipCaption(Clip::SpicyPig)
         : line == 1 ? clipCaption(Clip::SpicyFuzz)
                     : "Wee-woo! Tiny copilot panic!");
@@ -518,7 +559,24 @@ void buddyTick() {
   vitals.recentFinds = uint32_t(now - burstAt) < 45000 ? burstFinds : 0;
   app.feeling = feelingFor(vitals);
   if (!app.alertOpen && uint32_t(now - moodAt) >= moodHold)
-    app.mood = restingMood(app.feeling);
+    app.mood = watchfulMood(app.feeling);
+  // Recon small talk, from the counts the radio refreshes twice a second.
+  if (uint32_t(now - reconAt) >= 500) {
+    reconAt = now;
+    const ReconCounts &counts = reconCounts();
+    ReconPulse pulse;
+    for (unsigned t = 0; t < TierCount; ++t)
+      pulse.live += counts.watchTier[t];
+    pulse.surveillance = counts.watchTier[unsigned(Tier::Surveillance)];
+    pulse.following = counts.followingLive;
+    bool busy = app.alertOpen || app.feeling == Feeling::Napping || !greeted ||
+                uint32_t(now - app.messageAt) < 8000;
+    Topic remark = reconBanter.update(pulse, now, busy);
+    if (remark != Topic::Count) {
+      lastChatter = now; // Counts as chatter, so idle talk does not follow straight after.
+      buddySay(remark);
+    }
+  }
   if (uint32_t(now - lastNeed) > 60000) {
     lastNeed = now;
     decayNeeds(app.energy, app.bond, app.feeling, onTheRoad(), ++needMinute);
@@ -617,13 +675,19 @@ void buddyTick() {
       lastMotion = now;
       auto cue = panicMotion(panicStep++);
       panicWait = cue.holdMs;
-      if (app.settings.motionStyle == 1 || !app.settings.spicy ||
-          app.active.match.family != Family::Axon) {
-        cue.yaw /= 2;
-        cue.pitch = 200 + (cue.pitch - 200) / 2;
+      // The spicy body-camera panic keeps its full wee-woo thrash; everything else flinches in
+      // proportion to its tier and signal strength, and the Gentle style halves it again.
+      bool wild = app.settings.motionStyle != 1 && app.settings.spicy &&
+                  app.active.kind == AlertDevice && app.active.match.family == Family::Axon;
+      unsigned percent = wild ? 100 : alertFlinch;
+      if (app.settings.motionStyle == 1)
+        percent /= 2;
+      if (!wild) {
         cue.speed = 260;
         panicWait += 300;
       }
+      // On the road the gesture is held inside the drive-safe box (idle_motion.h).
+      cue = flinchCue(cue, percent, onTheRoad());
       // BSP units are tenths of a degree. Stay well inside K151 travel limits.
       M5StackChan.Motion.move(cue.yaw, cue.pitch, cue.speed);
     }

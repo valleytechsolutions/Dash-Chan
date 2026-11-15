@@ -121,6 +121,14 @@ inline void promote(Match &a, Match b) {
   if (b.confidence > a.confidence)
     a = b;
 }
+// promote() for a match that carries a label: a replacement match was not what the label named.
+inline void promoteLabelled(Match &a, char *label, Match b) {
+  if (b.confidence > a.confidence) {
+    a = b;
+    if (label)
+      label[0] = 0;
+  }
+}
 // A frame's label says which product inside the family `match` names ("Axon Body 3", "Chipolo",
 // a drone serial, a Pwnagotchi's own name). Printable ASCII, empty when nothing more is known.
 // It describes `match` only: drop it if a traffic hint or watchlist rule later replaces the match.

@@ -166,7 +166,7 @@ static void learnClock(uint32_t now) {
     clockAt = now;
   }
 }
-static Alert toAlert(const ReconDevice &d, uint32_t now) {
+static Alert toAlert(const ReconDevice &d) {
   Alert a;
   a.match = {d.family, d.confidence, d.evidence};
   snprintf(a.name, sizeof(a.name), "%s", d.name);
@@ -177,13 +177,9 @@ static Alert toAlert(const ReconDevice &d, uint32_t now) {
   a.sightings = d.encounters;
   a.ble = d.ble;
   a.addressType = d.addressType;
-  if (d.restored) {
-    // Screens age rows against millis(); give history its real age when the clock allows.
-    uint32_t clock = reconClock(), age = INT32_MAX;
-    if (clock && d.utc && clock >= d.utc && clock - d.utc < INT32_MAX / 1000)
-      age = (clock - d.utc) * 1000;
-    a.at = a.firstAt = now - age;
-  }
+  memcpy(a.addr, d.mac, 6);
+  if (!ledgerTag(d.label))
+    snprintf(a.label, sizeof(a.label), "%s", d.label);
   return a;
 }
 void reconRefresh() {
@@ -200,12 +196,6 @@ void reconRefresh() {
   }
   t.maintain(now);
   t.counts(counts, now);
-  // Rows keep their place between refreshes, so a tap lands on the row that was drawn.
-  uint16_t order[HistoryCapacity];
-  unsigned n = t.sorted(order, HistoryCapacity, now, ReconSort::Priority);
-  for (unsigned i = 0; i < n; ++i)
-    app.history[i] = toAlert(t.at(order[i]), now);
-  app.historyCount = n;
   // Lifetime counters reach flash at most once a minute.
   countersDirty |= t.takeLifetimeDirty();
   if (countersDirty && uint32_t(now - countersAt) >= 60000) {
@@ -223,6 +213,15 @@ bool reconIgnore(ReconDevice &row, bool ignore) {
   reconRefresh();
   return changed || row.ignored == ignore;
 }
+void reconClearIgnores() {
+  policy.ignores.clear();
+  reconTable().applyIgnores(policy.ignores);
+  reconSave();
+  reconRefresh();
+}
+ReconDevice *reconFind(const ReconRow &row) {
+  return reconTable().find(row.mac, row.ble, row.addressType, row.family);
+}
 // List the device and decide whether it may interrupt. Listing never depends on the alert
 // threshold; only a family the user has switched off is left out.
 static void recon(const Contact &c, const uint8_t *mac, const Packet &p) {
@@ -235,6 +234,7 @@ static void recon(const Contact &c, const uint8_t *mac, const Packet &p) {
   s.addressType = p.addressType;
   s.match = c.match;
   s.name = c.name;
+  s.label = c.label;
   s.channel = p.ble ? 0 : c.channel;
   s.rssi = c.rssi;
   s.utc = reconClock();
@@ -254,19 +254,19 @@ static void recon(const Contact &c, const uint8_t *mac, const Packet &p) {
     row.pendingLog = true;
   if (table.followDue(row)) {
     policy.announceFollow(row, p.at);
-    snprintf(row.label, sizeof(row.label), "following");
-    row.pendingLog = true;
-    Alert a = toAlert(row, p.at);
+    row.pendingLog = true; // The ledger line for a following row says "following".
+    Alert a = toAlert(row);
     a.kind = AlertFollowing;
+    a.followMs = followSpanMs(row);
+    a.followMeters = uint32_t(followSpanMeters(row));
     a.match.evidence = "Heard at 3+ places over 10+ minutes; it may be travelling with you";
     buddyAlert(a);
   } else if (verdict == AlertVerdict::Alert) {
     row.pendingLog = true; // The ledger line for this encounter should say it alerted.
-    buddyAlert(toAlert(row, p.at));
+    buddyAlert(toAlert(row));
   } else if (verdict == AlertVerdict::Flood) {
-    snprintf(row.label, sizeof(row.label), "flood");
-    row.alerted = row.pendingLog = true;
-    Alert a = toAlert(row, p.at);
+    row.flood = row.alerted = row.pendingLog = true; // Its ledger line says "flood".
+    Alert a = toAlert(row);
     a.kind = AlertFlood;
     snprintf(a.name, sizeof(a.name), "Many new addresses at once");
     a.match.evidence = "40+ new addresses of this kind in a minute; a spam gadget or a crowd";
@@ -299,7 +299,7 @@ static Contact &findContact(const uint8_t *mac, bool ble, uint8_t type, uint32_t
 }
 static void process(const Packet &p) {
   Match m;
-  char name[64]{}, auth[64] = "[BLE]";
+  char name[64]{}, auth[64] = "[BLE]", label[LabelChars]{};
   uint8_t mac[6];
   bool loggable = p.ble;
   memcpy(mac, p.mac, 6);
@@ -310,7 +310,9 @@ static void process(const Packet &p) {
       return;
     }
     m = f.match;
-    promote(m, traffic.ble(p.data, p.len, p.mac, p.at));
+    snprintf(label, sizeof(label), "%s", f.label);
+    // The label names the signature's product: it goes when a hint or a rule replaces the match.
+    promoteLabelled(m, label, traffic.ble(p.data, p.len, p.mac, p.at));
     snprintf(name, sizeof(name), "%s", f.name);
   } else {
     auto f = classifyWifi(p.data, p.len);
@@ -320,13 +322,15 @@ static void process(const Packet &p) {
     }
     m = f.match;
     loggable = f.loggable;
-    promote(m, traffic.wifi(p.data, p.len, p.at));
+    snprintf(label, sizeof(label), "%s", f.label);
+    promoteLabelled(m, label, traffic.wifi(p.data, p.len, p.at));
     memcpy(mac, f.mac, 6);
     snprintf(name, sizeof(name), "%s", f.name);
     snprintf(auth, sizeof(auth), "%s", f.auth);
   }
-  promote(m, watchlist.match(mac, !p.ble || p.addressType == 0, name, p.ble ? p.data : nullptr,
-                             p.ble ? p.len : 0));
+  promoteLabelled(m, label,
+                  watchlist.match(mac, !p.ble || p.addressType == 0, name, p.ble ? p.data : nullptr,
+                                  p.ble ? p.len : 0));
   // Unknown probe/data senders need no long-lived contact or WiGLE row.
   if (!loggable && m.family == Family::None)
     return;
@@ -337,8 +341,10 @@ static void process(const Packet &p) {
   if (*name)
     snprintf(c.name, sizeof(c.name), "%s", name);
   // Classification persists for one encounter; do not retain an old identity indefinitely.
-  if (m.confidence >= c.match.confidence)
+  if (m.confidence >= c.match.confidence) {
     c.match = m;
+    snprintf(c.label, sizeof(c.label), "%s", label);
+  }
   if (loggable)
     logObservation(c, auth, p.generation, p.at);
   if (c.match.family != Family::None)

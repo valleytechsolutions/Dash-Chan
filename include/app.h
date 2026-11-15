@@ -7,6 +7,7 @@
 #include "personality.h"
 #include "progression.h"
 #include "recon.h"
+#include "recon_view.h"
 #include "themes.h"
 #include "voice.h"
 #include "watchlist.h"
@@ -65,6 +66,7 @@ struct Contact {
   bool used = false, ble = false;
   uint8_t addressType = 0, mac[6]{};
   char name[64]{};
+  char label[LabelChars]{}; // Product named by the signature behind `match`; empty if none.
   int rssi = 0;
   uint8_t channel = 0;
   Match match;
@@ -79,7 +81,10 @@ struct Alert {
   uint32_t firstAt = 0, sightings = 1;
   bool ble = false;
   uint8_t addressType = 0;
-  uint8_t kind = 0; // AlertKind: what sort of news this is.
+  uint8_t kind = 0;                        // AlertKind: what sort of news this is.
+  char label[LabelChars]{};                // Product label of the row that alerted, if any.
+  uint8_t addr[6]{};                       // Its address, to find the row again from the card.
+  uint32_t followMs = 0, followMeters = 0; // AlertFollowing: the company so far.
 };
 // A device, a burst of new tracker addresses, or a tracker that has travelled with us.
 enum AlertKind : uint8_t { AlertDevice, AlertFlood, AlertFollowing };
@@ -98,8 +103,8 @@ struct State {
   Feeling feeling = Feeling::Content;
   Life life;
   float gaze = 0;
-  Alert active, history[HistoryCapacity];
-  uint8_t historyCount = 0;
+  Alert active;
+  LedgerState ledger = LedgerState::NoCard; // Whether /events/recon.csv is taking rows.
   char message[96] = "Hey, road buddy. Let's explore!";
   char storageError[80]{};
   char logPath[96]{};
@@ -151,6 +156,8 @@ void buddyDriveStart(bool fix);
 void buddyDriveEnd(uint32_t finds);
 void buddyDiscovery(const uint8_t mac[6], const char *ssid = nullptr, bool open = false);
 void buddyAlert(const Alert &, bool demo = false);
+void buddyReconPeek(Family top); // The Recon page was opened; `top` is the top live threat or None.
+void buddyReconIgnored();        // The owner put a device on the ignore list.
 void buddyDismiss();
 void buddyMotion(bool);
 void buddySoundPreview();
@@ -173,8 +180,16 @@ void printStatus();
 bool applyAvatarConfig(const char *line);
 void printAvatarConfig();
 // Recon engine (src/radio.cpp). The table holds one row per classified device, whatever the
-// alert threshold; app.history is a copy of its first rows in priority order for older screens.
-// Everything here runs on the loop task, like the UI: no locking, and no calls from callbacks.
+// alert threshold.
+//
+// Threading: the table, the policy and the counts are only ever touched from the Arduino loop
+// task. The Wi-Fi promiscuous callback and the NimBLE scan callback run on other tasks, but all
+// they do is copy the packet into a FreeRTOS queue; radioTick() drains that queue on the loop
+// task and is the only writer of live rows. The ledger (storageTick), the buddy, the serial
+// console and the UI run from the same loop(), and the upload worker task never reads the table.
+// So there is no lock, and none of these functions may be called from a callback or another
+// task. The screens still draw from ReconRow copies (recon_view.h) rather than from the table:
+// that keeps the rows under a finger steady between refreshes, not for thread safety.
 ReconTable &reconTable();         // Rows, sorted views, lifetime counters. See recon.h.
 AlertPolicy &reconPolicy();       // The ignore list and the alert timers.
 const ReconCounts &reconCounts(); // Live and total rows per tier and family; fresh to 0.5 s.
@@ -182,6 +197,9 @@ AlertContext reconContext();      // The settings and road state the policy is d
 uint32_t reconClock();            // Seconds since 2000 UTC, or 0 until GPS or the RTC tells us.
 // Put a device on, or take it off, the ignore list; saved at once. False if the list is full.
 bool reconIgnore(ReconDevice &, bool ignore);
-void reconRefresh(); // Recount and refill app.history now, e.g. after changing a filter.
+void reconClearIgnores(); // Empty the ignore list; saved at once.
+// The live row a snapshot was copied from, or null once it has left the table.
+ReconDevice *reconFind(const ReconRow &);
+void reconRefresh(); // Recount now, e.g. after changing a filter.
 void reconSave();    // Persist the ignore list and the lifetime per-family counters (NVS).
 } // namespace dash

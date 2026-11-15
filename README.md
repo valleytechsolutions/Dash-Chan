@@ -22,9 +22,15 @@ This remains a beta: outdoor movement, detection performance, and WiGLE server a
 
 | Recon + Buddy | Full Face |
 |---|---|
-| ![Recon view: pet beside nearby clues](site/assets/ui-recon.png) | ![Full Face view with Wi-Fi and BLE collection counters](site/assets/ui-face.png) |
+| ![Recon view: pet beside the RECON panel with its radar and device rows](site/assets/ui-recon.png) | ![Full Face view with Wi-Fi and BLE collection counters](site/assets/ui-face.png) |
 
-Tap **FACE / RECON** on the home screen. Recon keeps three recent clues beside the pet; tap a clue for evidence, confidence and age. Both views show approximate distinct Wi-Fi/BLE addresses saved **during the current drive**, not raw packets. `~` marks conservative Bloom-filter counting; BLE address rotation can represent the same physical device more than once. Background watch still detects clues but does not collect a drive or feed the pet.
+Tap **FACE / RECON** on the home screen. Until a drive starts, Dash-Chan is a recon tool: the **RECON** panel beside the pet shows a small radar with one dot per device in range and up to four rows, most important first. Each row has a tier colour (red surveillance, violet hacker gear, amber attack patterns, blue trackers, grey beacons), a short name, signal strength, an arrow when the signal is getting stronger or weaker, and how often it has been met. Devices that have gone out of range stay listed, dimmed, with their age. Tap a row for its device card, or the panel for the full **Recon page**. The radar is decoration plus signal strength: a dot's distance from the centre follows RSSI, its bearing is arbitrary. Once a drive is recording, the panel shrinks to the top two rows and this drive's counters, so it is a wardriving pet that still watches. Full Face keeps a small **RECON n** chip in the corner.
+
+| Recon page | Device card | Detection settings |
+|---|---|---|
+| ![Recon page, LIVE tab](site/assets/ui-recon-list.png) | ![Device card for a plate-reader vendor radio](site/assets/ui-recon-device.png) | ![Detection settings](site/assets/ui-recon-settings.png) |
+
+Both views show approximate distinct Wi-Fi/BLE addresses saved **during the current drive**, not raw packets. `~` marks conservative Bloom-filter counting; BLE address rotation can represent the same physical device more than once. Background watch still detects clues but does not collect a drive or feed the pet.
 
 Every 25 eligible Wi-Fi discoveries advances one level. XP continues across restarts. Saved discoveries get a quick happy bounce and pixel sparks; each level earns a confetti celebration. Alerts take visual priority. **All buddies, eyes, colors and outfits are available immediately.** Petting builds affection, and only wardriving earns food.
 
@@ -132,9 +138,11 @@ Choose **Off / Gentle / Lively** head motion and **Spicy / Gentle** banter under
 
 ## Alerts that know when to be quiet
 
-The same continuing encounter is announced once by default. Its recent entry continues updating RSSI, count, and last-seen time. After **five minutes absent**, it can announce again. Stronger evidence may alert again after cooldowns. A separate **60/180/300-second family quiet period** reduces repeated notifications from rotating addresses; it does not claim those addresses belong to the same device. Optional five-minute reminders are off by default.
+Everything Dash-Chan can classify is **listed**; only some of it **alerts**. An alert is a tier-coloured card with the name, signal strength and a **DETAILS** button; tapping anywhere else dismisses it. Two alerts are about behaviour rather than brand: a **tracker flood** (dozens of new tag addresses in a minute, probably a spam gadget) and a tag that has **stayed with you** across several places. With head motion on, the flinch is bigger for a closer, more serious device and is held to a small nod while driving.
 
-There are 128 encounter-ledger slots and 32 browsable recent entries. Very dense areas can evict older state. A default medium-or-higher confidence threshold keeps weak name/vendor clues quieter. [Exact methods, limits, and personal watchlists](docs/DETECTIONS.md).
+The same continuing encounter is announced once by default. Its row keeps updating RSSI, count, and last-seen time. After **five minutes absent**, it can announce again. Stronger evidence may alert again after cooldowns. A separate **60/180/300-second family quiet period** reduces repeated notifications from rotating addresses; it does not claim those addresses belong to the same device. Optional five-minute reminders are off by default.
+
+The list holds 256 devices and the last 64 come back from the SD card after a restart. Very dense areas can evict older rows. **MENU → Detection** also has **Quiet road** (tags and Ring cameras are listed but silent while driving), **Auto snooze** (after 5 or 10 alerts a device must come closer to speak again), a **device type** filter, and the count of devices you have marked as your own with **CLEAR ALL**. A default medium-or-higher confidence threshold keeps weak name/vendor clues quieter. [Exact methods, limits, and personal watchlists](docs/DETECTIONS.md).
 
 ## Hardware and first use
 
@@ -151,12 +159,13 @@ Use the [web flasher](https://valleytech-dash-chan.pages.dev/#install) in deskto
 |---|---|
 | Face: START / STOP & SAVE | Open or close a wardrive |
 | Face tap / top touch sensor | Affection; no food |
-| Alert speech bubble | Dismiss reaction; continue listening |
+| Alert card or bubble | Dismiss reaction; continue listening. **DETAILS** opens the device card |
+| RECON panel / RECON chip | Open the Recon page; a row opens that device's card |
 | MENU → Buddy + Look | Five original buddies, custom buddy, four themes, Avatar Studio (face, outfit, extras, style packs) and field-kit preference |
 | MENU → Sound & Voice | Master mute, voice mode (OFF / ALERTS / ALL), tones, volume, tone preview, TEST VOICE, demo |
 | MENU → Personality | Motion, banter, pet |
-| MENU → Detection | Confidence, family quiet period, optional reminders |
-| MENU → Recent Signals | Paginated evidence and last-seen details |
+| MENU → Detection | Confidence, family quiet period, optional reminders, quiet road, auto snooze, device types, ignored devices |
+| MENU → Recon List | LIVE (in range now), SEEN (everything, including rows restored from the SD ledger), STATS (lifetime counts); tap a row for its card and **IGNORE** |
 | MENU → GPS & SD | GPS quality, rows/drops, error text, module presets, receive pins, baud finder, wiring help, SD retry |
 
 ## Logs and GPS quality
