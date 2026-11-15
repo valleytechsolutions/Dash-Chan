@@ -32,6 +32,7 @@ void loadSettings() {
   app.life.snacks = p.getUInt("snacks", 0);
   app.life.bestDrive = p.getUInt("bestdrive", 0);
   app.life.boots = p.getUInt("boots", 0);
+  app.life.lastSeen = p.getUInt("lastseen", 0);
   app.settings.theme = Theme(p.getUChar("theme", 0) % 4);
   app.settings.tone = AlertTone(p.getUChar("tone", 0) % 5);
   app.settings.volume = p.getUChar("volume", 245);
@@ -84,6 +85,7 @@ void saveSettings() {
   p.putUInt("snacks", app.life.snacks);
   p.putUInt("bestdrive", app.life.bestDrive);
   p.putUInt("boots", app.life.boots);
+  p.putUInt("lastseen", app.life.lastSeen);
   p.putUChar("theme", uint8_t(app.settings.theme));
   p.putUChar("tone", uint8_t(app.settings.tone));
   p.putUChar("volume", app.settings.volume);

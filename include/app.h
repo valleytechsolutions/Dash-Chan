@@ -47,6 +47,7 @@ struct Settings {
 // Lifetime memories, saved with the settings so the pet remembers you across restarts.
 struct Life {
   uint32_t pets = 0, drives = 0, snacks = 0, bestDrive = 0, boots = 0;
+  uint32_t lastSeen = 0; // Seconds since 2000 (UTC) when we last knew the time; 0 if never.
 };
 struct Contact {
   bool used = false, ble = false;
@@ -129,6 +130,7 @@ void buddyBegin();
 void buddyTick();
 void buddyPet(bool allowVoice = true);
 void buddyPoke();
+void buddyGreet();
 void buddySay(Topic);
 void buddyDriveStart(bool fix);
 void buddyDriveEnd(uint32_t finds);

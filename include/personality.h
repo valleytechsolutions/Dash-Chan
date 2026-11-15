@@ -56,7 +56,7 @@ inline void decayNeeds(uint8_t &energy, uint8_t &bond, Feeling f, bool onTheRoad
   bool napping = f == Feeling::Napping;
   if (energy > 10 && (!napping || minute % 5 == 0))
     --energy;
-  if (bond > 10 && !napping && !onTheRoad && minute % 2 == 0)
+  if (bond > 10 && !onTheRoad && minute % (napping ? 10 : 2) == 0)
     --bond;
 }
 
@@ -95,6 +95,15 @@ enum class Topic : uint8_t {
   Outfit,
   HiddenNet,
   OpenNet,
+  AlertBodyCam,
+  AlertCamera,
+  AlertTracker,
+  AlertGlasses,
+  AlertFlipper,
+  AlertGadget,
+  AlertDrone,
+  AlertWatchlist,
+  AlertOdd,
   Count
 };
 constexpr unsigned TopicCount = unsigned(Topic::Count);
@@ -353,6 +362,37 @@ inline constexpr Line Lines[] = {
     {Topic::OpenNet, Who::Any, false, "An open network! Free samples!"},
     {Topic::OpenNet, Who::Any, false, "No password on that one. Living dangerously."},
     {Topic::OpenNet, Who::Any, false, "Wide open Wi-Fi. Somebody's feeling generous."},
+
+    // Signal alerts. Kept factual enough to be useful at a glance.
+    {Topic::AlertBodyCam, Who::Any, false, "Possible body-camera signal nearby."},
+    {Topic::AlertBodyCam, Who::Any, false, "Heads up: body-camera signal, maybe."},
+    {Topic::AlertBodyCam, Who::Any, false, "Body-cam vibes nearby. Just so you know."},
+    {Topic::AlertCamera, Who::Any, false, "Smile! Possible camera nearby."},
+    {Topic::AlertCamera, Who::Any, false, "Something camera-shaped is watching."},
+    {Topic::AlertCamera, Who::Any, false, "Camera signal. I'm waving at it."},
+    {Topic::AlertTracker, Who::Any, false, "A little tracker signal just popped up!"},
+    {Topic::AlertTracker, Who::Any, false, "Tracker nearby. Yours, I hope?"},
+    {Topic::AlertTracker, Who::Any, false, "Something trackable is tagging along."},
+    {Topic::AlertGlasses, Who::Any, false, "Glasses signal! Is this my good side?"},
+    {Topic::AlertGlasses, Who::Any, false, "Smart glasses nearby. Act cool."},
+    {Topic::AlertGlasses, Who::Any, false, "Camera glasses! Everybody look busy."},
+    {Topic::AlertFlipper, Who::Any, false, "A wild dolphin gadget appeared!"},
+    {Topic::AlertFlipper, Who::Any, false, "Flipper nearby! Hide the garage remotes."},
+    {Topic::AlertFlipper, Who::Any, false, "Dolphin on the airwaves. Click click."},
+    {Topic::AlertGadget, Who::Any, false, "Ooh, a fellow gadget! Friend or foe?"},
+    {Topic::AlertGadget, Who::Any, false, "Hacker toy detected. Professional respect."},
+    {Topic::AlertGadget, Who::Any, false, "Another little radio gremlin nearby."},
+    {Topic::AlertGadget, Who::Any, false, "Someone else is out here sniffing too."},
+    {Topic::AlertDrone, Who::Any, false, "Drone nearby! Look up. Wave."},
+    {Topic::AlertDrone, Who::Any, false, "Something is buzzing around up there."},
+    {Topic::AlertDrone, Who::Any, false, "Remote ID ping. Tiny pilot nearby."},
+    {Topic::AlertWatchlist, Who::Any, false, "One from your watchlist just showed up!"},
+    {Topic::AlertWatchlist, Who::Any, false, "Watchlist hit! You asked me to tell you."},
+    {Topic::AlertWatchlist, Who::Any, false, "That's one of yours. The list, I mean."},
+    {Topic::AlertOdd, Who::Any, false, "Psst. I spotted an interesting signal!"},
+    {Topic::AlertOdd, Who::Any, false, "Hm. The airwaves just did something weird."},
+    {Topic::AlertOdd, Who::Any, false, "That's unusual. Logging it."},
+    {Topic::AlertOdd, Who::Any, false, "Something odd nearby. Stay curious."},
 };
 constexpr unsigned LineCount = sizeof(Lines) / sizeof(Lines[0]);
 
@@ -525,6 +565,53 @@ inline bool driveSummaryLine(char *out, size_t size, uint32_t finds, bool record
            (unsigned long)finds);
   return true;
 }
+// ---- Time apart -----------------------------------------------------------------------------
+// The pet keeps living while the power is off. Time comes from GPS (or the board clock once GPS
+// has set it), as seconds since 2000-01-01 UTC; 0 means "unknown".
+inline uint32_t utcSeconds(const char *stamp) { // "YYYY-MM-DD HH:MM:SS"
+  unsigned y, mo, d, h, mi, s;
+  if (!stamp || sscanf(stamp, "%4u-%2u-%2u %2u:%2u:%2u", &y, &mo, &d, &h, &mi, &s) != 6)
+    return 0;
+  if (y < 2024 || y > 2099 || mo < 1 || mo > 12 || d < 1 || d > 31 || h > 23 || mi > 59 || s > 60)
+    return 0;
+  static constexpr uint16_t before[] = {0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334};
+  uint32_t years = y - 2000;
+  uint32_t days =
+      years * 365 + (years + 3) / 4 + before[mo - 1] + (d - 1) + (y % 4 == 0 && mo > 2 ? 1 : 0);
+  return days * 86400u + h * 3600u + mi * 60u + s;
+}
+constexpr uint32_t MaxAwayHours = 24 * 60;
+inline uint32_t awayHours(uint32_t lastSeen, uint32_t now) {
+  if (!lastSeen || !now || now <= lastSeen)
+    return 0;
+  uint32_t hours = (now - lastSeen) / 3600;
+  return hours > MaxAwayHours ? MaxAwayHours : hours;
+}
+// Being left alone costs fuel and love, but never below a floor: no starving, no grudges.
+inline void applyAway(uint8_t &energy, uint8_t &bond, uint32_t hours) {
+  uint32_t fuel = hours * 2, love = hours;
+  energy = uint8_t(energy > 15 + fuel ? energy - fuel : energy < 15 ? energy : 15);
+  bond = uint8_t(bond > 20 + love ? bond - love : bond < 20 ? bond : 20);
+}
+constexpr uint32_t MissedYouAfterHours = 8;
+inline bool awayLine(char *out, size_t size, uint32_t hours, uint32_t random) {
+  if (hours < MissedYouAfterHours)
+    return false;
+  if (hours < 48) {
+    static const char *forms[] = {"You were gone %lu hours. I counted.",
+                                  "%lu hours! Where did you go?",
+                                  "%lu hours without snacks. I survived."};
+    snprintf(out, size, forms[random % 3], (unsigned long)hours);
+  } else {
+    static const char *forms[] = {"%lu days! I thought we got towed.",
+                                  "You're back! It's been %lu days.",
+                                  "%lu days alone. I named the dust."};
+    snprintf(out, size, forms[random % 3], (unsigned long)(hours / 24));
+  }
+  return true;
+}
+inline constexpr const char *FirstHello = "Hi! I'm new here. Tap me to say hello!";
+
 // A remark about a network the pet just "ate", quoting its real (sanitized, shortened) name.
 constexpr unsigned SsidQuoteChars = 16;
 inline bool ssidLine(char *out, size_t size, const char *ssid, uint32_t random) {

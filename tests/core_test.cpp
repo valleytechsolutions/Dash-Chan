@@ -1,6 +1,7 @@
 #include "detector.h"
 #include "encounters.h"
 #include "gps_support.h"
+#include "home_view.h"
 #include "idle_motion.h"
 #include "nutrition.h"
 #include "personality.h"
@@ -537,7 +538,7 @@ int main() {
     CHECK(fuel == 30 && bond == 45); // Driving together never costs affection.
     for (uint32_t minute = 1; minute <= 10; ++minute)
       decayNeeds(fuel, bond, Feeling::Napping, false, minute);
-    CHECK(fuel == 28 && bond == 45);
+    CHECK(fuel == 28 && bond == 44); // Asleep: a slow trickle only.
     fuel = bond = 10;
     decayNeeds(fuel, bond, Feeling::Content, false, 2);
     CHECK(fuel == 10 && bond == 10);
@@ -595,6 +596,46 @@ int main() {
       for (bool record : {false, true})
         CHECK(driveSummaryLine(line, sizeof(line), finds, record) && strlen(line) <= BubbleChars);
     CHECK(driveSummaryLine(line, sizeof(line), 42, true) && strstr(line, "Record"));
+    // Time apart: parsing, clamping, floors and the welcome-back line.
+    CHECK(utcSeconds("2000-01-01 00:00:00") == 0); // Before the supported range.
+    CHECK(utcSeconds("2024-01-01 00:00:00") == 8766u * 86400u);
+    CHECK(utcSeconds("2024-03-01 00:00:00") - utcSeconds("2024-02-28 00:00:00") == 2 * 86400u);
+    CHECK(utcSeconds("2025-03-01 00:00:00") - utcSeconds("2025-02-28 00:00:00") == 86400u);
+    CHECK(utcSeconds("2026-11-15 12:30:05") - utcSeconds("2026-11-14 12:30:00") == 86405u);
+    CHECK(!utcSeconds("") && !utcSeconds(nullptr) && !utcSeconds("2026-13-01 00:00:00") &&
+          !utcSeconds("garbage") && !utcSeconds("1999-01-01 00:00:00"));
+    uint32_t then = utcSeconds("2026-11-01 08:00:00");
+    CHECK(awayHours(then, then + 3 * 3600 + 59) == 3 && !awayHours(0, then) && !awayHours(then, 0));
+    CHECK(!awayHours(then, then - 500) && awayHours(then, then + 400u * 86400u) == MaxAwayHours);
+    fuel = 80;
+    bond = 70;
+    applyAway(fuel, bond, 10);
+    CHECK(fuel == 60 && bond == 60);
+    applyAway(fuel, bond, MaxAwayHours);
+    CHECK(fuel == 15 && bond == 20);
+    fuel = 12;
+    bond = 14;
+    applyAway(fuel, bond, 50); // Already below the floor: absence never raises or lowers it.
+    CHECK(fuel == 12 && bond == 14);
+    CHECK(!awayLine(line, sizeof(line), MissedYouAfterHours - 1, 0));
+    for (uint32_t r = 0; r < 3; ++r)
+      for (uint32_t hours : {MissedYouAfterHours, 47u, 48u, MaxAwayHours})
+        CHECK(awayLine(line, sizeof(line), hours, r) && strlen(line) <= BubbleChars);
+    CHECK(strlen(FirstHello) <= BubbleChars);
+    CHECK(!strcmp(rankName(1), "Hatchling") && !strcmp(rankName(4), "Rookie") &&
+          !strcmp(rankName(5), "Scout") && !strcmp(rankName(1000), "Legend"));
+    // Speech bubbles: any line the buddy can say must wrap into the bubble without loss.
+    for (const auto &l : Lines)
+      for (int width : {26, 47}) {
+        char rows[3][64];
+        int n = homeui::wrapLines(l.text, width, rows, 3);
+        std::string joined;
+        for (int i = 0; i < n; ++i) {
+          CHECK(int(strlen(rows[i])) <= width);
+          joined += (i ? " " : "") + std::string(rows[i]);
+        }
+        CHECK(joined == l.text);
+      }
   }
   for (int i = 0; i < 50000; ++i) {
     size_t n = random() % 768;

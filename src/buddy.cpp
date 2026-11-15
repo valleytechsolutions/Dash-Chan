@@ -23,7 +23,7 @@ static PetCombo petCombo;
 // lastTouch is the "someone is paying attention to me" clock that drives boredom and naps.
 static uint32_t lastTouch = 0, chatterGap = 20000, moodAt = 0, moodHold = 0, burstAt = 0,
                 lastFindAt = 0, lastJackpot = 0, lastRemark = 0, stoppedAt = 0, noFixAt = 0,
-                needMinute = 0;
+                needMinute = 0, lastSnackFuss = 0;
 static unsigned burstFinds = 0;
 static bool greeted = false;
 struct Note {
@@ -74,6 +74,44 @@ void buddyPoke() {
   if (app.feeling == Feeling::Napping && !app.alertOpen)
     buddySay(Topic::Wake); // buddyTick re-evaluates the feeling on the next pass.
 }
+// Someone leaned in (proximity sensor). A hello, not a pet: it wakes the buddy and warms it a
+// little without counting toward pets or combos.
+void buddyGreet() {
+  bool asleep = app.feeling == Feeling::Napping;
+  lastTouch = millis();
+  app.bond = std::min(100, int(app.bond) + 1);
+  feel(Mood::Love, 2500);
+  buddySay(asleep ? Topic::Wake : Topic::Greet);
+}
+// Wall-clock time, when anything has told us what it is. Seconds since 2000 UTC, or 0.
+static uint32_t clockBase = 0, clockAt = 0;
+static bool awayChecked = false, rtcSynced = false;
+static uint32_t clockNow(uint32_t now) {
+  return clockBase ? clockBase + uint32_t(now - clockAt) / 1000 : 0;
+}
+static void clockLearn(uint32_t seconds, uint32_t now) {
+  if (!seconds)
+    return;
+  clockBase = seconds;
+  clockAt = now;
+}
+// The first time we learn the time after boot, catch up on the hours spent switched off.
+static bool catchUpOnTimeApart(uint32_t now) {
+  uint32_t seconds = clockNow(now);
+  if (awayChecked || !seconds)
+    return false;
+  awayChecked = true;
+  uint32_t hours = awayHours(app.life.lastSeen, seconds);
+  app.life.lastSeen = seconds;
+  if (!hours)
+    return false;
+  applyAway(app.energy, app.bond, hours);
+  char text[64];
+  if (app.alertOpen || !awayLine(text, sizeof(text), hours, esp_random()))
+    return false;
+  say(text);
+  return true;
+}
 void buddyMotion(bool on) {
   app.settings.motion = on;
   idleMotion.reset(millis());
@@ -94,7 +132,16 @@ void buddyBegin() {
   buddyMotion(app.settings.motion);
   lastNeed = lastChatter = lastSave = lastTouch = lastFindAt = lastJackpot = lastRemark =
       stoppedAt = noFixAt = millis();
+  lastSnackFuss = millis() - 20000;
   ++app.life.boots;
+  // The board clock is only trusted after GPS has set it at least once (year check).
+  if (M5.Rtc.isEnabled()) {
+    auto t = M5.Rtc.getDateTime();
+    char stamp[24];
+    snprintf(stamp, sizeof(stamp), "%04d-%02d-%02d %02d:%02d:%02d", t.date.year, t.date.month,
+             t.date.date, t.time.hours, t.time.minutes, t.time.seconds);
+    clockLearn(utcSeconds(stamp), millis());
+  }
 }
 void buddyPet(bool allowVoice) {
   uint32_t now = millis();
@@ -191,7 +238,11 @@ void buddyDiscovery(const uint8_t mac[6], const char *ssid, bool open) {
   if (!app.session.armed || !app.food.discover(mac))
     return;
   uint32_t now = millis();
-  app.discoveryAt = lastFindAt = lastTouch = now;
+  lastFindAt = lastTouch = now;
+  // In a dense area new networks arrive constantly; cheer at most every few seconds so the
+  // buddy is not stuck mid-bounce for a whole city block.
+  if (!app.discoveryAt || uint32_t(now - app.discoveryAt) > 3000)
+    app.discoveryAt = now;
   if (uint32_t(now - burstAt) > 30000) {
     burstAt = now;
     burstFinds = 0;
@@ -219,16 +270,22 @@ void buddyDiscovery(const uint8_t mac[6], const char *ssid, bool open) {
     return;
   uint32_t finds = app.food.discoveries();
   char text[64];
-  if (snack) {
+  // Snacks can come every few seconds downtown. The food meter always moves, but the buddy
+  // only makes a fuss about one when it has been quiet for a while.
+  bool fuss = snack && uint32_t(now - lastSnackFuss) > 20000;
+  if (fuss) {
+    lastSnackFuss = now;
     feel(Mood::Love, 3000);
     chirp(chirpSnack);
   }
   if (finds >= 25 && milestone(finds)) {
     findMilestoneLine(text, sizeof(text), finds, esp_random());
     say(text);
-  } else if (snack && !spoke)
+  } else if (spoke)
+    return;
+  else if (fuss)
     buddySay(stuffed ? Topic::Stuffed : Topic::Snack);
-  else if (spoke)
+  else if (snack)
     return;
   else if (burstFinds == 12 && uint32_t(now - lastJackpot) > 180000) {
     lastJackpot = now;
@@ -263,16 +320,26 @@ void buddyAlert(const Alert &a, bool demo) {
   }
   bool police = a.match.family == Family::Axon;
   unsigned line = demo ? 0 : esp_random() % 3;
-  say(police ? (app.settings.spicy ? (line == 0   ? "PIG DETECTED! ACT NATURAL!"
-                                      : line == 1 ? "Oh man, the fuzz!"
-                                                  : "Wee-woo! Tiny copilot panic!")
-                                   : "Possible body-camera signal nearby.")
-      : a.match.family == Family::Tracker   ? "A little tracker signal just popped up!"
-      : a.match.family == Family::Meta      ? "Glasses signal! Is this my good side?"
-      : a.match.family == Family::Biscuit   ? "Biscuit nearby! Wait... not a snack?"
-      : a.match.family == Family::Flipper   ? "A wild dolphin gadget appeared!"
-      : a.match.family == Family::Pineapple ? "Spicy fruit on the airwaves!"
-                                            : "Psst. I spotted an interesting signal!");
+  Family family = a.match.family;
+  if (police && app.settings.spicy) // These three are tied to the recorded voice clips below.
+    say(line == 0   ? "PIG DETECTED! ACT NATURAL!"
+        : line == 1 ? "Oh man, the fuzz!"
+                    : "Wee-woo! Tiny copilot panic!");
+  else
+    buddySay(police ? Topic::AlertBodyCam
+             : family == Family::Flock || family == Family::Alpr || family == Family::Raven ||
+                     family == Family::Camera
+                 ? Topic::AlertCamera
+             : family == Family::Tracker   ? Topic::AlertTracker
+             : family == Family::Meta      ? Topic::AlertGlasses
+             : family == Family::Flipper   ? Topic::AlertFlipper
+             : family == Family::Drone     ? Topic::AlertDrone
+             : family == Family::Watchlist ? Topic::AlertWatchlist
+             : family == Family::Biscuit || family == Family::Pineapple ||
+                     family == Family::Pwnagotchi || family == Family::Nyanbox ||
+                     family == Family::Halehound
+                 ? Topic::AlertGadget
+                 : Topic::AlertOdd);
   soundActive = false;
   if (app.settings.sound && app.settings.volume && app.settings.tone != AlertTone::Silent) {
     M5.Speaker.stop();
@@ -324,10 +391,26 @@ void buddyTick() {
   if (uint32_t(now - lastNeed) > 60000) {
     lastNeed = now;
     decayNeeds(app.energy, app.bond, app.feeling, onTheRoad(), ++needMinute);
+    if (clockNow(now))
+      app.life.lastSeen = clockNow(now);
   }
+  if (fix) { // GPS time is the source of truth; also teach it to the board clock once.
+    clockLearn(utcSeconds(app.fix.utc), now);
+    if (!rtcSynced && M5.Rtc.isEnabled()) {
+      rtcSynced = true;
+      int y, mo, d, h, mi, sec;
+      if (sscanf(app.fix.utc, "%d-%d-%d %d:%d:%d", &y, &mo, &d, &h, &mi, &sec) == 6)
+        M5.Rtc.setDateTime(
+            {{int16_t(y), int8_t(mo), int8_t(d)}, {int8_t(h), int8_t(mi), int8_t(sec)}});
+    }
+  }
+  bool missedYou = catchUpOnTimeApart(now);
   if (!greeted) { // First words after boot depend on how the pet was left.
     greeted = true;
-    if (!*app.storageError)
+    if (missedYou || *app.storageError) {
+    } else if (app.life.boots <= 1 && !app.life.pets)
+      say(FirstHello);
+    else
       buddySay(app.energy < HungryBelow ? Topic::HelloHungry
                : app.bond < LonelyBelow ? Topic::HelloLonely
                                         : Topic::Hello);

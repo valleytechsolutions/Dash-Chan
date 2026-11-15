@@ -59,11 +59,24 @@ Curious brows, bright eye highlights, paw pads, heart reactions, and open-mouth 
 
 Dash-Chan keeps track of how it feels and talks about that instead of looping one phrase:
 
-- **Feelings:** Content, Hyped, Hungry, Lonely, Bored, Drowsy or Napping, shown beside the XP/Fuel/Love readout. Low fuel or low love brings a pouty face; ignore it for 12 minutes off the road and it dozes off with drifting Zs until you tap or pet it.
-- **No repeats:** more than 230 lines across 33 situations, with extra lines unique to each buddy and a sassier set when Banter is Spicy. Every line in a situation is used once before any comes back, and remarks arrive at irregular gaps.
+- **Feelings:** Content, Hyped, Hungry, Lonely, Bored, Drowsy or Napping, shown as a tag above the buddy. Low fuel or low love brings a pouty face; ignore it for 12 minutes off the road and it dozes off with drifting Zs until you tap or pet it.
+- **No repeats:** about 260 lines across 42 situations, with extra lines unique to each buddy and a sassier set when Banter is Spicy. Every line in a situation is used once before any comes back, and remarks arrive at irregular gaps.
 - **Petting has a combo:** a couple of pets earn love, quick repeats get giggles, and six in a row gets “Okay okay okay! I'm fully petted!” with no extra love.
 - **It notices the drive:** drive starts, red lights, dry stretches, sudden bursts of networks, missing GPS, per-drive milestones, and now and then the real name of a network it just logged (“Ooh, 'CoffeeShop'. Tasty.”).
 - **It remembers:** love, lifetime pets, snacks, drives and your best drive survive restarts. Beat your record and it says so. **MENU → Personality** shows the tally.
+
+- **It reacts differently to each clue:** body cameras, plate readers, trackers, smart glasses, Flippers, drones, watchlist hits and oddities each have their own rotating lines.
+- **It misses you:** time keeps passing while the robot is off. Once GPS (or the board clock, after GPS has set it) knows the time, food and love drop for the hours apart, down to a floor, and after eight hours it tells you how long you were gone.
+- **It grows up:** levels carry ranks, from Hatchling and Rookie through Scout, Ranger, Pathfinder and Signal Sage to Legend.
+
+### The home screen at a glance
+
+- **Top bar:** buddy name and rank, GPS bars with satellite count, and a state pill (WATCHING, REC, NO GPS, NO SD, UPLOAD).
+- **Stage:** the buddy with a feeling tag. Everything it says appears in a speech bubble pointing at it; drive counters for saved Wi-Fi and BLE sit underneath once a drive has started.
+- **Vitals row:** FOOD, LOVE and XP meters that are always visible. A meter turns red and blinks when it is low. Tap the row for the buddy's report card (pets, snacks, drives, best drive).
+- **Full Face** redraws the buddy large from the same shapes, so it stays sharp instead of being a stretched thumbnail.
+
+The buddies themselves were redrawn with outlines, shading and their own details: Mochi's tabby stripes, tail and whiskers; Sprout's wings, horns and claws; Orbit's LED-panel eyes; Wisp's glow rim and hollow eyes; Ember's layered flame.
 
 Love fades slowly when it is awake and alone, never while you are driving together; every snack adds a little. To add or edit lines, open [`include/personality.h`](include/personality.h) — one row per line.
 
@@ -87,7 +100,7 @@ In **Auto** field-kit mode, the pet holds a radar-style antenna and pocket recei
 | Matrix | BWM |
 | ![Matrix theme](site/assets/ui-matrix.png) | ![BWM theme](site/assets/ui-bwm.png) |
 
-These are captures of the running firmware. The supplied **BWM and VTS logos** appear side by side at boot before the pet wakes up.
+These screens are rendered on a PC by `tools/preview.py` from the same drawing code the firmware runs; the LCD differs slightly in color and edge smoothing. The supplied **BWM and VTS logos** appear side by side at boot before the pet wakes up.
 
 ## Two jobs, always together
 

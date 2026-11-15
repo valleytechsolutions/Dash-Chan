@@ -193,8 +193,7 @@ void hardwareTick() {
       if (!near && value > 250 && !app.alertOpen && !app.session.armed &&
           (!app.greetAt || uint32_t(now - app.greetAt) > 60000)) {
         app.greetAt = now;
-        buddyPet(false);
-        buddySay(Topic::Greet);
+        buddyGreet();
       }
       if (value > 250)
         near = true;

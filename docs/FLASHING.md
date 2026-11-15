@@ -23,7 +23,7 @@ If port selection is canceled, reconnect normally. During writing, keep USB conn
 - Close all other users of the serial port, including the avatar uploader. Installer and avatar upload cannot own it simultaneously.
 - If the installer completed but the face has not appeared, briefly press RESET.
 - Do not use “erase flash” as a connection fix. It destroys NVS and can remove factory servo calibration.
-- GPS WAIT does not mean installation failed. Confirm blue Port C, the selected baud, and a clear sky view.
+- NO GPS (shown while recording without a fix) does not mean installation failed. Confirm blue Port C, the selected baud, and a clear sky view.
 
 ## Manual flashing
 
