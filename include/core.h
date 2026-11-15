@@ -60,7 +60,7 @@ inline const char *familyName(Family f) {
                                       "Serial / skimmer",
                                       "Raven candidate",
                                       "Remote ID drone",
-                                      "Camera / Ring vendor",
+                                      "Camera vendor",
                                       "Proximity beacon",
                                       "Disconnect burst",
                                       "SSID conflict",
@@ -121,6 +121,10 @@ inline void promote(Match &a, Match b) {
   if (b.confidence > a.confidence)
     a = b;
 }
+// A frame's label says which product inside the family `match` names ("Axon Body 3", "Chipolo",
+// a drone serial, a Pwnagotchi's own name). Printable ASCII, empty when nothing more is known.
+// It describes `match` only: drop it if a traffic hint or watchlist rule later replaces the match.
+constexpr size_t LabelChars = 24;
 struct WifiFrame {
   bool valid = false;
   bool loggable = false;
@@ -128,11 +132,13 @@ struct WifiFrame {
   char name[33]{};
   char auth[64] = "[UNKNOWN][ESS]";
   Match match;
+  char label[LabelChars]{};
 };
 struct BleFrame {
   bool valid = false;
   char name[64]{};
   Match match;
+  char label[LabelChars]{};
 };
 inline bool parseRsn(const uint8_t *p, size_t n, bool &psk, bool &sae, bool &enterprise,
                      bool &owe) {

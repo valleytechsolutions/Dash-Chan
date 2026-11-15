@@ -8,6 +8,7 @@
 #include "petting.h"
 #include "profile.h"
 #include "progression.h"
+#include "signature_tests.h"
 #include "traffic.h"
 #include "travel.h"
 #include "upload_csv.h"
@@ -266,11 +267,12 @@ int main() {
   CHECK(classifyWifi(flockProbe.data(), flockProbe.size()).match.confidence < Confidence::Medium);
   flockProbe.pop_back();
   CHECK(!classifyWifi(flockProbe.data(), flockProbe.size()).valid);
-  // Multiple APs sharing an SSID are ordinary; an open/protected conflict is only a weak hint.
+  // Multiple APs sharing an SSID are ordinary; an open/protected conflict between two makers
+  // is a hint, never proof. The same-maker case is in signature_tests.h.
   TrafficHints conflict;
   auto openAp = beacon("Test mesh");
   auto protectedAp = openAp;
-  protectedAp[21] = 4;
+  protectedAp[17] = 0x21;
   for (uint32_t i = 0; i < 4; ++i) {
     CHECK(conflict.wifi(openAp.data(), openAp.size(), 100 + i).family == Family::None);
     CHECK(conflict.wifi(protectedAp.data(), protectedAp.size(), 200 + i).family == Family::None);
@@ -280,7 +282,7 @@ int main() {
     auto hit = conflict.wifi(protectedAp.data(), protectedAp.size(), 300 + i);
     CHECK((hit.family == Family::EvilTwin) == (i == 2));
     if (i == 2)
-      CHECK(hit.confidence == Confidence::Low);
+      CHECK(hit.confidence == Confidence::Medium);
   }
   CHECK(conflict.wifi(protectedAp.data(), protectedAp.size(), 31000).family == Family::None);
   TrafficHints traffic;
@@ -338,7 +340,7 @@ int main() {
   ad(b, 3, {0x5f, 0xfd});
   f = classifyBle(b.data(), b.size(), mac, true);
   CHECK(f.valid && f.match.family == Family::Meta);
-  CHECK(f.match.confidence == Confidence::Low);
+  CHECK(f.match.confidence == Confidence::Medium);
   ad(b, 0xff, {0x53, 0x0d});
   f = classifyBle(b.data(), b.size(), mac, true);
   CHECK(f.valid && f.match.family == Family::Meta && f.match.confidence == Confidence::Medium);
@@ -942,6 +944,7 @@ int main() {
       }
     }
   }
+  signatureTests();
   for (int i = 0; i < 50000; ++i) {
     size_t n = random() % 768;
     std::vector<uint8_t> q(n);
