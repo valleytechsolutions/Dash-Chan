@@ -2,6 +2,8 @@
 #include "avatars.h"
 #include "boot_logos.h"
 #include "home_view.h"
+#include "profile.h"
+#include "studio_view.h"
 #include "travel.h"
 #include "uploads.h"
 #include <M5StackChan.h>
@@ -92,6 +94,10 @@ static BuddyLook buddyLook() {
   look.headwear = app.settings.customHeadwear;
   look.eyewear = app.settings.customEyewear;
   look.neckwear = app.settings.customNeckwear;
+  look.mark = app.settings.customMark;
+  look.back = app.settings.customBack;
+  look.held = app.settings.customHeld;
+  look.aura = app.settings.customAura;
   return look;
 }
 // Snapshot the app state for the shared home-screen renderer (include/home_view.h).
@@ -219,31 +225,94 @@ static void appearance() {
   for (int i = 0; i < 4; ++i)
     button(8 + (i % 2) * 156, 96 + (i / 2) * 45, 148, 36, themeName(Theme(i)),
            unsigned(app.settings.theme) == unsigned(i));
-  button(8, 188, 304, 38, "AVATAR STUDIO: EYES & GEAR");
+  button(8, 188, 304, 38, "AVATAR STUDIO: LOOKS, GEAR, STYLE PACKS");
 }
-static void studio() {
-  heading("AVATAR STUDIO");
-  const char *eyes[] = {"Classic", "Sparkle", "Sleepy", "Cat", "Pixel", "Wink"};
-  const char *hats[] = {"None", "Bow", "Crown", "Beanie", "Flower", "Scout cap"};
-  const char *glasses[] = {"None", "Round", "Shades", "Visor"};
-  const char *necks[] = {"None", "Scarf", "Bandana", "Bow tie"};
-  const char *kits[] = {"Auto", "Always", "Off"};
-  char s[48];
-  snprintf(s, sizeof(s), "Eyes: %s", eyes[app.settings.customEyes]);
-  button(8, 46, 148, 38, s);
-  snprintf(s, sizeof(s), "Head: %s", hats[app.settings.customHeadwear]);
-  button(164, 46, 148, 38, s);
-  snprintf(s, sizeof(s), "Glasses: %s", glasses[app.settings.customEyewear]);
-  button(8, 94, 148, 38, s);
-  snprintf(s, sizeof(s), "Neck: %s", necks[app.settings.customNeckwear]);
-  button(164, 94, 148, 38, s);
-  snprintf(s, sizeof(s), "Shape: %s", names[app.settings.customBase]);
-  button(8, 142, 148, 38, s);
-  snprintf(s, sizeof(s), "Field kit: %s", kits[app.settings.fieldKit]);
-  button(164, 142, 148, 38, s);
-  button(8, 192, 148, 34, "SHOW MY BUDDY", true);
-  text("Colors + name in", 172, 195, colors.muted);
-  text("the web studio", 172, 210, colors.muted);
+// Avatar Studio. Layout, names and touch zones come from studio_view.h.
+static unsigned studioPage = 0, packCursor = 0;
+static Settings studioBefore; // The look the owner walked in with, so cycling packs can return it.
+static uint8_t *studioSlot(studioview::Field f) {
+  using studioview::Field;
+  auto &s = app.settings;
+  switch (f) {
+  case Field::Shape:
+    return &s.customBase;
+  case Field::Eyes:
+    return &s.customEyes;
+  case Field::Mark:
+    return &s.customMark;
+  case Field::Head:
+    return &s.customHeadwear;
+  case Field::Glasses:
+    return &s.customEyewear;
+  case Field::Neck:
+    return &s.customNeckwear;
+  case Field::Back:
+    return &s.customBack;
+  case Field::Held:
+    return &s.customHeld;
+  case Field::Aura:
+    return &s.customAura;
+  case Field::Persona:
+    return &s.customPersona;
+  case Field::Kit:
+    return &s.fieldKit;
+  case Field::Pack:
+    break;
+  }
+  return nullptr; // The pack row is a cycle position, not a saved slot.
+}
+// A style pack restyles the current shape and suggests a world; name and persona are kept.
+// Step 0 of the cycle puts back the owner's own colours and gear.
+static void studioPack(unsigned cursor) {
+  auto &s = app.settings;
+  const Settings &b = studioBefore;
+  if (cursor && cursor < limits::Packs) {
+    const PackStyle &p = PackStyles[cursor];
+    s.customBody = rgb565(p.body);
+    s.customAccent = rgb565(p.accent);
+    s.customEye = rgb565(p.eye);
+    s.customEyes = p.eyes;
+    s.customHeadwear = p.headwear;
+    s.customEyewear = p.eyewear;
+    s.customNeckwear = p.neckwear;
+    s.customMark = p.mark;
+    s.customBack = p.back;
+    s.customHeld = p.held;
+    s.customAura = p.aura;
+    s.customPack = uint8_t(cursor);
+    s.backdrop = p.backdrop;
+    return;
+  }
+  s.customBody = b.customBody;
+  s.customAccent = b.customAccent;
+  s.customEye = b.customEye;
+  s.customEyes = b.customEyes;
+  s.customHeadwear = b.customHeadwear;
+  s.customEyewear = b.customEyewear;
+  s.customNeckwear = b.customNeckwear;
+  s.customMark = b.customMark;
+  s.customBack = b.customBack;
+  s.customHeld = b.customHeld;
+  s.customAura = b.customAura;
+  s.customPack = b.customPack;
+  s.backdrop = b.backdrop;
+}
+static void studio(uint32_t now) {
+  StudioView v;
+  v.now = now;
+  v.colors = colors;
+  v.theme = app.settings.theme;
+  v.look = buddyLook();
+  v.look.custom = true;
+  v.look.base = app.settings.customBase;
+  v.name = app.settings.customName;
+  v.page = studioPage;
+  v.kit = app.settings.fieldKit == 1 ? 1 : 0;
+  for (int row = 0; row < studioview::Rows; ++row) {
+    studioview::Field f = studioview::PageFields[studioPage][row];
+    v.values[row] = f == studioview::Field::Pack ? packCursor : *studioSlot(f);
+  }
+  drawStudio(canvas, v);
 }
 static void buddies(uint32_t now) {
   heading("CHOOSE YOUR BUDDY");
@@ -571,34 +640,34 @@ static void touch(int x, int y) {
       app.settings.theme = Theme(right ? 1 : 0);
     else if (row(y, 141))
       app.settings.theme = Theme(right ? 3 : 2);
-    else if (row(y, 188, 38))
+    else if (row(y, 188, 38)) {
       page = Studio;
-    break;
-  case Studio:
-    if (row(y, 46, 38)) {
-      if (right)
-        app.settings.customHeadwear = (app.settings.customHeadwear + 1) % 6;
-      else
-        app.settings.customEyes = (app.settings.customEyes + 1) % 6;
-      app.settings.avatar = Avatar::Custom;
-    } else if (row(y, 94, 38)) {
-      if (right)
-        app.settings.customNeckwear = (app.settings.customNeckwear + 1) % 4;
-      else
-        app.settings.customEyewear = (app.settings.customEyewear + 1) % 4;
-      app.settings.avatar = Avatar::Custom;
-    } else if (row(y, 142, 38)) {
-      if (right)
-        app.settings.fieldKit = (app.settings.fieldKit + 1) % 3;
-      else {
-        app.settings.customBase = (app.settings.customBase + 1) % 5;
-        app.settings.avatar = Avatar::Custom;
-      }
-    } else if (row(y, 192, 34) && !right) {
-      app.settings.avatar = Avatar::Custom;
-      page = Home;
+      studioPage = packCursor = 0;
+      studioBefore = app.settings;
     }
     break;
+  case Studio: {
+    namespace sv = studioview;
+    sv::Target t = sv::tap(x, y);
+    if (t.hit == sv::Hit::Tab)
+      studioPage = unsigned(t.index);
+    else if (t.hit == sv::Hit::Done) {
+      app.settings.avatar = Avatar::Custom;
+      page = Home;
+    } else if (t.hit == sv::Hit::Option) {
+      sv::Field f = sv::PageFields[studioPage][t.index];
+      if (f == sv::Field::Pack) {
+        packCursor = sv::next(f, packCursor);
+        studioPack(packCursor);
+      } else {
+        uint8_t *slot = studioSlot(f);
+        *slot = uint8_t(sv::next(f, *slot));
+      }
+      if (f != sv::Field::Kit) // The field kit is shared by every buddy, preset or custom.
+        app.settings.avatar = Avatar::Custom;
+    }
+    break;
+  }
   case Buddies:
     if (y >= 47 && y < 168) {
       int base = int(buddyPage * 3) + std::min(2, x / 106);
@@ -814,7 +883,7 @@ void uiTick() {
     appearance();
     break;
   case Studio:
-    studio();
+    studio(now);
     break;
   case Buddies:
     buddies(now);

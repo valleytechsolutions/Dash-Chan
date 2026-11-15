@@ -86,7 +86,7 @@ void storageLoadAvatar() {
     return;
   File config = card.open("/dashchan/avatar.cfg", FILE_READ);
   if (config) {
-    char line[100]{};
+    char line[128]{}; // A profile line is at most limits::ProfileChars long; leave slack.
     size_t n = config.readBytesUntil('\n', line, sizeof(line) - 1);
     while (n && (line[n - 1] == '\r' || line[n - 1] == ' '))
       line[--n] = 0;

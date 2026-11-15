@@ -8,6 +8,7 @@
 #include "petting.h"
 #include "profile.h"
 #include "progression.h"
+#include "studio_tests.h"
 #include "traffic.h"
 #include "travel.h"
 #include "upload_csv.h"
@@ -132,6 +133,7 @@ static void checkGps() {
   CHECK(search.tick(3500) == 0 && !search.sentence());
 }
 int main() {
+  studio_tests::run();
   checkGps();
   PetTouch head;
   CHECK(!head.update(0, false));
@@ -884,9 +886,17 @@ int main() {
       art::Zoom<Recorder> zoom{canvas, 100, 100, k};
       for (int avatar = 0; avatar < 5; ++avatar)
         for (int mood = 0; mood < 7; ++mood)
-          for (bool custom : {false, true})
-            drawBuddy(zoom, avatar, 0, 0, mood, 0, false, 0, Paper, Blush, 0, custom, mood % 6, Ink,
-                      mood % 6, mood % 4, mood % 4, mood % 3, mood);
+          for (bool custom : {false, true}) {
+            Look look;
+            look.base = avatar;
+            look.custom = custom;
+            look.eyes = look.headwear = mood % 6;
+            look.eyewear = look.neckwear = mood % 4;
+            Pose pose;
+            pose.mood = pose.phase = mood;
+            pose.kit = mood % 3;
+            drawBuddy(zoom, look, 0, 0, pose);
+          }
       CHECK(canvas.shapes.size() > 1000);
       for (const auto &s : canvas.shapes)
         if (s.kind == 'r')
@@ -924,23 +934,6 @@ int main() {
     CHECK(faceColors(0, Paper, Ink, false, 0) == Colors{Ink});   // Presets are unchanged.
     CHECK(art::dark(Ink) && art::dark(0x10c7) && !art::dark(Mint) && art::pale(Paper) &&
           !art::pale(Mint) && !art::pale(Ink));
-    // Round glasses: neighbouring frame dots must overlap at 1x and in the Full Face zoom.
-    for (float k : {1.0f, 1.6f, 2.1f}) {
-      Recorder canvas;
-      art::Zoom<Recorder> zoom{canvas, 0, 0, k};
-      drawBuddy(zoom, 2, 0, 0, 0, 0, false, 0, Paper, Blush, 0, true, 0, Ink, 0, 1, 0, 0, 0);
-      std::vector<Shape> dots;
-      for (const auto &s : canvas.shapes)
-        if (s.kind == 'c' && s.c == Blush && s.x > 0)
-          dots.push_back(s);
-      CHECK(dots.size() >= 48);
-      dots.resize(48); // What follows the ring is the cap of the bridge stroke.
-      for (size_t i = 0; i < dots.size(); ++i) {
-        const Shape &a = dots[i], &b = dots[(i + 1) % dots.size()];
-        // Touching discs: centres no further apart than their two radii plus one pixel.
-        CHECK(abs(a.x - b.x) <= a.r + b.r + 1 && abs(a.y - b.y) <= a.r + b.r + 1);
-      }
-    }
   }
   for (int i = 0; i < 50000; ++i) {
     size_t n = random() % 768;

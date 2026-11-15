@@ -50,7 +50,8 @@ template <size_t N> static void chirp(const Note (&notes)[N]) {
   jingleWait = 0;
 }
 static unsigned who() {
-  return avatarBase(app.settings.avatar, app.settings.customBase);
+  return speaker(app.settings.avatar == Avatar::Custom, app.settings.customPersona,
+                 avatarBase(app.settings.avatar, app.settings.customBase));
 }
 static const char *line(Topic topic) {
   return banter.pick(topic, who(), app.settings.spicy, esp_random());

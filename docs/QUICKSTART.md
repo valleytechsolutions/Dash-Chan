@@ -27,7 +27,7 @@ The pet remains visible during alerts and recording. No event automatically open
 
 | Menu | Controls |
 |---|---|
-| Buddy + Look | Mochi, Sprout, Orbit, Wisp, Ember, or a custom buddy; Dark, Light, Matrix, BWM; Avatar Studio with eyes, layered outfits, and Auto/Always/Off field gear |
+| Buddy + Look | Mochi, Sprout, Orbit, Wisp, Ember, or a custom buddy; Dark, Light, Matrix, BWM; Avatar Studio with a live preview, style packs, eyes, layered outfits, extras, and Auto/Always/Off field gear |
 | Sound & Voice | Personality, Siren, Arcade, Chime, Silent; volume 0/100/170/220/255; Master sound; Voice; preview; synthetic Axon demo |
 | Personality | Head motion Off/Gentle/Lively; Spicy panic/Gentle lookout; pet button |
 | Detection | Confidence filter; same-family quiet period 60/180/300 seconds; optional five-minute reminders |
@@ -56,19 +56,20 @@ Tap STOP & SAVE before ejecting the card or powering off. A sudden power loss ca
 
 ## Custom buddy
 
-Open [Avatar Studio](https://valleytech-dash-chan.pages.dev/#creator). Choose a preset or mix a base shape, six eye styles, three colors, headwear, glasses, and neckwear. Names allow up to 16 ASCII letters, digits, spaces, hyphens, or underscores. Your browser keeps a local draft. Preview different moods and travel poses before sending it.
+Open [Avatar Studio](https://valleytech-dash-chan.pages.dev/#creator). Start from a style pack (Kawaii pastel, Cyberpunk neon, Goth, Vaporwave, Retro terminal) or mix a base shape, ten eye styles, three colors, headwear, glasses, neckwear, a face mark, a back item, a held item, an aura, and a persona. Names allow up to 16 ASCII letters, digits, spaces, hyphens, or underscores. Your browser keeps a local draft. Preview different moods and travel poses before sending it.
 
-**USB:** install firmware **0.4 or newer**, disconnect the installer, leave Dash-Chan running normally, stop any recording, and select **Send to StackChan**. The uploader checks the running firmware, sends the profile, and waits for `AVATAR OK`. It does not reflash the robot or change mute settings. An older firmware receives a clear upgrade message before a new profile is sent.
+**USB:** install firmware **0.4 or newer**, disconnect the installer, leave Dash-Chan running normally, stop any recording, and select **Send to StackChan**. The uploader checks the running firmware, sends the profile, and waits for `AVATAR OK`. It does not reflash the robot or change mute settings. An older firmware receives a clear upgrade message before a profile it cannot read is sent.
 
 **SD:** download `avatar.cfg`, create `/dashchan/`, copy the file there, and restart. That file takes priority on every boot; remove or update it if you later want a USB-uploaded appearance to persist. USB uploads are stored in NVS. The creator customizes the five original vector shapes; it is not an arbitrary photo/sprite uploader.
 
-The original `DCAV1` files still work. New exports use `DCAV2`:
+The original `DCAV1` files still work. A plain design is still exported as `DCAV2`, which firmware 0.3 and newer reads; a design that uses newer gear is exported as `DCAV3`, which needs current firmware:
 
 ```text
 DCAV2 0 FFF3D2 FFAD73 1 101029 5 0 2 Signal scout
+DCAV3 3 17141F B3123C F2E9FF 9 7 0 5 4 2 4 5 3 1 Nyx the 2nd
 ```
 
-The [studio guide](AVATAR-STUDIO.md) documents every field and style. RGB colors are quantized to the LCD's RGB565 format. On-device, use **Buddy + Look → Avatar Studio** to cycle eyes and accessories, then **Show my buddy** to return home.
+The [studio guide](AVATAR-STUDIO.md) documents every field and style. RGB colors are quantized to the LCD's RGB565 format. On-device, use **Buddy + Look → Avatar Studio**: the FACE, OUTFIT and EXTRAS pages cycle each slot beside a live preview, **Style** cycles the style packs, and **DONE** returns home.
 
 **Field kit: Auto** shows the antenna and listening receiver while recording or moving. Fresh usable GPS speed must stay at least 5 km/h for three seconds to start cruising; speed at most 2 km/h for five seconds stops it. Invalid/stale GPS clears cruising immediately. **Always** keeps the kit visible; **Off** hides it. The illustrated receiver is decorative and does not process microphone audio or determine a signal's bearing.
 

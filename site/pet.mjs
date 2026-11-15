@@ -1,62 +1,38 @@
-// Original Dash-Chan art; no imported sprites. Buddy shapes are generated from include/avatars.h.
-import {buddyBody,buddyDetails,buddyTones,makePen} from './buddy_art.mjs';
+// Original Dash-Chan art; no imported sprites. The buddy itself (body, face, gear, aura and the
+// order they are layered in) is generated from include/avatars.h into buddy_art.mjs.
+import {buddyArt,buddyTones,makePen} from './buddy_art.mjs';
 const rgb=c=>`rgb(${Math.round((c>>11)*255/31)},${Math.round(((c>>5)&63)*255/63)},${Math.round((c&31)*255/31)})`;
-export function quantize(hex){const c=parseInt(hex.replace('#',''),16);return rgb(((c>>19)<<11)|(((c>>10)&63)<<5)|((c>>3)&31));}
+export const to565=hex=>{const c=parseInt(hex.replace('#',''),16);return ((c>>19)<<11)|(((c>>10)&63)<<5)|((c>>3)&31);};
+export function quantize(hex){return rgb(to565(hex));}
+// The firmware's Look for a studio profile (colours become the LCD's RGB565).
+export function lookOf({base=0,body='#fff3d2',accent='#ff88b6',eye='#101029',eyes=0,headwear=0,eyewear=0,neckwear=0,mark=0,back=0,held=0,aura=0,custom=false}={}){
+  return {base,custom,body:to565(body),accent:to565(accent),eye:to565(eye),eyes,headwear,eyewear,neckwear,mark,back,held,aura};
+}
+// options: a studio profile plus mood, field (0 none, 1 kit, 2 cruising), world (null = clear),
+// still (no idle motion, for thumbnails), and zoom with focusX/focusY (the buddy-space point to
+// centre on) for close-ups. zoom 1 shows the whole buddy with room for wings and aura.
 export function drawPet(canvas,options={},time=0){
-  const {base=0,body='#fff3d2',accent='#ff88b6',eyes=0,eye='#101029',headwear=0,eyewear=0,neckwear=0,mood=0,custom=false,field=0,world=null}=options;
+  const {mood=0,field=0,world=null,still=false,zoom=1,focusX=0,focusY=0}=options;
   const g=canvas.getContext('2d');
   g.clearRect(0,0,canvas.width,canvas.height);if(world!==null)drawWorld(g,canvas.width,canvas.height,world,time,field===2);g.save();
-  const scale=Math.min(canvas.width/220,canvas.height/165);
-  g.translate(canvas.width/2,canvas.height/2+2+Math.sin(time/650)*2*scale);g.scale(scale,scale);
-  const ink=rgb(0x1085),paper=rgb(0xff7a),mint=rgb(0x87b6),peach=rgb(0xfdaf),lilac=rgb(0xc5ff),blush=custom?quantize(accent):rgb(base===3?0xc5ff:base===4?0xff28:0xfbb2);
-  const skin=custom?quantize(body):[paper,mint,lilac,'#000000',rgb(0xfa64)][base];
+  const scale=Math.min(canvas.width/220,canvas.height/165)*zoom;
+  g.translate(canvas.width/2,canvas.height/2+2+(still?0:Math.sin(time/650)*2*scale));g.scale(scale,scale);g.translate(-focusX,-focusY);
   const phase=Math.floor(time/150);
-  const ellipse=(x,y,rx,ry,c)=>{g.fillStyle=c;g.beginPath();g.ellipse(x,y,rx,ry,0,0,Math.PI*2);g.fill();};
   const rect=(x,y,w,h,r,c)=>{g.fillStyle=c;g.beginPath();g.roundRect(x,y,w,h,r);g.fill();};
-  const tri=(x,y,x2,y2,x3,y3,c)=>{g.fillStyle=c;g.beginPath();g.moveTo(x,y);g.lineTo(x2,y2);g.lineTo(x3,y3);g.closePath();g.fill();};
   const line=(x,y,x2,y2,c)=>{g.strokeStyle=c;g.lineWidth=1.4;g.beginPath();g.moveTo(x,y);g.lineTo(x2,y2);g.stroke();};
-  if(mood===4)g.translate(Math.sin(time/65)*4,Math.cos(time/90)*4);
+  if(mood===4&&!still)g.translate(Math.sin(time/65)*4,Math.cos(time/90)*4);
   if(field===2){for(let i=0;i<4;i++){const x=-82+(Math.floor(time/25)+i*47)%164;line(x,45,Math.min(87,x+9),45,'#344557');}}
-  // Body, markings and face come from the firmware's own art (site/buddy_art.mjs).
-  const to565=hex=>{const c=parseInt(hex.replace('#',''),16);return ((c>>19)<<11)|(((c>>10)&63)<<5)|((c>>3)&31);};
-  const tones=buddyTones(base,custom,custom?to565(body):0,custom?to565(accent):0);
-  const gaze=mood===4?Math.sin(time/100)*5:Math.sin(time/2100)*3;
-  const blink=time%4100<130&&mood!==4;
-  ellipse(0,47,50,6,rgb(0x18e7));
-  for(const grow of [2,0])buddyBody(makePen(g,grow,tones.line),base,tones.body,tones.trim,phase);
-  buddyDetails(makePen(g,0,tones.line),base,mood,gaze,blink,custom,custom?eyes:0,custom?to565(eye):0x1085,tones.body,tones.blush,tones.line,tones.shade,tones.light,tones.trim,phase);
-  const gy=mood===3||mood===4||mood===5?-25:-4;
-  if(eyewear===1){
-    for(const side of [-1,1])for(let a=0;a<48;a++){const angle=a*2*Math.PI/48;ellipse(side*21+Math.round(Math.cos(angle)*13),gy+Math.round(Math.sin(angle)*14),1,1,blush);}
-    line(-8,gy,8,gy,blush);
-  }else if(eyewear===2||eyewear===3){
-    rect(-39,gy-12,78,24,6,blush);
-    if(eyewear===2){rect(-35,gy-8,31,17,4,ink);rect(4,gy-8,31,17,4,ink);line(-28,gy-5,-20,gy+3,paper);line(12,gy-5,20,gy+3,paper);}
-    else{rect(-35,gy-8,70,16,4,ink);for(let x=-27;x<=27;x+=9)rect(x,gy-3,4,6,0,mint);}
-  }
-  if(headwear===1){tri(-6,-34,-23,-44,-23,-24,blush);tri(6,-34,23,-44,23,-24,blush);ellipse(0,-34,6,6,blush);}
-  else if(headwear===2){rect(-22,-42,44,10,0,peach);tri(-22,-42,-22,-59,-8,-42,peach);tri(-10,-42,0,-61,10,-42,peach);tri(8,-42,22,-59,22,-42,peach);}
-  else if(headwear===3||headwear===5){ellipse(0,-38,35,17,blush);rect(-38,-38,headwear===5?83:76,10,4,blush);if(headwear===3)ellipse(0,-57,7,7,peach);else ellipse(8,-44,5,5,paper);}
-  else if(headwear===4){for(let i=0;i<5;i++){const a=i*2*Math.PI/5;ellipse(29+Math.trunc(Math.cos(a)*9),-33+Math.trunc(Math.sin(a)*9),6,6,blush);}ellipse(29,-33,5,5,peach);}
-  if(neckwear===1){rect(-37,31,74,8,0,blush);rect(22,31,12,22,4,blush);}
-  else if(neckwear===2){tri(-30,30,30,30,0,48,blush);ellipse(0,36,3,3,paper);}
-  else if(neckwear===3){tri(-4,33,-21,24,-21,42,blush);tri(4,33,21,24,21,42,blush);ellipse(0,33,5,5,peach);}
-  if(field){
-    const phase=Math.floor(time/150),signal=mood===4?rgb(0xf9c7):mint;
-    const lift=field===2?(phase%6<3?-2:1):0,ax=-61,ay=6+lift;
-    line(ax+11,ay+21,ax-5,ay-14,paper);line(ax-16,ay-10,ax+12,ay-20,paper);
-    line(ax-12,ay-2,ax+15,ay-12,paper);line(ax-7,ay+6,ax+17,ay-4,paper);
-    rect(ax+6,ay+15,8,18,3,blush);ellipse(-45,29+lift,10,8,skin);
-    line(52,-3,58,13,paper);rect(39,10,32,37,5,blush);rect(43,14,24,23,4,ink);
-    line(55,32,46+(phase%8)*2,17,signal);ellipse(59,23,2,2,signal);
-    ellipse(49,41,2,2,paper);ellipse(59,41,2,2,signal);line(66,11,59,-9,blush);
-    rect(49,-17,10,19,4,ink);rect(52,-13,4,11,0,blush);ellipse(40,31,9,8,skin);
-  }
+  const look=lookOf(options),tones=buddyTones(look.base,look.custom,look.body,look.accent);
+  const gaze=still?0:mood===4?Math.sin(time/100)*5:Math.sin(time/2100)*3;
+  const blink=!still&&time%4100<130&&mood!==4;
+  buddyArt(makePen(g,0,tones.line),makePen(g,2,tones.line),makePen(g,1,tones.line),look,tones,mood,gaze,blink,field,phase);
+  // Mood dressing for the preview only; on the robot the home screen draws its own.
   if(mood===5){
     const colors=['#ffdb68','#72ffdb','#ff7ebd','#bca0ff'];
     for(let i=0;i<10;i++){const x=-87+(i*37)%174,y=-65+(i*23+Math.floor(time/35))%107;rect(x,y,3,4,0,colors[i%4]);}
   }else if(mood===3){
-    for(const side of [-1,1]){const x=side*70,y=-28-(Math.floor(time/140)+side*5)%17;ellipse(x-3,y-2,4,4,blush);ellipse(x+3,y-2,4,4,blush);tri(x-7,y,x+7,y,x,y+8,blush);}
+    const pen=makePen(g,0,tones.line);
+    for(const side of [-1,1]){const x=side*70,y=-28-(Math.floor(time/140)+side*5)%17;pen.oval(x-3,y-2,4,4,tones.blush);pen.oval(x+3,y-2,4,4,tones.blush);pen.tri(x-7,y,x+7,y,x,y+8,tones.blush);}
   }
   g.restore();
 }

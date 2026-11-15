@@ -45,7 +45,7 @@ For the robot, enter your 2.4 GHz network and selected service API credentials, 
 | **Orbit** | A lilac robot with excellent friendship reception. “My emotional support human is here.” |
 | **Wisp** | An all-black little ghost with bright eyes and drifting wisps. “Your emotional support shadow.” |
 | **Ember** | A tiny orange flame with flickering tips and floating sparks. “Small flame. Big adventure.” |
-| **Your custom buddy** | Mix six eye styles, three colors, headwear, glasses, and neckwear on any original shape. Name it and save it in Avatar Studio. |
+| **Your custom buddy** | Start from a style pack (kawaii, cyberpunk, goth, vaporwave, retro terminal) or mix ten eye styles, three colors, headwear, glasses, neckwear, face marks, wings, held items, and auras on any shape. Pick whose lines it speaks, name it, and save it in Avatar Studio. |
 
 | Wisp on the robot | Ember on the robot |
 |---|---|
@@ -84,9 +84,9 @@ This is a scripted personality engine, not cloud AI. No account, microphone proc
 
 ## Make a buddy that looks like yours
 
-Open **[Avatar Studio](https://valleytech-dash-chan.pages.dev/#creator)** and start with Wisp, Ember, Signal Scout, Neon Listener, Petal Patrol, or Mochi Royale. Mix **six eye styles**, **six headwear choices**, **four eyewear choices**, and **four neckwear choices**, including None. Change body, accent, and eye colors. Preview love, alert, discovery cheers, listening, and cruising poses in four arcade worlds; save a portrait or an avatar file. Your draft stays in your browser.
+Open **[Avatar Studio](https://valleytech-dash-chan.pages.dev/#creator)** and start with a **style pack**: Kawaii pastel, Cyberpunk neon, Goth, Vaporwave, or Retro terminal. One tap dresses your current shape and never renames it. Then mix **ten eye styles**, **twelve headwear**, **eight eyewear**, and **eight neckwear** choices (including None), plus face marks, wings and capes, held items, auras, and a persona that decides whose lines your buddy speaks: over 90 million looks before colors. Every option is drawn on your own buddy. Surprise me, Shuffle pack, undo/redo, and a shelf of saved designs make it easy to experiment. Preview love, alert, discovery cheers, listening, and cruising poses in four arcade worlds; save a portrait or an avatar file. Your draft stays in your browser.
 
-**Send to StackChan** applies the design over USB without reflashing. Install 0.4 or newer for all five shapes. Earlier `DCAV1` avatar files still import. On the robot, **MENU → Buddy + Look → Avatar Studio** cycles styles without a computer. [Full studio guide and profile format](docs/AVATAR-STUDIO.md).
+**Send to StackChan** applies the design over USB without reflashing. Install 0.4 or newer for all five shapes; designs that use the newer gear are saved as `DCAV3` and need current firmware, while plain designs are still saved as `DCAV2` for older robots. Earlier `DCAV1` and `DCAV2` avatar files still import. On the robot, **MENU → Buddy + Look → Avatar Studio** shows a live preview and cycles shape, face, outfit, extras, and style packs without a computer. [Full studio guide and profile format](docs/AVATAR-STUDIO.md).
 
 In **Auto** field-kit mode, the pet holds a radar-style antenna and pocket receiver while recording or when fresh GPS speed confirms movement. **Always** keeps the gear visible; **Off** hides it. Cruising adds a subtle bob and travel streaks. These are personality animations: the receiver does not process audio, and the antenna does not indicate signal direction. Alerts, muting, logging, and food rules work independently of the outfit.
 
@@ -148,7 +148,7 @@ Use the [web flasher](https://valleytech-dash-chan.pages.dev/#install) in deskto
 | Face: START / STOP & SAVE | Open or close a wardrive |
 | Face tap / top touch sensor | Affection; no food |
 | Alert speech bubble | Dismiss reaction; continue listening |
-| MENU → Buddy + Look | Five original buddies, custom buddy, four themes, Avatar Studio and field-kit preference |
+| MENU → Buddy + Look | Five original buddies, custom buddy, four themes, Avatar Studio (face, outfit, extras, style packs) and field-kit preference |
 | MENU → Sound & Voice | Master mute, voice switch, tones, volume, preview/demo |
 | MENU → Personality | Motion, banter, pet |
 | MENU → Detection | Confidence, family quiet period, optional reminders |

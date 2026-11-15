@@ -1,7 +1,10 @@
 // PC preview of the buddy art and home screen. Run through tools/preview.py.
+#include "avatar_limits.h"
 #include "core.h"
 #include "home_view.h"
 #include "host_canvas.h"
+#include "profile.h"
+#include "studio_view.h"
 #include <string>
 using namespace dash;
 static std::string out;
@@ -23,14 +26,158 @@ static HomeView base(Theme theme = Theme::Dark) {
   v.xp = 19;
   return v;
 }
+// A custom buddy in neutral colours, so a gear sheet shows the gear and not the palette.
+static Look plain(int shape) {
+  static const uint32_t bodies[] = {0xfff3d2, 0xa5edc0, 0xc9c2ff, 0x17141f, 0xff6a3d};
+  static const uint32_t eyes[] = {0x101029, 0x245549, 0x9affdd, 0xedffff, 0x201029};
+  Look look;
+  look.custom = true;
+  look.base = shape;
+  look.body = rgb565(bodies[shape]);
+  look.accent = rgb565(shape == 3 ? 0xb18cff : 0xff5c8a);
+  look.eye = rgb565(eyes[shape]);
+  return look;
+}
+// One sheet per studio slot: a row per shape, a column per option, on a mid-tone backdrop.
+// Wide slots are split so every cell stays at the LCD's own scale.
+static void slotSheet(const char *name, int count, int Look::*slot) {
+  const int w = 184, h = 140, perSheet = 6;
+  for (int first = 0; first < count; first += perSheet) {
+    int columns = count - first < perSheet ? count - first : perSheet;
+    HostCanvas sheet(columns * w, 5 * h);
+    sheet.fillScreen(0x3a4f);
+    for (int shape = 0; shape < 5; ++shape)
+      for (int i = 0; i < columns; ++i) {
+        Look look = plain(shape);
+        look.*slot = first + i;
+        Pose pose;
+        pose.phase = 3;
+        drawBuddy(sheet, look, w / 2 + i * w, 72 + shape * h, pose);
+      }
+    sheet.savePpm((out + "/slot-" + name + (first ? "-2" : "") + ".ppm").c_str());
+  }
+}
+// A style pack's signature look on a given shape, as the robot would show it.
+static Look packLook(unsigned pack, int shape) {
+  const PackStyle &style = PackStyles[pack];
+  Look look;
+  look.custom = true;
+  look.base = shape;
+  look.body = rgb565(style.body);
+  look.accent = rgb565(style.accent);
+  look.eye = rgb565(style.eye);
+  look.eyes = style.eyes;
+  look.headwear = style.headwear;
+  look.eyewear = style.eyewear;
+  look.neckwear = style.neckwear;
+  look.mark = style.mark;
+  look.back = style.back;
+  look.held = style.held;
+  look.aura = style.aura;
+  return look;
+}
+// Every pack on every shape, on the real home screen: Recon view, then Full Face.
+static void packSheets() {
+  for (int face = 0; face < 2; ++face)
+    for (int half = 0; half < 2; ++half) {
+      int columns = half ? 2 : 3;
+      HostCanvas sheet = sheetOf(columns, 5);
+      for (unsigned pack = 1; pack < limits::Packs; ++pack)
+        for (int i = 0; i < columns; ++i) {
+          HomeView v = base(pack == 4 && face ? Theme::Light : Theme::Dark);
+          v.face = face;
+          v.look = packLook(pack, half * 3 + i);
+          v.name = PackStyles[pack].name;
+          v.backdrop = PackStyles[pack].backdrop;
+          v.mood = face && i == 1 ? 3 : 0;
+          if (!face && i == 2) {
+            v.speaking = true;
+            v.message = "New fit. Same little signal goblin.";
+          }
+          place(sheet, i, int(pack) - 1, v);
+        }
+      sheet.savePpm(
+          (out + "/packs-" + (face ? "face" : "recon") + (half ? "-2" : "") + ".ppm").c_str());
+    }
+}
+// The Full Face close-up (2.1x) of the options that sit on the face, where detail matters most.
+static void closeUps() {
+  struct Pick {
+    int Look::*slot;
+    int first, last;
+  };
+  const Pick picks[] = {
+      {&Look::eyes, 6, 9}, {&Look::eyewear, 4, 7}, {&Look::mark, 1, 7}, {&Look::eyewear, 1, 1}};
+  const int w = 320, h = 152;
+  HostCanvas sheet(4 * w, 4 * h);
+  sheet.fillScreen(0x3a4f);
+  int cell = 0;
+  for (const Pick &pick : picks)
+    for (int option = pick.first; option <= pick.last; ++option, ++cell) {
+      int x = cell % 4 * w, y = cell / 4 * h;
+      Look look = plain(cell % 5);
+      look.*pick.slot = option;
+      sheet.setClipRect(x + 1, y + 1, w - 2, h - 2);
+      art::Zoom<HostCanvas> zoom{sheet, x + w / 2, y + 72, 2.1f};
+      Pose pose;
+      pose.phase = 3;
+      drawBuddy(zoom, look, 0, 0, pose);
+      sheet.clearClipRect();
+    }
+  sheet.savePpm((out + "/closeups.ppm").c_str());
+}
+// The on-device Avatar Studio: its three pages, in two themes.
+static void studioScreens() {
+  HostCanvas sheet = sheetOf(3, 2);
+  for (int row = 0; row < 2; ++row)
+    for (unsigned page = 0; page < 3; ++page) {
+      StudioView v;
+      v.now = 61000;
+      v.theme = row ? Theme::Light : Theme::Dark;
+      v.colors = palette(v.theme);
+      unsigned pack = row ? 1 : 3;
+      v.look = packLook(pack, row ? 0 : 3);
+      v.name = row ? "Peaches" : "Nyx the 2nd";
+      v.page = page;
+      const PackStyle &style = PackStyles[pack];
+      const unsigned values[3][4] = {{unsigned(v.look.base), style.eyes, style.mark, pack},
+                                     {style.headwear, style.eyewear, style.neckwear, style.back},
+                                     {style.held, style.aura, row ? 0u : 4u, 0u}};
+      for (int i = 0; i < 4; ++i)
+        v.values[i] = values[page][i];
+      HostCanvas screen(320, 240);
+      screen.fillScreen(v.colors.bg);
+      drawStudio(screen, v);
+      sheet.blit(screen, 4 + int(page) * 324, 4 + row * 244);
+      if (!row && page == 1)
+        screen.savePpm((out + "/ui-studio.ppm").c_str());
+    }
+  sheet.savePpm((out + "/studio.ppm").c_str());
+}
 int main(int argc, char **argv) {
   out = argc > 1 ? argv[1] : ".";
+  studioScreens();
+  packSheets();
+  closeUps();
+  slotSheet("eyes", limits::Eyes, &Look::eyes);
+  slotSheet("headwear", limits::Headwear, &Look::headwear);
+  slotSheet("eyewear", limits::Eyewear, &Look::eyewear);
+  slotSheet("neckwear", limits::Neckwear, &Look::neckwear);
+  slotSheet("mark", limits::Marks, &Look::mark);
+  slotSheet("back", limits::Backs, &Look::back);
+  slotSheet("held", limits::Held, &Look::held);
+  slotSheet("aura", limits::Auras, &Look::aura);
   HostCanvas buddies(7 * 150, 5 * 130);
   buddies.fillScreen(0x3a4f);
   for (int a = 0; a < 5; ++a)
-    for (int mood = 0; mood < 7; ++mood)
-      drawBuddy(buddies, a, 75 + mood * 150, 72 + a * 130, mood, 0, false, 0, 0, Blush, 0, false, 0,
-                Ink, 0, 0, 0, 0, 2);
+    for (int mood = 0; mood < 7; ++mood) {
+      Look look;
+      look.base = a;
+      Pose pose;
+      pose.mood = mood;
+      pose.phase = 2;
+      drawBuddy(buddies, look, 75 + mood * 150, 72 + a * 130, pose);
+    }
   buddies.savePpm((out + "/buddies.ppm").c_str());
 
   HostCanvas home = sheetOf(3, 4);
