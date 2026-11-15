@@ -8,6 +8,7 @@
 #include "petting.h"
 #include "profile.h"
 #include "progression.h"
+#include "recon_tests.h"
 #include "traffic.h"
 #include "travel.h"
 #include "upload_csv.h"
@@ -950,5 +951,6 @@ int main() {
     classifyBle(q.data(), q.size(), mac, true);
     classifyWifi(q.data(), q.size());
   }
+  reconTests();
   std::cout << "Core regression checks and 50,000 malformed-packet cases passed\n";
 }

@@ -5,6 +5,7 @@
 #include "nutrition.h"
 #include "personality.h"
 #include "progression.h"
+#include "recon.h"
 #include "themes.h"
 #include "watchlist.h"
 #include <Arduino.h>
@@ -43,6 +44,10 @@ struct Settings {
   bool rgb = true, tilt = true, gestures = true, proximity = false, autoDim = false, nfc = false;
   uint8_t ledBrightness = 32;
   char customName[17] = "My buddy";
+  // Recon alert policy (recon.h). Everything classified is listed; these only shape alerts.
+  uint32_t typeFilter = TypeFilter::Defaults; // Families tracked at all (TypeFilter mask).
+  bool quietRoad = true;                      // Tags and Ring stay list-only while driving.
+  uint8_t autoSnooze = 5; // Alerts per device before it must come closer: 0/5/10.
 };
 // Lifetime memories, saved with the settings so the pet remembers you across restarts.
 struct Life {
@@ -68,7 +73,10 @@ struct Alert {
   uint32_t firstAt = 0, sightings = 1;
   bool ble = false;
   uint8_t addressType = 0;
+  uint8_t kind = 0; // AlertKind: what sort of news this is.
 };
+// A device, a burst of new tracker addresses, or a tracker that has travelled with us.
+enum AlertKind : uint8_t { AlertDevice, AlertFlood, AlertFollowing };
 struct State {
   Settings settings;
   Session session;
@@ -157,4 +165,16 @@ void serialTick();
 void printStatus();
 bool applyAvatarConfig(const char *line);
 void printAvatarConfig();
+// Recon engine (src/radio.cpp). The table holds one row per classified device, whatever the
+// alert threshold; app.history is a copy of its first rows in priority order for older screens.
+// Everything here runs on the loop task, like the UI: no locking, and no calls from callbacks.
+ReconTable &reconTable();         // Rows, sorted views, lifetime counters. See recon.h.
+AlertPolicy &reconPolicy();       // The ignore list and the alert timers.
+const ReconCounts &reconCounts(); // Live and total rows per tier and family; fresh to 0.5 s.
+AlertContext reconContext();      // The settings and road state the policy is deciding with.
+uint32_t reconClock();            // Seconds since 2000 UTC, or 0 until GPS or the RTC tells us.
+// Put a device on, or take it off, the ignore list; saved at once. False if the list is full.
+bool reconIgnore(ReconDevice &, bool ignore);
+void reconRefresh(); // Recount and refill app.history now, e.g. after changing a filter.
+void reconSave();    // Persist the ignore list and the lifetime per-family counters (NVS).
 } // namespace dash

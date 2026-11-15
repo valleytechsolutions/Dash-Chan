@@ -47,7 +47,7 @@ Food progress resets on each new drive. A 2 KB approximate per-drive filter prev
 ## Your files
 
 - `/wardrives/dash-00000001.csv` and subsequent numbers: WiGLE 1.4 CSV, ready for your own WiGLE upload.
-- `/events/detections.csv`: emitted detection events, separate from WiGLE.
+- `/events/recon.csv`: detection ledger, separate from WiGLE. One line per device when it is first heard, when it comes back, and when it alerts. The most recent devices are shown again after a restart. An older `/events/detections.csv` is left alone.
 - `/dashchan/avatar.cfg`: optional custom appearance, loaded at boot or SD retry.
 - `/dashchan/upload.json`: optional private Wi-Fi/API setup; [upload guide](UPLOADS.md).
 - `/dashchan/watchlist.csv`: optional [personal signature rules](DETECTIONS.md#personal-watchlist).

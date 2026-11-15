@@ -157,7 +157,7 @@ Use the [web flasher](https://valleytech-dash-chan.pages.dev/#install) in deskto
 
 ## Logs and GPS quality
 
-`/wardrives/dash-00000001.csv` uses the standard 11-column WiGLE format. New Start presses create new files without overwriting earlier drives. `/events/detections.csv` records emitted alert events separately. Uploads are disabled until configured; automatic sending requires an explicit opt-in.
+`/wardrives/dash-00000001.csv` uses the standard 11-column WiGLE format. New Start presses create new files without overwriting earlier drives. `/events/recon.csv` is the detection ledger: one line when a classified device is first heard, when it returns after two minutes away, and when it alerts ([format](docs/DEVELOPMENT.md#recon-table-alert-policy-and-ledger)). Uploads are disabled until configured; automatic sending requires an explicit opt-in.
 
 Rows require valid UTC, a fix no older than two seconds, at least four satellites, HDOP ≤ 5, finite in-range coordinates/altitude, and packet queue latency ≤ 250 ms. GPS loss pauses rows; the firmware never fills them with invented or stale positions. `AccuracyMeters` is the documented **HDOP × 5 m estimate**, not measured error. Repeat rows are rate-limited per address/transport to 30 seconds in a bounded contact cache.
 
