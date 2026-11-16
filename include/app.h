@@ -1,10 +1,15 @@
 #pragma once
+#include "avatar_limits.h"
 #include "config.h"
 #include "core.h"
 #include "gps_support.h"
 #include "nutrition.h"
+#include "personality.h"
 #include "progression.h"
+#include "recon.h"
+#include "recon_view.h"
 #include "themes.h"
+#include "voice.h"
 #include "watchlist.h"
 #include <Arduino.h>
 #include <atomic>
@@ -17,7 +22,8 @@ inline unsigned avatarBase(Avatar a, unsigned custom) {
          : a == Avatar::Ember ? 4
                               : unsigned(a);
 }
-enum class Mood : uint8_t { Happy, Curious, Sleepy, Love, Alarm };
+// Values double as face expressions in avatars.h; Cheer is the discovery bounce.
+enum class Mood : uint8_t { Happy, Curious, Sleepy, Love, Alarm, Cheer, Pout };
 enum class AlertTone : uint8_t { Personality, Siren, Arcade, Chime, Silent };
 struct Settings {
   Avatar avatar = Avatar::Mochi;
@@ -30,7 +36,8 @@ struct Settings {
   Theme theme = Theme::Dark;
   AlertTone tone = AlertTone::Personality;
   uint8_t volume = 245, motionStyle = 2;
-  bool voice = false, repeatAlerts = false;
+  VoiceMode voiceMode = VoiceMode::Off; // Speech stays opt-in: MENU > Sound & Voice.
+  bool repeatAlerts = false;
   uint32_t familyQuietMs = 60000;
   uint8_t customBase = 0, customAccessory = 0;
   uint16_t customBody = 0xff7a, customAccent = 0xfbb2;
@@ -41,26 +48,44 @@ struct Settings {
   bool rgb = true, tilt = true, gestures = true, proximity = false, autoDim = false, nfc = false;
   uint8_t ledBrightness = 32;
   char customName[17] = "My buddy";
+  // Recon alert policy (recon.h). Every classified device of a type that is switched on is
+  // listed; the rest only shape alerts.
+  uint32_t typeFilter = TypeFilter::Defaults; // Families tracked at all (TypeFilter mask).
+  bool quietRoad = true;                      // Tags and Ring stay list-only while driving.
+  uint8_t autoSnooze = 5; // Alerts per device before it must come closer: 0/5/10.
+  // Avatar Studio slots added with DCAV3. Counts live in avatar_limits.h.
+  uint8_t customMark = 0, customBack = 0, customHeld = 0, customAura = 0;
+  uint8_t customPack = 0, customPersona = 0;
+};
+// Lifetime memories, saved with the settings so the pet remembers you across restarts.
+struct Life {
+  uint32_t pets = 0, drives = 0, snacks = 0, bestDrive = 0, boots = 0;
+  uint32_t lastSeen = 0; // Seconds since 2000 (UTC) when we last knew the time; 0 if never.
+  bool clockSet = false; // GPS has set the board clock at least once, so it can be believed.
 };
 struct Contact {
   bool used = false, ble = false;
   uint8_t addressType = 0, mac[6]{};
   char name[64]{};
+  char label[LabelChars]{}; // Product named by the signature behind `match`; empty if none.
   int rssi = 0;
   uint8_t channel = 0;
   Match match;
   uint32_t seen = 0, logGeneration = 0;
-  Cooldown logged, alerted;
+  Cooldown logged;
 };
 struct Alert {
   Match match;
-  char name[64]{}, mac[18]{};
   int rssi = 0;
-  uint32_t at = 0;
-  uint32_t firstAt = 0, sightings = 1;
   bool ble = false;
   uint8_t addressType = 0;
+  uint8_t kind = 0;                        // AlertKind: what sort of news this is.
+  char label[LabelChars]{};                // Product label of the row that alerted, if any.
+  uint8_t addr[6]{};                       // Its address, to find the row again from the card.
+  uint32_t followMs = 0, followMeters = 0; // AlertFollowing: the company so far.
 };
+// A device, a burst of new tracker addresses, or a tracker that has travelled with us.
+enum AlertKind : uint8_t { AlertDevice, AlertFlood, AlertFollowing };
 struct State {
   Settings settings;
   Session session;
@@ -70,12 +95,14 @@ struct State {
   bool sdReady = false, radioReady = false, blePhase = false, alertOpen = false;
   uint8_t channel = 1;
   uint32_t wifiSeen = 0, bleSeen = 0, rows = 0, skippedFix = 0, malformed = 0, drops = 0,
-           alerts = 0, sessionAt = 0, gpsChars = 0, gpsGood = 0, gpsBad = 0;
+           sessionAt = 0, gpsChars = 0, gpsGood = 0, gpsBad = 0;
   uint8_t bond = 70, energy = 85;
   Mood mood = Mood::Happy;
+  Feeling feeling = Feeling::Content;
+  Life life;
   float gaze = 0;
-  Alert active, history[HistoryCapacity];
-  uint8_t historyCount = 0;
+  Alert active;
+  LedgerState ledger = LedgerState::NoCard; // Whether /events/recon.csv is taking rows.
   char message[96] = "Hey, road buddy. Let's explore!";
   char storageError[80]{};
   char logPath[96]{};
@@ -120,12 +147,22 @@ void radioTick();
 void buddyBegin();
 void buddyTick();
 void buddyPet(bool allowVoice = true);
-void buddyDiscovery(const uint8_t mac[6]);
+void buddyPoke();
+void buddyGreet();
+void buddySay(Topic);
+void buddyDriveStart(bool fix);
+void buddyDriveEnd(uint32_t finds);
+void buddyDiscovery(const uint8_t mac[6], const char *ssid = nullptr, bool open = false);
 void buddyAlert(const Alert &, bool demo = false);
-void buddyDismiss();
+void buddyReconPeek(Family top); // The Recon page was opened; `top` is the top live threat or None.
+void buddyReconIgnored();        // The owner put a device on the ignore list.
+// Close the open alert. `byTimeout`: nobody tapped it away; it just ran its time, which says
+// nothing about whether the device has gone.
+void buddyDismiss(bool byTimeout = false);
 void buddyMotion(bool);
 void buddySoundPreview();
 void buddyDemo();
+const char *buddyVoiceTest();
 void uiBegin();
 void uiBoot();
 void uiTick();
@@ -142,4 +179,27 @@ void serialTick();
 void printStatus();
 bool applyAvatarConfig(const char *line);
 void printAvatarConfig();
+// Recon engine (src/radio.cpp). The table holds one row per classified device, whatever the
+// alert threshold.
+//
+// Threading: the table, the policy and the counts are only ever touched from the Arduino loop
+// task. The Wi-Fi promiscuous callback and the NimBLE scan callback run on other tasks, but all
+// they do is copy the packet into a FreeRTOS queue; radioTick() drains that queue on the loop
+// task and is the only writer of live rows. The ledger (storageTick), the buddy, the serial
+// console and the UI run from the same loop(), and the upload worker task never reads the table.
+// So there is no lock, and none of these functions may be called from a callback or another
+// task. The screens still draw from ReconRow copies (recon_view.h) rather than from the table:
+// that keeps the rows under a finger steady between refreshes, not for thread safety.
+ReconTable &reconTable();         // Rows, sorted views, lifetime counters. See recon.h.
+AlertPolicy &reconPolicy();       // The ignore list and the alert timers.
+const ReconCounts &reconCounts(); // Live and total rows per tier and family; fresh to 0.5 s.
+AlertContext reconContext();      // The settings and road state the policy is deciding with.
+uint32_t reconClock();            // Seconds since 2000 UTC, or 0 until GPS or the RTC tells us.
+// Put a device on, or take it off, the ignore list; saved at once. False if the list is full.
+bool reconIgnore(ReconDevice &, bool ignore);
+void reconClearIgnores(); // Empty the ignore list; saved at once.
+// The live row a snapshot was copied from, or null once it has left the table.
+ReconDevice *reconFind(const ReconRow &);
+void reconRefresh(); // Recount now, e.g. after changing a filter.
+void reconSave();    // Persist the ignore list and the lifetime per-family counters (NVS).
 } // namespace dash

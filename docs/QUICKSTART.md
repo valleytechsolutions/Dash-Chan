@@ -9,34 +9,44 @@ Dash-Chan turns the official M5Stack StackChan K151 into an offline companion fo
 3. Open **MENU → GPS & SD → GPS SETUP**. Select your module preset and actual port. Tap **APPLY SETTINGS**, or **APPLY + FIND BAUD** if its speed is unknown. The finder saves a rate after two valid NMEA sentences, or restores the applied rate after cancellation/timeout. Stop recording before changing GPS settings.
 4. Go outside with a clear view of the sky. **GPS READY** means a fresh fix, valid UTC, four or more satellites, and HDOP no greater than 5. Acquiring satellites alone is not enough.
 5. Choose **Buddy + Look** for your buddy and theme. Under **Personality**, enable gentle or lively head motion if desired. Motion is off on a new installation; existing preferences persist.
-6. Under **Sound & Voice**, choose your volume and alert tone. **Voice starts OFF**. Enable it only if you want speech. **Master sound OFF** silences both speech and tones immediately. Your pet keeps animating and collecting signals when muted.
+6. Under **Sound & Voice**, choose your volume and alert tone. **Voice starts OFF**. Tap it for **ALERTS** (spoken detection announcements) or **ALL** (also pet phrases) if you want speech; **TEST VOICE** plays a sample. **Master sound OFF** silences both speech and tones immediately. Your pet keeps animating and collecting signals when muted.
 
 ## The face is home
 
-The pet remains visible during alerts and recording. No event automatically opens a different page. A compact signal ribbon shows the family and confidence; the face reacts, and the speech bubble shows its personality.
+The pet remains visible during alerts and recording. No event automatically opens a different page. An alert replaces the FOOD/LOVE/XP row with a card in the device's tier colour: its name, signal strength, tier and confidence. The face reacts, and the speech bubble shows its personality.
 
 - **START DRIVE:** creates a new SD file and begins waiting for usable GPS observations.
 - **STOP & SAVE:** flushes and closes the file. Listening continues.
-- **Tap the face:** affection, heart eyes, and bond. If Voice is on, deliberate screen pets may say “i Love Your Face,” at most once a minute.
+- **Tap the face:** affection, heart eyes, and bond. Each pet gets a different reaction; rapid petting turns into giggles and then a request for a breather. A napping buddy wakes up when touched.
 - **Stroke/hold the top sensor:** visual affection. Head-sensor events never trigger speech. The sensor must settle released for 600 ms, then hold a meaningful touch for 250 ms; a held or noisy sensor cannot repeatedly fire.
-- **Tap the alert bubble:** dismiss the reaction. Listening and logging continue.
-- **FACE / RECON:** switch between a screen-filling expression and pet-with-nearby-clues. Tap a nearby clue for detail.
+- **Tap the alert:** dismiss the reaction. Listening and logging continue. **DETAILS** on the alert card opens the device's card instead.
+- **FACE / RECON:** switch between a screen-filling expression and the pet beside the RECON panel.
+- **RECON panel:** a radar and up to four device rows while watching; the top two rows and the drive counters while recording. Tap a row for that device, or anywhere else on the panel for the Recon page. In Full Face, tap the **RECON n** chip.
 - **MENU:** opens the eight main controls. BACK returns through the menu to the face.
 
 ## Settings map
 
 | Menu | Controls |
 |---|---|
-| Buddy + Look | Mochi, Sprout, Orbit, Wisp, Ember, or a custom buddy; Dark, Light, Matrix, BWM; Avatar Studio with eyes, layered outfits, and Auto/Always/Off field gear |
-| Sound & Voice | Personality, Siren, Arcade, Chime, Silent; volume 0/100/170/220/255; Master sound; Voice; preview; synthetic Axon demo |
+| Buddy + Look | Mochi, Sprout, Orbit, Wisp, Ember, or a custom buddy; Dark, Light, Matrix, BWM; Avatar Studio with a live preview, style packs, eyes, layered outfits, extras, and Auto/Always/Off field gear |
+| Sound & Voice | Personality, Siren, Arcade, Chime, Silent; volume 0/100/170/220/255; Master sound; Voice OFF / ALERTS / ALL; tone preview; TEST VOICE; synthetic Axon demo |
 | Personality | Head motion Off/Gentle/Lively; Spicy panic/Gentle lookout; pet button |
-| Detection | Confidence filter; same-family quiet period 60/180/300 seconds; optional five-minute reminders |
-| Recent Clues | Up to 32 entries, four per page; transport, RSSI, name/address, evidence, count, last-seen age |
+| Detection | Confidence filter; same-family quiet period 60/180/300 seconds; optional five-minute reminders; Quiet road ON/OFF; Auto snooze OFF / 5 alerts / 10 alerts; device types (whole tiers or single families, applied on BACK); ignored-device count with CLEAR ALL (tap twice) |
+| Recon List | **LIVE**: devices in range, most important first. **SEEN**: everything listed, newest first, including rows restored from the SD card. **STATS**: live/listed per tier, devices ever seen per family, following and ignored counts, ledger state. Five rows per page; tap a row for the device card |
 | Display + Fun | Recon/Face, four backgrounds, mood lights, tilt, head swipe, wave hello, auto brightness, NFC outfit cards |
 | Upload drives | Latest 24 drive files, configured destinations, explicit confirmation, cancel, refresh; [setup guide](UPLOADS.md) |
 | GPS & SD | Fix/satellites/HDOP, received NMEA characters, rows, queue drops, storage errors, module presets, port/RX, baud finder, wiring help, SD retry |
 
-**Silent** is a detection-tone choice. **Voice OFF** disables every spoken clip. **Master sound OFF** disables all audio. With Voice OFF, Personality uses electronic sounds instead of speech. Spicy captions can remain on-screen independently of voice.
+### Reading the Recon screens
+
+- **Tier colours:** red surveillance (cameras, plate readers, body cameras, camera glasses, drones, watchlist hits), violet hacker gear (Flipper, Pineapple and friends), amber attack patterns, blue trackers, grey beacons.
+- **A row:** name (the specific product when the signature names one, such as a body-camera model), signal in dBm, an up arrow when it is getting stronger and a down arrow when weaker, and `xN` when it has been met more than once. A dimmed row is out of range and shows how long ago it was heard; `earlier` means it came from the SD ledger and the clock is not set yet.
+- **Device card:** full name and tier, model and advertised name, address and whether it is a fixed, random or rotating one, signal now and at its strongest, first and last heard, encounters, why it did or did not alert, where it was last heard if GPS had a fix, and a plain description of what that kind of device is.
+- **IGNORE (IT'S MINE):** your own tag or dashcam stays listed, dimmed, and never alerts again. UNIGNORE reverses it. The list is saved on the robot.
+- A rotating Bluetooth address changes every few minutes to a day, so the same tag can appear as several rows over time.
+- Everything here is a classification from radio metadata. It is a hint about what is nearby, not proof of who owns it or what it is doing.
+
+**Silent** is a detection-tone choice. **Voice OFF** disables every spoken clip; **ALERTS** speaks detection announcements with any tone except Silent; **ALL** adds pet and system phrases. **Master sound OFF** and volume 0 disable all audio. With Voice OFF, alerts use electronic sounds instead of speech. Spicy captions can remain on-screen independently of voice. The spoken clips are synthesized and have not been reviewed by ear yet.
 
 ## Dinner is earned
 
@@ -47,7 +57,7 @@ Food progress resets on each new drive. A 2 KB approximate per-drive filter prev
 ## Your files
 
 - `/wardrives/dash-00000001.csv` and subsequent numbers: WiGLE 1.4 CSV, ready for your own WiGLE upload.
-- `/events/detections.csv`: emitted detection events, separate from WiGLE.
+- `/events/recon.csv`: detection ledger, separate from WiGLE. One line per device when it is first heard, when it comes back, and when it alerts. The most recent devices are shown again after a restart. An older `/events/detections.csv` is left alone.
 - `/dashchan/avatar.cfg`: optional custom appearance, loaded at boot or SD retry.
 - `/dashchan/upload.json`: optional private Wi-Fi/API setup; [upload guide](UPLOADS.md).
 - `/dashchan/watchlist.csv`: optional [personal signature rules](DETECTIONS.md#personal-watchlist).
@@ -56,19 +66,20 @@ Tap STOP & SAVE before ejecting the card or powering off. A sudden power loss ca
 
 ## Custom buddy
 
-Open [Avatar Studio](https://valleytech-dash-chan.pages.dev/#creator). Choose a preset or mix a base shape, six eye styles, three colors, headwear, glasses, and neckwear. Names allow up to 16 ASCII letters, digits, spaces, hyphens, or underscores. Your browser keeps a local draft. Preview different moods and travel poses before sending it.
+Open [Avatar Studio](https://valleytech-dash-chan.pages.dev/#creator). Start from a style pack (Kawaii pastel, Cyberpunk neon, Goth, Vaporwave, Retro terminal) or mix a base shape, ten eye styles, three colors, headwear, glasses, neckwear, a face mark, a back item, a held item, an aura, and a persona. Names allow up to 16 ASCII letters, digits, spaces, hyphens, or underscores. Your browser keeps a local draft. Preview different moods and travel poses before sending it.
 
-**USB:** install firmware **0.4 or newer**, disconnect the installer, leave Dash-Chan running normally, stop any recording, and select **Send to StackChan**. The uploader checks the running firmware, sends the profile, and waits for `AVATAR OK`. It does not reflash the robot or change mute settings. An older firmware receives a clear upgrade message before a new profile is sent.
+**USB:** install firmware **0.4 or newer**, disconnect the installer, leave Dash-Chan running normally, stop any recording, and select **Send to StackChan**. The uploader checks the running firmware, sends the profile, and waits for `AVATAR OK`. It does not reflash the robot or change mute settings. An older firmware receives a clear upgrade message before a profile it cannot read is sent.
 
 **SD:** download `avatar.cfg`, create `/dashchan/`, copy the file there, and restart. That file takes priority on every boot; remove or update it if you later want a USB-uploaded appearance to persist. USB uploads are stored in NVS. The creator customizes the five original vector shapes; it is not an arbitrary photo/sprite uploader.
 
-The original `DCAV1` files still work. New exports use `DCAV2`:
+The original `DCAV1` files still work. A plain design is still exported as `DCAV2`, which firmware 0.3 and newer reads; a design that uses newer gear is exported as `DCAV3`, which needs current firmware:
 
 ```text
 DCAV2 0 FFF3D2 FFAD73 1 101029 5 0 2 Signal scout
+DCAV3 3 17141F B3123C F2E9FF 9 7 0 5 4 2 4 5 3 1 Nyx the 2nd
 ```
 
-The [studio guide](AVATAR-STUDIO.md) documents every field and style. RGB colors are quantized to the LCD's RGB565 format. On-device, use **Buddy + Look → Avatar Studio** to cycle eyes and accessories, then **Show my buddy** to return home.
+The [studio guide](AVATAR-STUDIO.md) documents every field and style. RGB colors are quantized to the LCD's RGB565 format. On-device, use **Buddy + Look → Avatar Studio**: the FACE, OUTFIT and EXTRAS pages cycle each slot beside a live preview, **Style** cycles the style packs, and **DONE** returns home.
 
 **Field kit: Auto** shows the antenna and listening receiver while recording or moving. Fresh usable GPS speed must stay at least 5 km/h for three seconds to start cruising; speed at most 2 km/h for five seconds stops it. Invalid/stale GPS clears cruising immediately. **Always** keeps the kit visible; **Off** hides it. The illustrated receiver is decorative and does not process microphone audio or determine a signal's bearing.
 

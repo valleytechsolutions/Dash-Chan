@@ -4,6 +4,7 @@
 #include <SD.h>
 #include <SPI.h>
 #include <diskio.h>
+#include <esp_heap_caps.h>
 #include <ff.h>
 #include <sd_diskio.h>
 #include <vfs_api.h>
@@ -81,12 +82,125 @@ bool storageRename(const char *from, const char *to) {
   return card.rename(from, to);
 }
 static uint32_t lastFlush = 0;
+// ---- Detection ledger: /events/recon.csv (format in docs/DEVELOPMENT.md) ----------------------
+static uint32_t ledgerAt = 0, ledgerWait = 5000;
+static bool ledgerSoon = false, ledgerLoaded = false;
+// The file may end in a partial row: one torn by a power cut (seen when the tail is read back) or
+// cut short by a failed write. The next row appended starts on a new line, or it would be glued
+// to the fragment and lost with it.
+static bool ledgerTorn = false;
+// Bring back the most recent devices from the end of the ledger so the list is not empty after
+// a restart. Once per boot, at the first successful mount; only the file's tail is read.
+static void ledgerRestore() {
+  if (ledgerLoaded || !app.sdReady || uploadBusy())
+    return;
+  ledgerLoaded = true;
+  File file = card.open(LedgerPath, FILE_READ);
+  if (!file)
+    return;
+  size_t size = file.size(), want = std::min(size, size_t(LedgerTailBytes));
+  auto text = static_cast<char *>(heap_caps_malloc(want + 1, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+  if (!text)
+    text = static_cast<char *>(malloc(want + 1));
+  size_t got = 0;
+  if (text && file.seek(size - want))
+    got = file.read(reinterpret_cast<uint8_t *>(text), want);
+  file.close();
+  if (!text)
+    return;
+  text[got] = 0;
+  ledgerTorn |= ledgerScrub(text, got); // Before the text is cut up into lines.
+  TypeFilter filter;
+  filter.mask = app.settings.typeFilter;
+  auto &table = reconTable();
+  unsigned loaded = ledgerLoad(table, text, size > want, filter);
+  free(text);
+  table.applyIgnores(reconPolicy().ignores);
+  reconRefresh();
+  Serial.printf("LEDGER restored %u lines from the last %u bytes\n", loaded, unsigned(got));
+}
+// Append rows the radio has marked: first sight, each return after an absence, and alerts.
+// Batched every few seconds so the card is not opened per packet; rows simply stay marked while
+// there is no card or an upload owns it.
+static void ledgerTick() {
+  uint32_t now = millis();
+  // For the Recon page and STATUS: no card, taking rows, or the last write failed.
+  if (!app.sdReady)
+    app.ledger = LedgerState::NoCard;
+  else if (app.ledger == LedgerState::NoCard)
+    app.ledger = LedgerState::Ready;
+  if (uint32_t(now - ledgerAt) < (ledgerSoon ? std::min<uint32_t>(ledgerWait, 1000) : ledgerWait))
+    return;
+  ledgerAt = now;
+  if (!app.sdReady || uploadBusy())
+    return;
+  ledgerSoon = false;
+  ledgerWait = 5000;
+  bool failed = false;
+  auto &table = reconTable();
+  File file;
+  unsigned written = 0;
+  for (unsigned i = 0; i < table.capacity() && written < 16; ++i) {
+    auto &d = table.at(i);
+    if (!d.used || !d.pendingLog)
+      continue;
+    if (!file) {
+      bool fresh = !card.exists(LedgerPath);
+      file = card.open(LedgerPath, FILE_APPEND);
+      if (!file) {
+        failed = true;
+        break;
+      }
+      // An empty file left by a failed first attempt still needs its header.
+      fresh = fresh || file.size() == 0;
+      if (fresh) {
+        ledgerTorn = false; // Nothing to be glued to.
+        if (file.print(ledgerHeader()) != strlen(ledgerHeader())) {
+          failed = ledgerTorn = true;
+          break;
+        }
+      } else if (ledgerTorn) {
+        if (file.write(reinterpret_cast<const uint8_t *>("\n"), 1) != 1) {
+          failed = true;
+          break;
+        }
+        ledgerTorn = false;
+      }
+    }
+    char row[LedgerRowMax];
+    size_t n = ledgerRow(row, sizeof(row), d, d.arrivedAt, d.boot);
+    if (!n) {
+      failed = true;
+      break;
+    }
+    if (file.write(reinterpret_cast<const uint8_t *>(row), n) != n) {
+      failed = ledgerTorn = true; // Part of the row may be in the file.
+      break;
+    }
+    d.pendingLog = false;
+    ++written;
+  }
+  if (file)
+    file.close();
+  if (failed) { // A pulled or full card can stall each attempt; do not hammer it.
+    snprintf(app.storageError, sizeof(app.storageError), "Event log write failed");
+    app.ledger = LedgerState::Failed;
+    ledgerWait = 60000;
+    return;
+  }
+  if (written)
+    app.ledger = LedgerState::Ready;
+  if (written && !strcmp(app.storageError, "Event log write failed"))
+    app.storageError[0] = 0; // The card is taking rows again.
+  if (written == 16)         // More are waiting: come back sooner.
+    ledgerSoon = true;
+}
 void storageLoadAvatar() {
   if (!app.sdReady || uploadBusy())
     return;
   File config = card.open("/dashchan/avatar.cfg", FILE_READ);
   if (config) {
-    char line[100]{};
+    char line[128]{}; // A profile line is at most limits::ProfileChars long; leave slack.
     size_t n = config.readBytesUntil('\n', line, sizeof(line) - 1);
     while (n && (line[n - 1] == '\r' || line[n - 1] == ' '))
       line[--n] = 0;
@@ -144,12 +258,15 @@ bool storageFormat(uint64_t expectedBytes) {
 }
 static void storageFail(const char *reason) {
   snprintf(app.storageError, sizeof(app.storageError), "%s", reason);
+  bool wasRecording = app.session.armed;
   app.session.stop();
   captureGeneration.store(0);
   if (drive)
     drive.close();
   app.sdReady = false;
   say(reason);
+  if (wasRecording) // Keep what the drive earned; the failure message stays on screen.
+    saveSettings();
 }
 void storageBegin() {
   if (app.session.armed || uploadBusy())
@@ -167,6 +284,7 @@ void storageBegin() {
                   (card.exists("/events") || card.mkdir("/events"));
   snprintf(app.storageError, sizeof(app.storageError), "%s",
            app.sdReady ? "" : "Insert FAT32 SD; tap Retry SD");
+  ledgerRestore();
 }
 bool startDrive() {
   if (uploadBusy()) {
@@ -186,7 +304,8 @@ bool startDrive() {
   if (!app.sdReady)
     storageBegin();
   if (!app.sdReady) {
-    say(app.storageError);
+    // In Voice ALL the buddy says so out loud, and the screen leads with the same words.
+    say(voiceSpeak(Clip::NoSd, SpeechKind::Pet) ? NoCardHelp : app.storageError);
     return false;
   }
   Preferences p;
@@ -223,8 +342,7 @@ bool startDrive() {
   app.session.start();
   captureGeneration.store(app.session.generation);
   lastFlush = millis();
-  say(usableFix(app.fix) ? "Adventure time! Recording our discoveries."
-                         : "Ready! Waiting for a good GPS fix.");
+  buddyDriveStart(usableFix(app.fix));
   return true;
 }
 void stopDrive() {
@@ -235,12 +353,16 @@ void stopDrive() {
     drive.flush();
     drive.close();
   }
+  if (wasRecording)
+    buddyDriveEnd(app.food.discoveries());
+  else // Nothing was recording (for example the card failed mid-drive): never claim a save.
+    say(*app.storageError ? app.storageError : "No drive is recording. Still keeping watch.");
   saveSettings();
-  say("Drive saved. I'm still keeping watch.");
   if (wasRecording && app.rows)
     uploadAfterDrive();
 }
 void storageTick() {
+  ledgerTick();
   if (drive && uint32_t(millis() - lastFlush) >= 2000) {
     drive.flush();
     lastFlush = millis();
@@ -293,24 +415,12 @@ void logObservation(Contact &c, const char *auth, uint32_t captureGen, uint32_t 
     ++app.wifiRows;
   // Only a fresh Wi-Fi network actually written with a valid fix can feed us.
   if (!c.ble)
-    buddyDiscovery(c.mac);
+    buddyDiscovery(c.mac, c.name, !strncmp(auth, "[OPEN]", 6));
 }
-void logAlert(const Alert &a) {
-  if (!app.sdReady || uploadBusy())
-    return;
-  const char *path = "/events/detections.csv";
-  bool fresh = !card.exists(path);
-  File file = card.open(path, FILE_APPEND);
-  if (!file)
-    return;
-  if (fresh)
-    file.println("UTC,UptimeMs,Family,Confidence,MAC,Name,RSSI,Evidence");
-  std::string row = csv(usableFix(app.fix) ? app.fix.utc : "") + "," + std::to_string(a.at) + "," +
-                    csv(familyName(a.match.family)) + "," +
-                    csv(confidenceName(a.match.confidence)) + "," + csv(a.mac) + "," + csv(a.name) +
-                    "," + std::to_string(a.rssi) + "," + csv(a.match.evidence) + "\n";
-  if (file.write((const uint8_t *)row.data(), row.size()) != row.size())
-    snprintf(app.storageError, sizeof(app.storageError), "Event log write failed");
-  file.close();
+// The alert itself is recorded on the device's ledger row (radio.cpp marks it); an alert is the
+// line most worth having if the power goes, so write it within a second instead of five.
+// /events/detections.csv from older firmware is left on the card untouched and is not read.
+void logAlert(const Alert &) {
+  ledgerSoon = true;
 }
 } // namespace dash

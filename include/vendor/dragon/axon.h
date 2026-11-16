@@ -11,12 +11,14 @@ struct AxonEvidence {
   bool registered()const{return signals&(AxonCompany|AxonService|AxonOui);}
   Match match()const{
     if((signals&(AxonCompany|AxonService))==(AxonCompany|AxonService))
-      return {Family::Axon,Confidence::Strong,"Axon/TASER CID 034D + assigned service; model/recording unknown"};
+      return {Family::Axon,Confidence::Strong,"Axon/TASER CID 034D + assigned service; model/recording unknown","Axon / TASER"};
+    // Local (Dash-Chan): registered Axon identifiers are Strong on their own (SquachWatch audit),
+    // and are read before the Medium WatchGuard / Digital Ally vendor clue.
+    if(signals&AxonBwc)return {Family::Axon,Confidence::Strong,"BWCDEVICE body-camera payload marker; recording unknown","Axon body cam"};
+    if(signals&AxonCompany)return {Family::Axon,Confidence::Strong,"Axon/TASER manufacturer CID 034D; model/recording unknown","Axon / TASER"};
+    if(signals&AxonService)return {Family::Axon,Confidence::Strong,"Axon/TASER service FC81/FE6B/FE6C; model/recording unknown","Axon / TASER"};
+    if(signals&AxonOui)return {Family::Axon,Confidence::Strong,"Axon public/source OUI 00:25:DF; model/recording unknown","Axon"};
     if(signals&BodyCameraVendor)return {Family::Axon,Confidence::Medium,"WatchGuard / Digital Ally vendor; body-camera model/recording unknown"};
-    if(signals&AxonBwc)return {Family::Axon,Confidence::Medium,"BWCDEVICE body-camera payload marker; recording unknown"};
-    if(signals&AxonCompany)return {Family::Axon,Confidence::Medium,"Axon/TASER manufacturer CID 034D; model/recording unknown"};
-    if(signals&AxonService)return {Family::Axon,Confidence::Medium,"Axon/TASER service FC81/FE6B/FE6C; model/recording unknown"};
-    if(signals&AxonOui)return {Family::Axon,Confidence::Medium,"Axon public/source OUI 00:25:DF; model/recording unknown"};
     if(signals&AxonCompatibility)return {Family::Axon,Confidence::Low,"AXEOFF UUID/address match; custom UUID or random address"};
     if(signals&AxonName)return {Family::Axon,Confidence::Low,"Axon / AB2 / AB3 / AB4 advertised name match"};
     if(signals&AxonResearch)return {Family::Axon,Confidence::Low,"SquachWatch Axon address match; shared radio vendor"};
@@ -27,7 +29,8 @@ inline bool axonServiceId(uint16_t id){return id==0xfc81||id==0xfe6b||id==0xfe6c
 inline bool axonPrefix(const uint8_t* mac){return mac&&mac[0]==0&&mac[1]==0x25&&mac[2]==0xdf;}
 inline bool bodyCameraPrefix(const uint8_t* mac){return mac&&mac[0]==0&&((mac[1]==0x1d&&mac[2]==0x96)||(mac[1]==0x23&&mac[2]==0xbd));}
 inline bool axonResearchPrefix(const uint8_t* mac){return mac&&((mac[0]==0x28&&mac[1]==0x24&&mac[2]==0xff)||(mac[0]==0xe4&&mac[1]==5&&mac[2]==0x40));}
-inline bool axonName(const uint8_t* data,size_t size){char name[64];safeText(name,sizeof(name),data,size);return contains(name,"axon")||contains(name,"bodyworn")||namedPrefix(name,"AB2")||namedPrefix(name,"AB3")||namedPrefix(name,"AB4");}
+// Local (Dash-Chan): "axon" must stand as a word, so Saxon and Klaxon are not body cameras.
+inline bool axonName(const uint8_t* data,size_t size){char name[64];safeText(name,sizeof(name),data,size);return containsWord(name,"axon")||contains(name,"bodyworn")||namedPrefix(name,"AB2")||namedPrefix(name,"AB3")||namedPrefix(name,"AB4");}
 inline AxonEvidence inspectAxonBle(const uint8_t* p,size_t n,size_t advLength,const uint8_t* mac,uint8_t addressType){
   AxonEvidence result;
   // Public identity addresses (type 2) are public too. Random address prefixes
@@ -82,8 +85,9 @@ inline AxonEvidence inspectAxonWifi(const uint8_t* p,size_t n){
 }
 inline Match withAxon(Match current,AxonEvidence clue){
   auto next=clue.match();
-  if(next.confidence==Confidence::None)return current;
-  return current.family==Family::Axon&&current.confidence>next.confidence?current:next;
+  // Local (Dash-Chan): an Axon clue replaces the parsed match only when it is the stronger of
+  // the two. A Low name or shared-module prefix used to displace a Strong tracker or drone.
+  return next.confidence>current.confidence?next:current;
 }
 // Used by both the receive pipeline and host tests. Complete, bounded Axon
 // fields survive a damaged unrelated AD tail; malformed bytes never supply IDs.

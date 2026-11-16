@@ -1,19 +1,28 @@
 #include "detector.h"
 #include "encounters.h"
 #include "gps_support.h"
+#include "home_view.h"
 #include "idle_motion.h"
 #include "nutrition.h"
+#include "personality.h"
 #include "petting.h"
 #include "profile.h"
 #include "progression.h"
+#include "recon_tests.h"
+#include "recon_view_tests.h"
+#include "signature_tests.h"
+#include "studio_tests.h"
 #include "traffic.h"
 #include "travel.h"
 #include "upload_csv.h"
+#include "voice_tests.h"
 #include "watchlist.h"
 #include <cstdlib>
 #include <fstream>
 #include <iostream>
 #include <random>
+#include <set>
+#include <string>
 #include <vector>
 using namespace dash;
 #define CHECK(expr)                                                                                \
@@ -128,7 +137,9 @@ static void checkGps() {
   CHECK(search.tick(3500) == 0 && !search.sentence());
 }
 int main() {
+  studio_tests::run();
   checkGps();
+  checkVoice();
   PetTouch head;
   CHECK(!head.update(0, false));
   CHECK(!head.update(600, false));
@@ -262,11 +273,12 @@ int main() {
   CHECK(classifyWifi(flockProbe.data(), flockProbe.size()).match.confidence < Confidence::Medium);
   flockProbe.pop_back();
   CHECK(!classifyWifi(flockProbe.data(), flockProbe.size()).valid);
-  // Multiple APs sharing an SSID are ordinary; an open/protected conflict is only a weak hint.
+  // Multiple APs sharing an SSID are ordinary; an open/protected conflict between two makers
+  // is a hint, never proof. The same-maker case is in signature_tests.h.
   TrafficHints conflict;
   auto openAp = beacon("Test mesh");
   auto protectedAp = openAp;
-  protectedAp[21] = 4;
+  protectedAp[17] = 0x21;
   for (uint32_t i = 0; i < 4; ++i) {
     CHECK(conflict.wifi(openAp.data(), openAp.size(), 100 + i).family == Family::None);
     CHECK(conflict.wifi(protectedAp.data(), protectedAp.size(), 200 + i).family == Family::None);
@@ -276,7 +288,7 @@ int main() {
     auto hit = conflict.wifi(protectedAp.data(), protectedAp.size(), 300 + i);
     CHECK((hit.family == Family::EvilTwin) == (i == 2));
     if (i == 2)
-      CHECK(hit.confidence == Confidence::Low);
+      CHECK(hit.confidence == Confidence::Medium);
   }
   CHECK(conflict.wifi(protectedAp.data(), protectedAp.size(), 31000).family == Family::None);
   TrafficHints traffic;
@@ -334,7 +346,7 @@ int main() {
   ad(b, 3, {0x5f, 0xfd});
   f = classifyBle(b.data(), b.size(), mac, true);
   CHECK(f.valid && f.match.family == Family::Meta);
-  CHECK(f.match.confidence == Confidence::Low);
+  CHECK(f.match.confidence == Confidence::Medium);
   ad(b, 0xff, {0x53, 0x0d});
   f = classifyBle(b.data(), b.size(), mac, true);
   CHECK(f.valid && f.match.family == Family::Meta && f.match.confidence == Confidence::Medium);
@@ -456,6 +468,34 @@ int main() {
       CHECK(idle.tick(now + 4500, seed, false, avatar, false, cue));
     }
   }
+  // On the road (recording or not) every idle gesture stays inside the drive-safe box, and the
+  // head moves less often than when parked, not more.
+  for (unsigned avatar = 0; avatar < 5; ++avatar)
+    for (unsigned sample = 0; sample < 256; ++sample) {
+      uint32_t seed = random();
+      uint32_t rest[2] = {};
+      for (bool driving : {false, true}) {
+        IdleMotion idle;
+        uint32_t now = 5000;
+        idle.reset(now, 0);
+        MotionCue cue;
+        bool outside = false;
+        while (idle.tick(now, seed, sample & 1, avatar, driving, cue)) {
+          outside |= cue.yaw < -DriveSafeYaw || cue.yaw > DriveSafeYaw ||
+                     cue.pitch < 200 - DriveSafePitch || cue.pitch > 200 + DriveSafePitch;
+          now += cue.holdMs;
+        }
+        CHECK(!driving || !outside);
+        while (!idle.tick(now, seed, sample & 1, avatar, driving, cue))
+          now += 50, rest[driving] += 50;
+      }
+      CHECK(rest[1] > rest[0]);
+    }
+  CHECK(!contactExpired(1000, 1000) && !contactExpired(1000 + ContactLifeMs, 1000) &&
+        contactExpired(1001 + ContactLifeMs, 1000));
+  // A packet stamped by the radio task after the loop sampled `now` is fresh, not 49 days old.
+  CHECK(!contactExpired(1000, 1001) && !contactExpired(1000, 1000 + 400) &&
+        !contactExpired(0xfffffff0u, 5) && contactExpired(ContactLifeMs + 10, 0xfffffff0u));
   CHECK(petLevel(0) == 1 && petLevel(24) == 1 && petLevel(25) == 2);
   CHECK(levelProgress(24) == 24 && levelProgress(25) == 0);
   uint32_t xp = UINT32_MAX;
@@ -480,6 +520,528 @@ int main() {
       !upgradeCsvRow("02:00:00:00:00:01,b,c,2026-10-17 12:00:00,99,-40,40,-75,12,5,WIFI", upgrade));
   CHECK(!parseCsvLine("\"broken", csvFields));
   CHECK(!parseCsvLine("\"closed\"junk", csvFields));
+  // Personality: every line fits the speech strip, and no pool repeats itself.
+  for (const auto &l : Lines) {
+    CHECK(*l.text && strlen(l.text) <= BubbleChars);
+    for (const char *c = l.text; *c; ++c)
+      CHECK(*c >= 32 && *c <= 126 && *c != '%');
+  }
+  for (unsigned t = 0; t < TopicCount; ++t)
+    for (unsigned avatar = 0; avatar < 5; ++avatar)
+      for (bool spicy : {false, true}) {
+        unsigned n = Banter::count(Topic(t), avatar, spicy);
+        CHECK(n >= 3 && n <= 32);
+        Banter deck;
+        deck.pick(Topic((t + 1) % TopicCount), (avatar + 1) % 5, !spicy, 0); // Stale bags.
+        std::string previous;
+        for (unsigned round = 0; round < 4; ++round) {
+          std::set<std::string> bag;
+          for (unsigned i = 0; i < n; ++i) {
+            std::string said = deck.pick(Topic(t), avatar, spicy, random());
+            CHECK(!said.empty() && said != previous);
+            previous = said;
+            bag.insert(said);
+          }
+          CHECK(bag.size() == n); // Every line is heard once before any line comes back.
+        }
+      }
+  CHECK(Banter::count(Topic::Idle, 0, true) > Banter::count(Topic::Idle, 0, false));
+  // Changing buddy or banter mid-bag renumbers the lines: the bag restarts cleanly, and the line
+  // just spoken still cannot come straight back.
+  for (unsigned seed = 0; seed < 200; ++seed) {
+    Banter deck;
+    unsigned mochi = Banter::count(Topic::Idle, 0, true), half = mochi / 2;
+    std::string previous;
+    for (unsigned i = 0; i < half; ++i)
+      previous = deck.pick(Topic::Idle, 0, true, random());
+    for (unsigned who : {2u, 0u}) // Switch to Orbit with gentle banter, then back.
+      for (bool spicy : {false, true}) {
+        unsigned n = Banter::count(Topic::Idle, who, spicy);
+        std::set<std::string> bag;
+        for (unsigned i = 0; i < n; ++i) {
+          std::string said = deck.pick(Topic::Idle, who, spicy, random());
+          CHECK(said != previous);
+          previous = said;
+          bag.insert(said);
+        }
+        CHECK(bag.size() == n);
+      }
+  }
+  CHECK(!*Banter().pick(Topic::Count, 0, true, 1));
+  {
+    Vitals v;
+    CHECK(feelingFor(v) == Feeling::Content);
+    v.quietMs = BoredAfterMs;
+    CHECK(feelingFor(v) == Feeling::Bored);
+    v.quietMs = DrowsyAfterMs;
+    CHECK(feelingFor(v) == Feeling::Drowsy);
+    v.bond = LonelyBelow - 1;
+    CHECK(feelingFor(v) == Feeling::Lonely);
+    v.energy = HungryBelow - 1;
+    CHECK(feelingFor(v) == Feeling::Hungry);
+    v.quietMs = NapAfterMs;
+    CHECK(feelingFor(v) == Feeling::Napping);
+    v.onTheRoad = true; // No naps or sulking mid-drive, but hunger still shows.
+    CHECK(feelingFor(v) == Feeling::Hungry);
+    v.energy = 80;
+    CHECK(feelingFor(v) == Feeling::Content);
+    v.recentFinds = HypedFinds;
+    CHECK(feelingFor(v) == Feeling::Hyped);
+    uint8_t fuel = 50, bond = 50;
+    for (uint32_t minute = 1; minute <= 10; ++minute)
+      decayNeeds(fuel, bond, Feeling::Content, false, minute);
+    CHECK(fuel == 40 && bond == 45);
+    for (uint32_t minute = 1; minute <= 10; ++minute)
+      decayNeeds(fuel, bond, Feeling::Content, true, minute);
+    CHECK(fuel == 30 && bond == 45); // Driving together never costs affection.
+    for (uint32_t minute = 1; minute <= 10; ++minute)
+      decayNeeds(fuel, bond, Feeling::Napping, false, minute);
+    CHECK(fuel == 28 && bond == 44); // Asleep: a slow trickle only.
+    fuel = bond = 10;
+    decayNeeds(fuel, bond, Feeling::Content, false, 2);
+    CHECK(fuel == 10 && bond == 10);
+    PetCombo combo;
+    CHECK(combo.pet(1000) == 1 && combo.pet(2000) == 2 && combo.pet(3000) == 3);
+    CHECK(combo.pet(3000 + PetComboWindowMs) == 1);
+    PetCombo wrap;
+    CHECK(wrap.pet(0xfffffff0u) == 1 && wrap.pet(0x10) == 2);
+    CHECK(petBondGain(1) == 4 && petBondGain(GiggleAtStreak) == 2 &&
+          petBondGain(EnoughAtStreak) == 0);
+    CHECK(petTopic(1, Feeling::Napping, false, 70, 0) == Topic::Wake);
+    CHECK(petTopic(EnoughAtStreak, Feeling::Content, false, 70, 0) == Topic::PetEnough);
+    CHECK(petTopic(GiggleAtStreak, Feeling::Content, false, 70, 0) == Topic::PetGiggle);
+    CHECK(petTopic(1, Feeling::Lonely, false, 20, 0) == Topic::PetMissedYou);
+    CHECK(petTopic(1, Feeling::Content, true, 70, 1) == Topic::PetDriving);
+    CHECK(petTopic(1, Feeling::Hungry, false, 70, 1) == Topic::PetHungry);
+    CHECK(petTopic(1, Feeling::Content, false, AdoreAtBond, 0) == Topic::PetAdore);
+    CHECK(petTopic(1, Feeling::Content, false, AdoreAtBond - 1, 0) == Topic::Pet);
+    RoadView road;
+    CHECK(chatterTopic(Feeling::Napping, road, 1) == Topic::NapTalk);
+    CHECK(chatterTopic(Feeling::Hungry, road, 1) == Topic::IdleHungry);
+    CHECK(chatterTopic(Feeling::Bored, road, 1) == Topic::IdleBored);
+    road.moving = true;
+    CHECK(chatterTopic(Feeling::Content, road, 0) == Topic::NotLogging);
+    road.recording = road.fix = true;
+    CHECK(chatterTopic(Feeling::Content, road, 1) == Topic::Cruise);
+    road.sinceFindMs = DryRoadMs;
+    CHECK(chatterTopic(Feeling::Content, road, 1) == Topic::DryRoad);
+    road.moving = false;
+    road.stoppedMs = RedLightMs;
+    CHECK(chatterTopic(Feeling::Content, road, 1) == Topic::RedLight);
+    // No fix means motion is unknown: never a red-light or cruising remark, whatever the
+    // stale timers say (a tunnel, a garage, or a drive started before the first fix).
+    road.fix = false;
+    for (uint32_t r = 0; r < 6; ++r)
+      for (uint32_t noFix : {0u, NoSkyMs - 1, NoSkyMs, 10 * NoSkyMs}) {
+        road.noFixMs = noFix;
+        Topic t = chatterTopic(Feeling::Content, road, r);
+        CHECK(t == Topic::Idle || (t == Topic::NoSky && noFix >= NoSkyMs));
+        // Hungry mid-drive talks about the hunt; the parked lines beg for a drive.
+        CHECK(chatterTopic(Feeling::Hungry, road, r) ==
+              (t == Topic::NoSky ? t : Topic::RoadHungry));
+      }
+    road.noFixMs = NoSkyMs;
+    CHECK(chatterTopic(Feeling::Content, road, 1) == Topic::NoSky);
+    {
+      // No road state, random number or hunger level may pick the parked "let's go for a
+      // drive" lines while a drive is being recorded.
+      RoadView r;
+      r.recording = true;
+      for (bool fix : {false, true})
+        for (bool moving : {false, true})
+          for (uint32_t ms : {0u, RedLightMs, DryRoadMs, 10 * DryRoadMs})
+            for (uint32_t roll = 0; roll < 9; ++roll)
+              for (Feeling f : {Feeling::Hungry, Feeling::Content, Feeling::Hyped}) {
+                r.fix = fix;
+                r.moving = moving;
+                r.sinceFindMs = r.stoppedMs = r.noFixMs = ms;
+                Topic t = chatterTopic(f, r, roll);
+                CHECK(t != Topic::IdleHungry);
+                CHECK(t != Topic::RoadHungry || f == Feeling::Hungry);
+              }
+      r.fix = true;
+      r.moving = false;
+      r.stoppedMs = RedLightMs;
+      CHECK(chatterTopic(Feeling::Hungry, r, 0) == Topic::RoadHungry);
+      for (unsigned avatar = 0; avatar < 5; ++avatar)
+        for (unsigned i = 0; i < 12; ++i) {
+          std::string said = Banter().pick(Topic::RoadHungry, avatar, i & 1, random());
+          CHECK(!said.empty() && said.find("drive?") == std::string::npos &&
+                said.find("wardrive") == std::string::npos);
+        }
+    }
+    {
+      // DryRoad and NoSky have a handful of lines and can describe hours of driving: each is
+      // said at most once per SituationGapMs, and the general topic stands in between.
+      ChatterPace pace;
+      uint32_t t = 0xfffff000u; // Across the millis() wrap.
+      CHECK(pace.pace(Topic::DryRoad, t) == Topic::DryRoad);
+      CHECK(pace.pace(Topic::DryRoad, t + 30000) == Topic::Cruise);
+      CHECK(pace.pace(Topic::NoSky, t + 30000) == Topic::NoSky); // Its own clock.
+      CHECK(pace.pace(Topic::NoSky, t + 60000) == Topic::Idle);
+      CHECK(pace.pace(Topic::DryRoad, t + SituationGapMs - 1) == Topic::Cruise);
+      CHECK(pace.pace(Topic::DryRoad, t + SituationGapMs) == Topic::DryRoad);
+      for (Topic other : {Topic::Cruise, Topic::Idle, Topic::RedLight, Topic::RoadHungry})
+        CHECK(pace.pace(other, t + 1) == other);
+      // Two hours of dry road, a remark every 25 s, situational two times in three.
+      ChatterPace drive;
+      unsigned dry = 0;
+      for (uint32_t at = 0, i = 0; at < 2 * 3600000u; at += 25000, ++i)
+        dry += drive.pace(i % 3 ? Topic::DryRoad : Topic::Cruise, at) == Topic::DryRoad;
+      CHECK(dry >= 10 && dry <= 2 * 60 / 8 + 1);
+      CHECK(SituationGapMs >= 5 * 60000);
+    }
+    {
+      // An unrecorded drive is still company: the quiet clock starts when the car stops, so a
+      // red light after a long drive is not nap time.
+      uint32_t touched = 1000, now = touched + 2 * NapAfterMs;
+      Vitals rode;
+      rode.onTheRoad = true;
+      touched = attentionAt(touched, now, true);
+      CHECK(touched == now);
+      rode.onTheRoad = false; // Stopped at the lights five seconds later.
+      now += 5000;
+      touched = attentionAt(touched, now, false);
+      rode.quietMs = now - touched;
+      CHECK(rode.quietMs == 5000 && feelingFor(rode) == Feeling::Content);
+      now += NapAfterMs; // Left alone in the parked car: now it may sleep.
+      rode.quietMs = now - attentionAt(touched, now, false);
+      CHECK(feelingFor(rode) == Feeling::Napping);
+      // One tap on a sleeping buddy: the poke's good morning is not followed by a second line.
+      CHECK(justWoken(true, 5000, 5000) && justWoken(true, 5000, 5000 + WakeEchoMs - 1));
+      CHECK(!justWoken(true, 5000, 5000 + WakeEchoMs) && !justWoken(false, 5000, 5000));
+      CHECK(justWoken(true, 0xfffffff0u, 0x10)); // Across the wrap.
+      // "All clear" needs a person to have waved the alert away, and nothing tailing us.
+      CHECK(dismissTopic(false, false, false) == Topic::AllClear);
+      CHECK(dismissTopic(true, false, false) == Topic::AlertOver);
+      CHECK(dismissTopic(false, true, false) == Topic::AlertOver);
+      CHECK(dismissTopic(false, false, true) == Topic::AlertOver);
+      for (unsigned avatar = 0; avatar < 5; ++avatar)
+        for (unsigned i = 0; i < 16; ++i) {
+          std::string said = Banter().pick(Topic::AlertOver, avatar, i & 1, random());
+          for (const char *claim : {"clear", "Clear", "Phew", "gone", "safe"})
+            CHECK(!said.empty() && said.find(claim) == std::string::npos);
+        }
+    }
+    for (uint32_t r = 0; r < 1000; r += 37) {
+      CHECK(chatterGapMs(Feeling::Content, false, r) >= 30000);
+      CHECK(chatterGapMs(Feeling::Napping, false, r) >= 120000);
+    }
+    CHECK(milestone(10) && milestone(100) && milestone(3000) && !milestone(0) && !milestone(11));
+    {
+      // A milestone that lands at a bad moment waits for the next free one.
+      Milestone pets;
+      for (uint32_t n = 1; n <= 99; ++n)
+        pets.count(n);
+      CHECK(pets.due() == 50);
+      pets.clear();
+      pets.count(100);
+      pets.count(101); // The 100th pet was a giggle; the tally is still owed afterwards.
+      CHECK(pets.due() == 100);
+      CHECK(!petMilestoneFits(Topic::Wake) && !petMilestoneFits(Topic::PetEnough));
+      CHECK(petMilestoneFits(Topic::Pet) && petMilestoneFits(Topic::PetGiggle) &&
+            petMilestoneFits(Topic::PetMissedYou) && petMilestoneFits(Topic::PetAdore));
+      pets.clear();
+      CHECK(!pets.due());
+      Milestone finds;
+      finds.count(10, 25); // Find milestones start at 25.
+      CHECK(!finds.due());
+      finds.count(25, 25);
+      finds.count(26, 25);
+      CHECK(finds.due() == 25);
+      // Jackpot: once per burst, even when find 12 itself was a snack or a level-up.
+      CHECK(!jackpotDue(JackpotFinds - 1, false, JackpotQuietMs + 1));
+      CHECK(jackpotDue(JackpotFinds, false, JackpotQuietMs + 1));
+      CHECK(jackpotDue(JackpotFinds + 3, false, JackpotQuietMs + 1));
+      CHECK(!jackpotDue(JackpotFinds + 3, true, JackpotQuietMs + 1));
+      CHECK(!jackpotDue(JackpotFinds, false, JackpotQuietMs));
+      // Best drive follows the count as it grows, so a drive that ends with the ignition still
+      // counts; "record" compares with the best at the start of the drive.
+      uint32_t best = 0;
+      DriveBest first;
+      first.start(best);
+      for (uint32_t n = 1; n <= 40; ++n)
+        DriveBest::found(best, n);
+      CHECK(best == 40 && !first.record(40)); // A first drive is not a "record".
+      DriveBest second;
+      second.start(best);
+      DriveBest::found(best, 12);
+      CHECK(best == 40 && !second.record(12) && !second.record(40));
+      DriveBest::found(best, 41);
+      CHECK(best == 41 && second.record(41));
+    }
+    char line[64];
+    for (uint32_t r = 0; r < 6; ++r) {
+      petMilestoneLine(line, sizeof(line), 4000000000u, r);
+      CHECK(strlen(line) <= BubbleChars);
+      findMilestoneLine(line, sizeof(line), 4000000000u, r);
+      CHECK(strlen(line) <= BubbleChars);
+      CHECK(ssidLine(line, sizeof(line), "An absurdly long network name % with\x01junk", r));
+      CHECK(strlen(line) <= BubbleChars && !strchr(line, '%') && !strchr(line, 1));
+      CHECK(ssidLine(line, sizeof(line), "Cafe", r) && strstr(line, "'Cafe'"));
+    }
+    CHECK(!ssidLine(line, sizeof(line), "", 0) && !ssidLine(line, sizeof(line), nullptr, 0));
+    CHECK(!ssidLine(line, sizeof(line), "  \x02 ", 0));
+    CHECK(!driveSummaryLine(line, sizeof(line), 0, false));
+    for (uint32_t finds : {1u, 24u, 149u, 4000000000u})
+      for (bool record : {false, true})
+        CHECK(driveSummaryLine(line, sizeof(line), finds, record) && strlen(line) <= BubbleChars);
+    CHECK(driveSummaryLine(line, sizeof(line), 42, true) && strstr(line, "Record"));
+    // Time apart: parsing, clamping, floors and the welcome-back line.
+    CHECK(utcSeconds("2000-01-01 00:00:00") == 0); // Before the supported range.
+    CHECK(utcSeconds("2024-01-01 00:00:00") == 8766u * 86400u);
+    CHECK(utcSeconds("2024-03-01 00:00:00") - utcSeconds("2024-02-28 00:00:00") == 2 * 86400u);
+    CHECK(utcSeconds("2025-03-01 00:00:00") - utcSeconds("2025-02-28 00:00:00") == 86400u);
+    CHECK(utcSeconds("2026-11-15 12:30:05") - utcSeconds("2026-11-14 12:30:00") == 86405u);
+    CHECK(!utcSeconds("") && !utcSeconds(nullptr) && !utcSeconds("2026-13-01 00:00:00") &&
+          !utcSeconds("garbage") && !utcSeconds("1999-01-01 00:00:00"));
+    uint32_t then = utcSeconds("2026-11-01 08:00:00");
+    CHECK(awayHours(then, then + 3 * 3600 + 59) == 3 && !awayHours(0, then) && !awayHours(then, 0));
+    CHECK(!awayHours(then, then - 500) && awayHours(then, then + 400u * 86400u) == MaxAwayHours);
+    // Time apart is measured to boot: three hours of clock-less uptime are not time away.
+    CHECK(awayHoursAtBoot(then, then + 10 * 3600, 3 * 3600 * 1000u) == 7);
+    CHECK(awayHoursAtBoot(then, then + 10 * 3600, 0) == 10);
+    CHECK(!awayHoursAtBoot(then, then + 1800, 3 * 3600 * 1000u)); // Booted before lastSeen.
+    CHECK(!awayHoursAtBoot(then, 100, 200 * 1000u) && !awayHoursAtBoot(0, then, 0));
+    // The board clock: only after GPS set it, with a healthy backup supply and a sane reading.
+    CHECK(boardClockTrusted(true, false, then, 0) && boardClockTrusted(true, false, then, then));
+    CHECK(!boardClockTrusted(false, false, then, 0) && !boardClockTrusted(true, true, then, 0));
+    CHECK(!boardClockTrusted(true, false, 0, then));
+    CHECK(boardClockTrusted(true, false, then + 59u * 86400u, then));
+    CHECK(boardClockTrusted(true, false, then - ClockSlackSeconds, then));
+    CHECK(!boardClockTrusted(true, false, then - ClockSlackSeconds - 1, then));    // Ran backwards.
+    CHECK(!boardClockTrusted(true, false, then + ClockMaxAheadSeconds + 1, then)); // Year 2065.
+    fuel = 80;
+    bond = 70;
+    applyAway(fuel, bond, 10);
+    CHECK(fuel == 60 && bond == 60);
+    applyAway(fuel, bond, MaxAwayHours);
+    CHECK(fuel == 15 && bond == 20);
+    fuel = 12;
+    bond = 14;
+    applyAway(fuel, bond, 50); // Already below the floor: absence never raises or lowers it.
+    CHECK(fuel == 12 && bond == 14);
+    CHECK(!awayLine(line, sizeof(line), MissedYouAfterHours - 1, 0));
+    for (uint32_t r = 0; r < 3; ++r)
+      for (uint32_t hours : {MissedYouAfterHours, 47u, 48u, MaxAwayHours})
+        CHECK(awayLine(line, sizeof(line), hours, r) && strlen(line) <= BubbleChars);
+    CHECK(strlen(FirstHello) <= BubbleChars);
+    CHECK(!strcmp(rankName(1), "Hatchling") && !strcmp(rankName(4), "Rookie") &&
+          !strcmp(rankName(5), "Scout") && !strcmp(rankName(1000), "Legend"));
+    // Speech bubbles: any line the buddy can say must wrap into the bubble without loss.
+    CHECK(homeui::bubbleChars(true) == int(BubbleChars));
+    for (const auto &l : Lines)
+      for (bool face : {false, true}) {
+        homeui::BubbleBox b;
+        CHECK(homeui::layoutBubble(l.text, face, b));
+        std::string joined;
+        for (int i = 0; i < b.lines; ++i) {
+          CHECK(int(strlen(b.rows[i])) <= homeui::bubbleChars(face));
+          joined += (i ? " " : "") + std::string(b.rows[i]);
+        }
+        CHECK(joined == l.text);
+        CHECK(!face || b.lines == 1);
+      }
+    // Bubble placement, for every length the message buffer allows.
+    for (unsigned n = 1; n <= 95; ++n)
+      for (int gap : {5, 9, 96}) {
+        std::string msg;
+        for (unsigned i = 0; i < n; ++i)
+          msg += i % gap == unsigned(gap) - 1 ? ' ' : 'm';
+        for (bool custom : {false, true}) {
+          BuddyLook look;
+          look.custom = custom;
+          look.headwear = 2;
+          FaceFit fit = faceFit(look);
+          homeui::BubbleBox b;
+          CHECK(homeui::layoutBubble(msg.c_str(), true, b));
+          // Full Face: top of the stage, tail down, wholly above the mouth (y 13 in buddy space).
+          CHECK(b.tailDown && b.y >= 24 && b.x >= 10 && b.x + b.w <= 310);
+          CHECK(b.tipY > b.y + b.h && b.tipY < fit.oy + int(13 * fit.k) - 6);
+          CHECK(b.tailX - 7 >= b.x + 7 && b.tailX + 7 <= b.x + b.w - 7);
+        }
+        homeui::BubbleBox b;
+        CHECK(homeui::layoutBubble(msg.c_str(), false, b));
+        // Recon: under the buddy, inside the stage, and never above the chin, even at 3 rows.
+        CHECK(!b.tailDown && b.tipY >= homeui::ReconChinY && b.y + b.h <= 175);
+        CHECK(b.x >= 0 && b.x + b.w <= 182);
+        CHECK(b.y + b.inset + (b.lines - 1) * b.pitch + 8 <= b.y + b.h);
+      }
+    homeui::BubbleBox none;
+    CHECK(!homeui::layoutBubble("", false, none) && !homeui::layoutBubble("   ", true, none));
+  }
+  {
+    // Family names: every family has a long name and a short one that fits a NEARBY row.
+    std::set<std::string> longNames, shortNames;
+    for (unsigned f = 0; f < FamilyCount; ++f) {
+      const char *brief = familyShort(Family(f));
+      CHECK(*familyName(Family(f)) && *brief && strlen(brief) <= FamilyShortChars);
+      for (const char *c = brief; *c; ++c)
+        CHECK(*c >= 32 && *c <= 126);
+      longNames.insert(familyName(Family(f)));
+      shortNames.insert(brief);
+    }
+    CHECK(longNames.size() == FamilyCount && shortNames.size() == FamilyCount);
+    CHECK(unsigned(Family::Watchlist) == 20 && unsigned(Family::SamsungTag) == 21 &&
+          unsigned(Family::GoogleTag) == 22 && unsigned(Family::Tile) == 23 &&
+          unsigned(Family::Ring) == 24 && FamilyCount == 25);
+    CHECK(!strcmp(familyName(Family::SamsungTag), "Samsung SmartTag") &&
+          !strcmp(familyName(Family::GoogleTag), "Google / Chipolo tag") &&
+          !strcmp(familyName(Family::Tile), "Tile tracker") &&
+          !strcmp(familyName(Family::Ring), "Ring camera"));
+    CHECK(!strcmp(familyShort(Family::Axon), "Body cam") &&
+          !strcmp(familyShort(Family::Raven), "Gunshot sensor") &&
+          !strcmp(familyShort(Family::SamsungTag), "Samsung tag") &&
+          !strcmp(familyShort(Family::GoogleTag), "Google tag") &&
+          !strcmp(familyShort(Family::Tile), "Tile") &&
+          !strcmp(familyShort(Family::Ring), "Ring cam"));
+    // The new families get their own quiet timers like any other.
+    Encounters quiet;
+    uint8_t tag[6] = {2, 0, 0, 0, 0, 9};
+    auto &ring = quiet.observe(tag, true, 0, Family::Ring, 1000, 300000);
+    CHECK(quiet.eligible(ring, Confidence::High, 1000, 60000, false));
+    quiet.announce(ring, Confidence::High, 1000);
+    tag[5] = 10;
+    auto &ring2 = quiet.observe(tag, true, 0, Family::Ring, 20000, 300000);
+    CHECK(!quiet.eligible(ring2, Confidence::High, 20000, 60000, false));
+    auto &tile = quiet.observe(tag, true, 0, Family::Tile, 20000, 300000);
+    CHECK(quiet.eligible(tile, Confidence::High, 20000, 60000, false));
+  }
+  {
+    // Home screen rules.
+    char label[32];
+    for (unsigned level : {1u, 99u, 100u, 1000u, 10000u, 999999999u}) {
+      xpLabel(label, sizeof(label), level, 24);
+      CHECK(strlen(label) <= 12); // 74 px bar at 6 px per character.
+    }
+    xpLabel(label, sizeof(label), 4, 19);
+    CHECK(!strcmp(label, "LV 4  19/25"));
+    CHECK(onDanger(Theme::Light) == 0xffff && onDanger(Theme::Dark) == Ink &&
+          onDanger(Theme::Matrix) == Ink && onDanger(Theme::Bwm) == Ink);
+    // Full Face keeps the 2.1x close-up unless a custom buddy wears a hat; then the whole hat
+    // (top at y -64) and the mouth (down to y 25) must be inside the stage (screen y 24..174).
+    BuddyLook look;
+    look.headwear = 2; // Ignored: presets wear nothing.
+    CHECK(faceFit(look).k == 2.1f && faceFit(look).oy == 96);
+    look.custom = true;
+    look.headwear = 0;
+    CHECK(faceFit(look).k == 2.1f);
+    for (int hat = 1; hat <= 5; ++hat) {
+      look.headwear = hat;
+      FaceFit fit = faceFit(look);
+      CHECK(fit.oy - 64 * fit.k >= 24 && fit.oy + 25 * fit.k <= 174);
+    }
+    // Taps. Buttons first; the RECON panel, the chip and the alert card are covered pixel by
+    // pixel in recon_view_tests.h.
+    auto tap = [](int x, int y, bool face, bool alert) {
+      HomeTapState state;
+      state.face = face;
+      state.alert = alert;
+      return homeTap(x, y, state).action;
+    };
+    CHECK(tap(80, 220, false, false) == HomeTap::Drive);
+    CHECK(tap(200, 220, false, true) == HomeTap::SwitchView);
+    CHECK(tap(280, 220, true, false) == HomeTap::Menu && tap(4, 220, true, false) == HomeTap::None);
+    CHECK(tap(250, 100, false, false) == HomeTap::Recon &&
+          tap(250, 100, false, true) == HomeTap::Dismiss);
+    CHECK(tap(250, 100, true, false) == HomeTap::Pet); // No panel in Full Face.
+    CHECK(tap(90, 100, false, false) == HomeTap::Pet &&
+          tap(90, 100, false, true) == HomeTap::Dismiss);
+    CHECK(tap(160, 190, false, false) == HomeTap::Stats &&
+          tap(160, 190, true, true) == HomeTap::Dismiss);
+    CHECK(tap(160, 10, false, false) == HomeTap::None);
+  }
+  {
+    // A napping buddy gets one settle cue, then the servos are left alone until it wakes.
+    NapSettle nap;
+    CHECK(!nap.update(false) && !nap.resting());
+    CHECK(nap.update(true) && nap.resting());
+    for (int i = 0; i < 1000; ++i)
+      CHECK(!nap.update(true));
+    CHECK(!nap.update(false) && !nap.resting());
+    CHECK(nap.update(true));
+  }
+  {
+    // Buddy art. A recording canvas stands in for the display.
+    struct Shape {
+      char kind;
+      int x, y, w, h, r;
+      uint16_t c;
+    };
+    struct Recorder {
+      std::vector<Shape> shapes;
+      void fillEllipse(int x, int y, int rx, int ry, uint16_t c) {
+        shapes.push_back({'e', x, y, rx, ry, 0, c});
+      }
+      void fillCircle(int x, int y, int r, uint16_t c) {
+        shapes.push_back({'c', x, y, r, r, r, c});
+      }
+      void fillRect(int x, int y, int w, int h, uint16_t c) {
+        shapes.push_back({'r', x, y, w, h, 0, c});
+      }
+      void fillRoundRect(int x, int y, int w, int h, int r, uint16_t c) {
+        shapes.push_back({'r', x, y, w, h, r, c});
+      }
+      void fillTriangle(int, int, int, int, int, int, uint16_t) {}
+      void drawLine(int, int, int, int, uint16_t) {}
+    };
+    // Zoom: the display driver does not clamp corner radii, so no box may reach it with a radius
+    // over half its size, and thin details must keep at least one pixel at any scale.
+    for (float k : {0.62f, 1.0f, 1.6f, 2.1f}) {
+      Recorder canvas;
+      art::Zoom<Recorder> zoom{canvas, 100, 100, k};
+      for (int avatar = 0; avatar < 5; ++avatar)
+        for (int mood = 0; mood < 7; ++mood)
+          for (bool custom : {false, true}) {
+            Look look;
+            look.base = avatar;
+            look.custom = custom;
+            look.eyes = look.headwear = mood % 6;
+            look.eyewear = look.neckwear = mood % 4;
+            Pose pose;
+            pose.mood = pose.phase = mood;
+            pose.kit = mood % 3;
+            drawBuddy(zoom, look, 0, 0, pose);
+          }
+      CHECK(canvas.shapes.size() > 1000);
+      for (const auto &s : canvas.shapes)
+        if (s.kind == 'r')
+          CHECK(s.w >= 1 && s.h >= 1 && s.r >= 0 && 2 * s.r <= s.w && 2 * s.r <= s.h);
+    }
+    {
+      Recorder canvas;
+      art::Zoom<Recorder> zoom{canvas, 0, 0, 0.62f};
+      zoom.fillRoundRect(-2, 17, 5, 3, 1, Mint); // Orbit's LED mouth dash in the buddy picker.
+      zoom.fillRect(-8, 1, 16, 1, Ink);          // A scanline that used to round to nothing.
+      CHECK(canvas.shapes[0].h == 1 && canvas.shapes[0].r == 0 && canvas.shapes[1].h == 1);
+    }
+    // Faces stay readable: a dark eye colour on a dark surface is swapped for a light one.
+    auto faceColors = [](int avatar, uint16_t body, uint16_t eyeColor, bool custom, int mood) {
+      Recorder canvas;
+      art::Pen<Recorder> pen{canvas, 0, 0, 0, Ink};
+      Tones t = buddyTones(avatar, custom, body, Blush);
+      buddyDetails(pen, avatar, mood, 0, false, custom, 0, eyeColor, t.body, t.blush, t.line,
+                   t.shade, t.light, t.trim, 0);
+      std::set<uint16_t> eyes;
+      for (const auto &s : canvas.shapes) // The classic eye is an 8 x 12 oval at x +-21, y -4.
+        if (s.kind == 'e' && (s.x == 21 || s.x == -21) && s.y == -4 && s.w == 8)
+          eyes.insert(s.c);
+      return eyes;
+    };
+    using Colors = std::set<uint16_t>;
+    CHECK(faceColors(2, Lilac, Ink, true, 0) == Colors{Mint});       // Orbit's dark screen.
+    CHECK(faceColors(0, 0x0000, Ink, true, 0) == Colors{0xefff});    // A black custom body.
+    CHECK(faceColors(0, 0x0000, 0x001f, true, 0) == Colors{0xefff}); // Deep blue on black.
+    CHECK(faceColors(0, Paper, Ink, true, 0) == Colors{Ink});        // Normal: untouched.
+    CHECK(faceColors(0, Paper, 0x8200, true, 0) == Colors{0x8200});  // Any mid colour is kept.
+    CHECK(faceColors(0, 0x0000, 0xfd20, true, 0) == Colors{0xfd20}); // Bright on dark is kept.
+    CHECK(faceColors(2, Lilac, 0xfd20, true, 0) == Colors{0xfd20});
+    CHECK(faceColors(0, Paper, 0xffff, true, 0) == Colors{Ink}); // White on cream.
+    CHECK(faceColors(0, Paper, Ink, false, 0) == Colors{Ink});   // Presets are unchanged.
+    CHECK(art::dark(Ink) && art::dark(0x10c7) && !art::dark(Mint) && art::pale(Paper) &&
+          !art::pale(Mint) && !art::pale(Ink));
+  }
+  signatureTests();
   for (int i = 0; i < 50000; ++i) {
     size_t n = random() % 768;
     std::vector<uint8_t> q(n);
@@ -488,5 +1050,7 @@ int main() {
     classifyBle(q.data(), q.size(), mac, true);
     classifyWifi(q.data(), q.size());
   }
+  reconTests();
+  reconViewTests();
   std::cout << "Core regression checks and 50,000 malformed-packet cases passed\n";
 }

@@ -1,6 +1,5 @@
 #include "app.h"
 #include "detector.h"
-#include "encounters.h"
 #include "traffic.h"
 #include <NimBLEDevice.h>
 #include <algorithm>
@@ -19,7 +18,13 @@ static StaticQueue_t packetControl;
 static NimBLEScan *scan;
 static std::atomic<uint32_t> lost{0};
 static uint32_t phaseAt = 0, hopAt = 0;
-static Encounters encounters;
+static ReconTable table;
+static AlertPolicy policy;
+static ReconCounts counts;
+static bool tableTried = false;
+static uint32_t refreshedAt = 0, clockBase = 0, clockAt = 0, lifeSeen = 0, countersAt = 0,
+                filterSeen = TypeFilter::Defaults;
+static bool countersDirty = false, clockPrimed = false;
 static TrafficHints traffic;
 static unsigned hopIndex = 0;
 static constexpr uint8_t channelOrder[] = {1, 6, 11, 2, 7, 3, 8, 4, 9, 5, 10};
@@ -108,30 +113,160 @@ class Callbacks : public NimBLEScanCallbacks {
   }
 };
 static Callbacks callbacks;
-static void remember(const Alert &a) {
-  for (unsigned i = 0; i < app.historyCount; ++i) {
-    auto &old = app.history[i];
-    if (old.ble == a.ble && old.addressType == a.addressType &&
-        old.match.family == a.match.family && !strcmp(old.mac, a.mac)) {
-      old.at = a.at;
-      old.rssi = a.rssi;
-      ++old.sightings;
-      if (a.match.confidence >= old.match.confidence)
-        old.match = a.match;
-      if (*a.name)
-        snprintf(old.name, sizeof(old.name), "%s", a.name);
-      Alert updated = old;
-      for (unsigned j = i; j > 0; --j)
-        app.history[j] = app.history[j - 1];
-      app.history[0] = updated;
-      return;
+ReconTable &reconTable() {
+  if (!tableTried) {
+    tableTried = true;
+    // About 50 KB: PSRAM when it is there, otherwise a smaller table from internal RAM.
+    unsigned rows = ReconCapacity;
+    auto memory = static_cast<ReconDevice *>(
+        heap_caps_malloc(rows * sizeof(ReconDevice), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+    if (!memory) {
+      rows = 64;
+      memory = static_cast<ReconDevice *>(malloc(rows * sizeof(ReconDevice)));
     }
+    table.attach(memory, memory ? rows : 0);
   }
-  for (size_t i = HistoryCapacity - 1; i > 0; --i)
-    app.history[i] = app.history[i - 1];
-  app.history[0] = a;
-  if (app.historyCount < HistoryCapacity)
-    ++app.historyCount;
+  return table;
+}
+AlertPolicy &reconPolicy() {
+  return policy;
+}
+const ReconCounts &reconCounts() {
+  return counts;
+}
+AlertContext reconContext() {
+  AlertContext ctx;
+  ctx.filter.mask = app.settings.typeFilter & TypeFilter::All;
+  ctx.threshold = app.settings.threshold;
+  ctx.quietRoad = app.settings.quietRoad;
+  ctx.onRoad = app.session.armed || app.moving;
+  ctx.autoSnooze = app.settings.autoSnooze;
+  ctx.familyQuietMs = app.settings.familyQuietMs;
+  ctx.repeat = app.settings.repeatAlerts;
+  return ctx;
+}
+uint32_t reconClock() {
+  return clockBase ? clockBase + uint32_t(millis() - clockAt) / 1000 : 0;
+}
+// GPS is the clock. Without a fix, the pet's own time-keeping (RTC, last fix) shows up as a
+// change to life.lastSeen, which is exact at the moment it changes.
+static void learnClock(uint32_t now) {
+  if (!clockPrimed) { // What flash remembered is the last shutdown, not the time now.
+    clockPrimed = true;
+    lifeSeen = app.life.lastSeen;
+  }
+  uint32_t seconds = usableFix(app.fix) ? utcFromText(app.fix.utc) : 0;
+  if (app.life.lastSeen != lifeSeen) {
+    lifeSeen = app.life.lastSeen;
+    if (!seconds)
+      seconds = lifeSeen;
+  }
+  if (seconds) {
+    clockBase = seconds;
+    clockAt = now;
+  }
+}
+static Alert toAlert(const ReconDevice &d) {
+  Alert a;
+  a.match = {d.family, d.confidence, d.evidence};
+  a.rssi = d.rssi;
+  a.ble = d.ble;
+  a.addressType = d.addressType;
+  memcpy(a.addr, d.mac, 6);
+  if (!ledgerTag(d.label))
+    snprintf(a.label, sizeof(a.label), "%s", d.label);
+  return a;
+}
+void reconRefresh() {
+  uint32_t now = millis();
+  refreshedAt = now;
+  auto &t = reconTable();
+  learnClock(now);
+  uint32_t filter = app.settings.typeFilter & TypeFilter::All;
+  if (filter != filterSeen) { // A family was switched off: its rows leave the list.
+    filterSeen = filter;
+    TypeFilter f;
+    f.mask = filter;
+    t.prune(f);
+  }
+  t.maintain(now);
+  t.counts(counts, now);
+  // Lifetime counters reach flash at most once a minute.
+  countersDirty |= t.takeLifetimeDirty();
+  if (countersDirty && uint32_t(now - countersAt) >= 60000) {
+    countersAt = now;
+    countersDirty = false;
+    reconSave();
+  }
+}
+bool reconIgnore(ReconDevice &row, bool ignore) {
+  bool changed =
+      ignore ? policy.ignores.add(row.mac, row.family) : policy.ignores.remove(row.mac, row.family);
+  reconTable().applyIgnores(policy.ignores);
+  if (changed)
+    reconSave();
+  reconRefresh();
+  return changed || row.ignored == ignore;
+}
+void reconClearIgnores() {
+  policy.ignores.clear();
+  reconTable().applyIgnores(policy.ignores);
+  reconSave();
+  reconRefresh();
+}
+ReconDevice *reconFind(const ReconRow &row) {
+  return reconTable().find(row.mac, row.ble, row.addressType, row.family);
+}
+// List the device and decide whether it may interrupt. Listing never depends on the alert
+// threshold; only a family the user has switched off is left out. `name` and `label` may be
+// empty.
+static void recon(const Match &match, const uint8_t *mac, const char *name, const char *label,
+                  const Packet &p) {
+  AlertContext ctx = reconContext();
+  if (!ctx.filter.tracks(match.family))
+    return;
+  ReconSighting s;
+  s.mac = mac;
+  s.ble = p.ble;
+  s.addressType = p.addressType;
+  s.match = match;
+  s.name = name;
+  s.label = label;
+  s.channel = p.ble ? 0 : p.channel;
+  s.rssi = p.rssi;
+  s.utc = reconClock();
+  s.boot = app.life.boots;
+  if (usableFix(app.fix)) {
+    s.fix = true;
+    s.lat = float(app.fix.lat);
+    s.lon = float(app.fix.lon);
+  }
+  ReconSeen seen = reconTable().observe(s, p.at);
+  if (!seen.row)
+    return;
+  ReconDevice &row = *seen.row;
+  AlertVerdict verdict = policy.decide(row, seen, ctx, p.at);
+  // First sight and each return go to the ledger, except the throwaway addresses of a flood.
+  if (seen.sight != Sight::Seen && !policy.flooding(row.family, p.at))
+    row.pendingLog = true;
+  if (table.followDue(row)) {
+    policy.announceFollow(row, p.at);
+    row.pendingLog = true; // The ledger line for a following row says "following".
+    Alert a = toAlert(row);
+    a.kind = AlertFollowing;
+    a.followMs = followSpanMs(row);
+    a.followMeters = uint32_t(followSpanMeters(row));
+    buddyAlert(a);
+  } else if (verdict == AlertVerdict::Alert) {
+    row.pendingLog = true; // The ledger line for this encounter should say it alerted.
+    buddyAlert(toAlert(row));
+  } else if (verdict == AlertVerdict::Flood) {
+    row.flood = row.alerted = row.pendingLog = true; // Its ledger line says "flood".
+    Alert a = toAlert(row);
+    a.kind = AlertFlood;
+    buddyAlert(a);
+  } else if (row.confidence >= ctx.threshold)
+    ++app.suppressed;
 }
 static Contact &findContact(const uint8_t *mac, bool ble, uint8_t type, uint32_t now) {
   Contact *empty = nullptr;
@@ -158,7 +293,8 @@ static Contact &findContact(const uint8_t *mac, bool ble, uint8_t type, uint32_t
 }
 static void process(const Packet &p) {
   Match m;
-  char name[64]{}, auth[64] = "[BLE]";
+  TrafficHit hit;
+  char name[64]{}, auth[64] = "[BLE]", label[LabelChars]{};
   uint8_t mac[6];
   bool loggable = p.ble;
   memcpy(mac, p.mac, 6);
@@ -169,7 +305,8 @@ static void process(const Packet &p) {
       return;
     }
     m = f.match;
-    promote(m, traffic.ble(p.data, p.len, p.mac, p.at));
+    snprintf(label, sizeof(label), "%s", f.label);
+    hit = traffic.bleHit(p.data, p.len, p.mac, p.at);
     snprintf(name, sizeof(name), "%s", f.name);
   } else {
     auto f = classifyWifi(p.data, p.len);
@@ -179,13 +316,23 @@ static void process(const Packet &p) {
     }
     m = f.match;
     loggable = f.loggable;
-    promote(m, traffic.wifi(p.data, p.len, p.at));
+    snprintf(label, sizeof(label), "%s", f.label);
+    hit = traffic.wifiHit(p.data, p.len, p.at);
     memcpy(mac, f.mac, 6);
     snprintf(name, sizeof(name), "%s", f.name);
     snprintf(auth, sizeof(auth), "%s", f.auth);
   }
-  promote(m, watchlist.match(mac, !p.ble || p.addressType == 0, name, p.ble ? p.data : nullptr,
-                             p.ble ? p.len : 0));
+  // A rate rule that fired (disconnect burst, SSID conflict, pairing-advert storm) is listed as
+  // its own row under the address that was transmitting. It never replaces the identity match:
+  // a burst aimed at a camera is classified by the camera's address and at a higher grade, and
+  // merging the two would lose the burst. The table keys rows by address and family, so the
+  // burst and the camera sit side by side.
+  if (hit.match.family != Family::None)
+    recon(hit.match, hit.mac, "", "", p);
+  // The label names the signature's product: it goes when a watchlist rule replaces the match.
+  promoteLabelled(m, label,
+                  watchlist.match(mac, !p.ble || p.addressType == 0, name, p.ble ? p.data : nullptr,
+                                  p.ble ? p.len : 0));
   // Unknown probe/data senders need no long-lived contact or WiGLE row.
   if (!loggable && m.family == Family::None)
     return;
@@ -196,30 +343,14 @@ static void process(const Packet &p) {
   if (*name)
     snprintf(c.name, sizeof(c.name), "%s", name);
   // Classification persists for one encounter; do not retain an old identity indefinitely.
-  if (m.confidence >= c.match.confidence)
+  if (m.confidence >= c.match.confidence) {
     c.match = m;
+    snprintf(c.label, sizeof(c.label), "%s", label);
+  }
   if (loggable)
     logObservation(c, auth, p.generation, p.at);
-  if (c.match.family != Family::None && c.match.confidence >= app.settings.threshold) {
-    Alert a;
-    a.match = c.match;
-    a.at = p.at;
-    a.firstAt = p.at;
-    a.ble = p.ble;
-    a.addressType = p.addressType;
-    a.rssi = c.rssi;
-    snprintf(a.name, sizeof(a.name), "%s", c.name);
-    snprintf(a.mac, sizeof(a.mac), "%02X:%02X:%02X:%02X:%02X:%02X", mac[0], mac[1], mac[2], mac[3],
-             mac[4], mac[5]);
-    remember(a);
-    auto &entry = encounters.observe(mac, p.ble, p.addressType, c.match.family, p.at, 300000);
-    if (encounters.eligible(entry, c.match.confidence, p.at, app.settings.familyQuietMs,
-                            app.settings.repeatAlerts)) {
-      encounters.announce(entry, c.match.confidence, p.at);
-      buddyAlert(a);
-    } else
-      ++app.suppressed;
-  }
+  if (c.match.family != Family::None)
+    recon(c.match, mac, c.name, c.label, p);
 }
 static bool beginBle() {
   if (!NimBLEDevice::init("")) {
@@ -235,6 +366,12 @@ static bool beginBle() {
   return true;
 }
 void radioBegin() {
+  reconRefresh();
+  // A city street has more access points than the built-in table; see traffic.h.
+  if (auto wide = static_cast<TrafficHints::AccessPoint *>(
+          heap_caps_malloc(TrafficHints::WideAccessPoints * sizeof(TrafficHints::AccessPoint),
+                           MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT)))
+    traffic.attach(wide, TrafficHints::WideAccessPoints);
   auto memory = static_cast<uint8_t *>(
       heap_caps_malloc(32 * sizeof(Packet), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
   packets = memory ? xQueueCreateStatic(32, sizeof(Packet), memory, &packetControl)
@@ -272,17 +409,22 @@ void radioBegin() {
   phaseAt = hopAt = millis();
 }
 void radioTick() {
+  uint32_t now = millis();
+  // History from the card is worth showing even while the radios are paused or failed.
+  if (uint32_t(now - refreshedAt) >= 500)
+    reconRefresh();
   if (!app.radioReady || paused)
     return;
-  uint32_t now = millis();
   Packet p;
   for (unsigned i = 0; i < 8 && xQueueReceive(packets, &p, 0) == pdTRUE; ++i) {
     process(p);
     gpsTick();
   }
   app.drops = lost.load();
+  // Signed on purpose: a packet stamped by a radio task after `now` was sampled above gives a
+  // contact that is "seen in the future", which must read as fresh, not as 49 days old.
   for (auto &c : contacts)
-    if (c.used && uint32_t(now - c.seen) > 120000)
+    if (c.used && contactExpired(now, c.seen))
       c.used = false;
   if (app.blePhase) {
     if (uint32_t(now - phaseAt) >= bleWindow) {

@@ -1,6 +1,7 @@
 * text=auto eol=lf
 *.png binary
 *.bin binary
-include/voice.h linguist-generated
+*.wav binary
+src/voice_data.cpp linguist-generated
 include/boot_logos.h linguist-generated
 lib/opendroneid/** whitespace=-trailing-space

@@ -1,9 +1,13 @@
 #pragma once
-#include "core.h"
+#include "recon.h"
 namespace dash {
 // A continuing encounter stays quiet even when the general radio cache churns.
 // A rotating BLE address cannot be authenticated as the same physical device;
 // a separate family quiet period limits those repeated notifications.
+//
+// The firmware now keeps this per-device state on its ReconTable rows and decides through
+// AlertPolicy (recon.h). This small stand-alone tracker remains for callers without a table; it
+// shares AlertCooldowns, so the ten-second global quiet never swallows a higher-tier family.
 class Encounters {
 public:
   struct Entry {
@@ -44,19 +48,18 @@ public:
                 bool repeat) const {
     bool changed = !entry.notified || confidence > entry.notifiedConfidence;
     bool reminder = repeat && uint32_t(now - entry.announced) >= 300000;
-    return (changed || reminder) && global_.ready(now, 10000) &&
-           families_[unsigned(entry.family)].ready(now, familyQuietMs);
+    return (changed || reminder) && cooldowns_.globalReady(entry.family, now) &&
+           cooldowns_.familyReady(entry.family, now, familyQuietMs);
   }
   void announce(Entry &entry, Confidence confidence, uint32_t now) {
     entry.notified = true;
     entry.notifiedConfidence = confidence;
     entry.announced = now;
-    global_.mark(now);
-    families_[unsigned(entry.family)].mark(now);
+    cooldowns_.mark(entry.family, now);
   }
 
 private:
   Entry entries_[128];
-  Cooldown global_, families_[32];
+  AlertCooldowns cooldowns_;
 };
 } // namespace dash

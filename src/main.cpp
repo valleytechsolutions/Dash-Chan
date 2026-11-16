@@ -8,6 +8,33 @@ State app;
 Contact contacts[ContactCapacity];
 Watchlist watchlist;
 std::atomic<uint32_t> captureGeneration{0};
+// The ignore list and the lifetime per-family counters, as two small blobs.
+static void saveRecon(Preferences &p) {
+  uint8_t blob[IgnoreList::BlobBytes];
+  size_t n = reconPolicy().ignores.save(blob, sizeof(blob));
+  if (n)
+    p.putBytes("ignores", blob, n);
+  else if (p.isKey("ignores"))
+    p.remove("ignores");
+  n = reconTable().saveLifetime(blob, sizeof(blob));
+  if (n)
+    p.putBytes("seenfam", blob, n);
+}
+static void loadRecon(Preferences &p) {
+  uint8_t blob[IgnoreList::BlobBytes];
+  size_t n = p.isKey("ignores") ? p.getBytesLength("ignores") : 0;
+  if (n && n <= sizeof(blob) && p.getBytes("ignores", blob, n) == n)
+    reconPolicy().ignores.load(blob, n);
+  n = p.isKey("seenfam") ? p.getBytesLength("seenfam") : 0;
+  if (n && n <= sizeof(blob) && p.getBytes("seenfam", blob, n) == n)
+    reconTable().loadLifetime(blob, n);
+}
+void reconSave() {
+  Preferences p;
+  p.begin("dashchan", false);
+  saveRecon(p);
+  p.end();
+}
 void loadSettings() {
   Preferences p;
   p.begin("dashchan", true);
@@ -26,23 +53,36 @@ void loadSettings() {
   }
   app.settings.xp = p.getUInt("xp", 0);
   app.energy = std::min(100, int(p.getUChar("fuel", 85)));
+  app.bond = std::min(100, int(p.getUChar("bond", 70)));
+  app.life.pets = p.getUInt("pets", 0);
+  app.life.drives = p.getUInt("drives", 0);
+  app.life.snacks = p.getUInt("snacks", 0);
+  app.life.bestDrive = p.getUInt("bestdrive", 0);
+  app.life.boots = p.getUInt("boots", 0);
+  app.life.lastSeen = p.getUInt("lastseen", 0);
+  app.life.clockSet = p.getBool("rtcok", false);
   app.settings.theme = Theme(p.getUChar("theme", 0) % 4);
   app.settings.tone = AlertTone(p.getUChar("tone", 0) % 5);
   app.settings.volume = p.getUChar("volume", 245);
   app.settings.motionStyle = std::min(2, int(p.getUChar("moves", 2)));
-  app.settings.voice = p.getBool("voice", false);
+  app.settings.voiceMode =
+      savedVoiceMode(p.isKey("voicemode"), p.getUChar("voicemode", 0), p.getBool("voice", false));
   app.settings.repeatAlerts = p.getBool("repeat", false);
   app.settings.familyQuietMs = constrain(p.getUInt("quietms", 60000), 15000u, 600000u);
-  app.settings.customBase = p.getUChar("custombase", 0) % 5;
-  app.settings.customAccessory = p.getUChar("accessory", 0) % 4;
+  app.settings.customBase = inRange(p.getUChar("custombase", 0), limits::Bases);
+  app.settings.customAccessory = inRange(p.getUChar("accessory", 0), limits::V1Accessories);
   app.settings.customBody = p.getUShort("body", 0xff7a);
   app.settings.customAccent = p.getUShort("accent", 0xfbb2);
   auto legacy = app.settings.customAccessory;
-  app.settings.customEyes = p.getUChar("eyes", 0) % 6;
+  app.settings.customEyes = inRange(p.getUChar("eyes", 0), limits::Eyes);
   app.settings.customEye = p.getUShort("eyecolor", app.settings.customBase == 2 ? 0x87b6 : 0x1085);
-  app.settings.customHeadwear = p.getUChar("headwear", legacy == 1 ? 1 : legacy == 3 ? 2 : 0) % 6;
-  app.settings.customEyewear = p.getUChar("eyewear", 0) % 4;
-  app.settings.customNeckwear = p.getUChar("neckwear", legacy == 2 ? 1 : 0) % 4;
+  app.settings.customHeadwear = inRange(p.getUChar("headwear", legacy == 1   ? 1
+                                                               : legacy == 3 ? 2
+                                                                             : 0),
+                                        limits::Headwear);
+  app.settings.customEyewear = inRange(p.getUChar("eyewear", 0), limits::Eyewear);
+  app.settings.customNeckwear =
+      inRange(p.getUChar("neckwear", legacy == 2 ? 1 : 0), limits::Neckwear);
   app.settings.fieldKit = p.getUChar("fieldkit", 0) % 3;
   app.settings.view = p.getUChar("view", 0) % 2;
   app.settings.backdrop = p.getUChar("scene", 0) % 4;
@@ -56,6 +96,18 @@ void loadSettings() {
   p.getString("petname", app.settings.customName, sizeof(app.settings.customName));
   if (!*app.settings.customName)
     strcpy(app.settings.customName, "My buddy");
+  // Stored as the families switched off, so one added by a later firmware starts on.
+  app.settings.typeFilter =
+      TypeFilter::fromDisabled(p.getUInt("typeoff", TypeFilter().disabled())).mask;
+  app.settings.quietRoad = p.getBool("quietroad", true);
+  app.settings.autoSnooze = autoSnoozeChoice(p.getUChar("autosnooze", 5));
+  loadRecon(p);
+  app.settings.customMark = inRange(p.getUChar("avmark", 0), limits::Marks);
+  app.settings.customBack = inRange(p.getUChar("avback", 0), limits::Backs);
+  app.settings.customHeld = inRange(p.getUChar("avheld", 0), limits::Held);
+  app.settings.customAura = inRange(p.getUChar("avaura", 0), limits::Auras);
+  app.settings.customPack = inRange(p.getUChar("avpack", 0), limits::Packs);
+  app.settings.customPersona = inRange(p.getUChar("avpersona", 0), limits::Personas);
   p.end();
 }
 void saveSettings() {
@@ -72,11 +124,21 @@ void saveSettings() {
   p.putUChar("gpsrx", app.settings.gpsRx);
   p.putUInt("xp", app.settings.xp);
   p.putUChar("fuel", app.energy);
+  p.putUChar("bond", app.bond);
+  p.putUInt("pets", app.life.pets);
+  p.putUInt("drives", app.life.drives);
+  p.putUInt("snacks", app.life.snacks);
+  p.putUInt("bestdrive", app.life.bestDrive);
+  p.putUInt("boots", app.life.boots);
+  p.putUInt("lastseen", app.life.lastSeen);
+  p.putBool("rtcok", app.life.clockSet);
   p.putUChar("theme", uint8_t(app.settings.theme));
   p.putUChar("tone", uint8_t(app.settings.tone));
   p.putUChar("volume", app.settings.volume);
   p.putUChar("moves", app.settings.motionStyle);
-  p.putBool("voice", app.settings.voice);
+  p.putUChar("voicemode", uint8_t(app.settings.voiceMode));
+  // Older firmware reads this switch; keep it truthful in case of a downgrade.
+  p.putBool("voice", app.settings.voiceMode != VoiceMode::Off);
   p.putBool("repeat", app.settings.repeatAlerts);
   p.putUInt("quietms", app.settings.familyQuietMs);
   p.putUChar("custombase", app.settings.customBase);
@@ -99,6 +161,18 @@ void saveSettings() {
   p.putBool("nfc", app.settings.nfc);
   p.putUChar("ledbright", app.settings.ledBrightness);
   p.putString("petname", app.settings.customName);
+  TypeFilter filter;
+  filter.mask = app.settings.typeFilter;
+  p.putUInt("typeoff", filter.disabled());
+  p.putBool("quietroad", app.settings.quietRoad);
+  p.putUChar("autosnooze", app.settings.autoSnooze);
+  saveRecon(p);
+  p.putUChar("avmark", app.settings.customMark);
+  p.putUChar("avback", app.settings.customBack);
+  p.putUChar("avheld", app.settings.customHeld);
+  p.putUChar("avaura", app.settings.customAura);
+  p.putUChar("avpack", app.settings.customPack);
+  p.putUChar("avpersona", app.settings.customPersona);
   p.end();
 }
 void say(const char *text) {

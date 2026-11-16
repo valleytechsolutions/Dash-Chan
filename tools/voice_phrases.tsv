@@ -1,0 +1,56 @@
+# Spoken clips, in the order of enum class Clip in include/voice.h (the host test checks both).
+# Tab-separated: id, spoken text, on-screen caption, source, and optionally "heard as".
+#   id        file name in assets/voice and symbol in src/voice_data.cpp
+#   spoken    what the speech engine is given; spell names the way they sound
+#   caption   what the screen shows while the clip plays (ASCII, at most 47 characters)
+#   source    tts = synthesized by tools/generate_voice.py; legacy = an older recording, re-encoded
+#   heard as  other spellings of exactly the same sounds, separated by |, that the read-back
+#             check accepts (a recogniser writes "glass is" for "glasses"). Not for near misses.
+# Wording notes: "spotted" survives the pitch shift far better than "nearby", and nothing says
+# "ahead" because detections carry no direction.
+# After editing: python tools/generate_voice.py --asr --only <id>, then commit assets/voice and
+# src/voice_data.cpp together. Clips differ a little on every run, so they are kept in git.
+generic	Something sketchy!	Something sketchy!	tts
+axon	Body camera spotted!	Body camera spotted!	tts
+flock	Flock camera spotted!	Flock camera spotted!	tts
+alpr	Plate camera spotted!	Plate camera spotted!	tts
+meta	Camera glasses spotted!	Camera glasses spotted!	tts	Camera glass is spotted
+tracker	Tracker spotted!	Tracker spotted!	tts
+flipper	Flipper Zero spotted!	Flipper Zero spotted!	tts	Flipper 0 spotted
+biscuit	Biscuit device spotted!	Biscuit device spotted!	tts
+pineapple	Pineapple spotted!	Pineapple spotted!	tts
+pwnagotchi	Pawnagotchi spotted!	Pwnagotchi spotted!	tts
+nyanbox	Nyan box spotted!	Nyanbox spotted!	tts
+halehound	Hail Hound spotted!	HaleHound spotted!	tts
+skimmer	Careful! Card skimmer!	Careful! Card skimmer!	tts
+raven	Raven spotted!	Raven spotted!	tts
+drone	Drone overhead!	Drone overhead!	tts
+camera	Camera spotted!	Camera spotted!	tts
+beacon	Strange beacon!	Strange beacon!	tts
+deauth	Disconnect burst!	Disconnect burst!	tts
+eviltwin	Evil twin Wi-Fi!	Evil twin Wi-Fi!	tts
+blespam	Bluetooth spam!	Bluetooth spam!	tts
+watchlist	Watch list hit!	Watch list hit!	tts
+samsungtag	Smart tag spotted!	SmartTag spotted!	tts
+googletag	Google tag spotted!	Google tag spotted!	tts
+tile	Tile tracker spotted!	Tile tracker spotted!	tts
+ring	Ring camera spotted!	Ring camera spotted!	tts
+following	We're being followed!	We're being followed!	tts
+flood	Signal flood!	Signal flood!	tts
+all_clear	All clear!	All clear!	tts
+drive_start	Let's go for a drive!	Let's go for a drive!	tts
+drive_saved	Drive saved!	Drive saved!	tts
+gps_locked	GPS locked!	GPS locked!	tts
+gps_lost	GPS lost!	GPS lost!	tts
+new_wifi	Found new Wi-Fi!	Found new Wi-Fi!	tts
+missed_you	I missed you!	I missed you!	tts
+hungry	I'm hungry!	I'm hungry!	tts
+tickles	That really tickles!	That really tickles!	tts
+sleepy	So sleepy.	So sleepy.	tts
+level_up	Level up! Nice!	Level up! Nice!	tts
+no_sd	No SD card!	No SD card!	tts
+hello	Hello there!	Hello there!	tts
+good_morning	Good morning!	Good morning!	tts
+spicy_pig	Pig detected! Act natural! Act natural!	PIG DETECTED! ACT NATURAL!	legacy
+spicy_fuzz	Oh man! The fuzz! Act natural!	Oh man, the fuzz!	legacy
+love	I love your face!	i Love Your Face	legacy

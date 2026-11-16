@@ -36,3 +36,21 @@ for(const base of [3,4]){
     await assert.rejects(()=>sendAvatar(port,buddy),/0.4/);assert.equal(port.commands.length,1);assert(port.closed);
   }
 }
+
+// DCAV3: firmware advertises the newest profile line it reads. Plain designs still go out as
+// DCAV2 to any firmware from 0.3; designs with new gear need avatar_schema 3 or later.
+const modern=avatarLine({name:'Nyx',base:3,body:'#17141f',accent:'#b3123c',eye:'#f2e9ff',eyes:9,headwear:7,mark:4,back:2,aura:5,pack:3,persona:1});
+assert.equal(modern,'DCAV3 3 17141F B3123C F2E9FF 9 7 0 0 4 2 0 5 3 1 Nyx');
+for(const schema of [3,4]){
+  port=mockPort(false,schema);assert(await sendAvatar(port,modern));assert.equal(port.commands[1],'AVATAR SET '+modern);assert(port.closed);
+  port=mockPort(false,schema);assert(await sendAvatar(port,line));assert.equal(port.commands[1],'AVATAR SET '+line);
+}
+for(const schema of [2,1,0,null]){
+  port=mockPort(false,schema);
+  await assert.rejects(()=>sendAvatar(port,modern),schema===2?/Update Dash-Chan first.*has not changed/:/0\.3/);
+  assert.equal(port.commands.length,1,'nothing is sent to firmware that cannot read it');assert(port.closed);
+}
+port=mockPort(true,3);await assert.rejects(()=>sendAvatar(port,modern),/STOP & SAVE/);assert.equal(port.commands.length,1);
+for(const bad of [modern+'\nSTART','DCAV3 0 FFFFFF FFFFFF 000000 10 0 0 0 0 0 0 0 0 0 Nope']){
+  port=mockPort(false,3);await assert.rejects(()=>sendAvatar(port,bad));assert.equal(port.commands.length,0);
+}

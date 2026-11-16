@@ -22,9 +22,15 @@ This remains a beta: outdoor movement, detection performance, and WiGLE server a
 
 | Recon + Buddy | Full Face |
 |---|---|
-| ![Recon view: pet beside nearby clues](site/assets/ui-recon.png) | ![Full Face view with Wi-Fi and BLE collection counters](site/assets/ui-face.png) |
+| ![Recon view: pet beside the RECON panel with its radar and device rows](site/assets/ui-recon.png) | ![Full Face view with Wi-Fi and BLE collection counters](site/assets/ui-face.png) |
 
-Tap **FACE / RECON** on the home screen. Recon keeps three recent clues beside the pet; tap a clue for evidence, confidence and age. Both views show approximate distinct Wi-Fi/BLE addresses saved **during the current drive**, not raw packets. `~` marks conservative Bloom-filter counting; BLE address rotation can represent the same physical device more than once. Background watch still detects clues but does not collect a drive or feed the pet.
+Tap **FACE / RECON** on the home screen. Until a drive starts, Dash-Chan is a recon tool: the **RECON** panel beside the pet shows a small radar with one dot per device in range and up to four rows, most important first. Each row has a tier colour (red surveillance, violet hacker gear, amber attack patterns, blue trackers, grey beacons), a short name, signal strength, an arrow when the signal is getting stronger or weaker, and how often it has been met. Devices that have gone out of range stay listed, dimmed, with their age. Tap a row for its device card, or the panel for the full **Recon page**. The radar is decoration plus signal strength: a dot's distance from the centre follows RSSI, its bearing is arbitrary. Once a drive is recording, the panel shrinks to the top two rows and this drive's counters, so it is a wardriving pet that still watches. Full Face keeps a small **RECON n** chip in the corner.
+
+| Recon page | Device card | Detection settings |
+|---|---|---|
+| ![Recon page, LIVE tab](site/assets/ui-recon-list.png) | ![Device card for a plate-reader vendor radio](site/assets/ui-recon-device.png) | ![Detection settings](site/assets/ui-recon-settings.png) |
+
+Both views show approximate distinct Wi-Fi/BLE addresses saved **during the current drive**, not raw packets. `~` marks conservative Bloom-filter counting; BLE address rotation can represent the same physical device more than once. Background watch still detects clues but does not collect a drive or feed the pet.
 
 Every 25 eligible Wi-Fi discoveries advances one level. XP continues across restarts. Saved discoveries get a quick happy bounce and pixel sparks; each level earns a confetti celebration. Alerts take visual priority. **All buddies, eyes, colors and outfits are available immediately.** Petting builds affection, and only wardriving earns food.
 
@@ -45,7 +51,7 @@ For the robot, enter your 2.4 GHz network and selected service API credentials, 
 | **Orbit** | A lilac robot with excellent friendship reception. “My emotional support human is here.” |
 | **Wisp** | An all-black little ghost with bright eyes and drifting wisps. “Your emotional support shadow.” |
 | **Ember** | A tiny orange flame with flickering tips and floating sparks. “Small flame. Big adventure.” |
-| **Your custom buddy** | Mix six eye styles, three colors, headwear, glasses, and neckwear on any original shape. Name it and save it in Avatar Studio. |
+| **Your custom buddy** | Start from a style pack (kawaii, cyberpunk, goth, vaporwave, retro terminal) or mix ten eye styles, three colors, headwear, glasses, neckwear, face marks, wings, held items, and auras on any shape. Pick whose lines it speaks, name it, and save it in Avatar Studio. |
 
 | Wisp on the robot | Ember on the robot |
 |---|---|
@@ -55,17 +61,42 @@ Curious brows, bright eye highlights, paw pads, heart reactions, and open-mouth 
 
 **Wardriving is the only way to feed Dash-Chan.** Every five new Wi-Fi BSSIDs successfully written with valid GPS in the current session earn +12 fuel. Each earns one XP. BLE, background watch, petting, and demos never feed it. Per-drive approximate deduplication prevents repeat-food farming within a session; it may conservatively miss a discovery on a very large drive. Stopping and starting creates a new food session.
 
+### A pet with moods, not a soundboard
+
+Dash-Chan keeps track of how it feels and talks about that instead of looping one phrase:
+
+- **Feelings:** Content, Hyped, Hungry, Lonely, Bored, Drowsy or Napping, shown as a tag above the buddy. Low fuel or low love brings a pouty face; ignore it for 12 minutes off the road (the clock starts when the car stops, recorded drive or not) and it dozes off with drifting Zs until you tap or pet it.
+- **No repeats:** about 330 lines across 50 situations, with extra lines unique to each buddy and a sassier set when Banter is Spicy. Every line in a situation is used once before any comes back, and remarks arrive at irregular gaps.
+- **Petting has a combo:** a couple of pets earn love, quick repeats get giggles, and six in a row gets “Okay okay okay! I'm fully petted!” with no extra love.
+- **It notices the drive:** drive starts, red lights, dry stretches, sudden bursts of networks, missing GPS, per-drive milestones, and now and then the real name of a network it just logged (“Ooh, 'CoffeeShop'. Tasty.”).
+- **It remembers:** love, lifetime pets, snacks, drives and your best drive survive restarts. Beat your record and it says so. **MENU → Personality** shows the tally.
+
+- **It reacts differently to each clue:** body cameras, plate readers, trackers, smart glasses, Flippers, drones, watchlist hits and oddities each have their own rotating lines.
+- **It misses you:** time keeps passing while the robot is off. Once GPS (or the board clock, after GPS has set it) knows the time, food and love drop for the hours apart, down to a floor, and after eight hours it tells you how long you were gone.
+- **It grows up:** levels carry ranks, from Hatchling and Rookie through Scout, Ranger, Pathfinder and Signal Sage to Legend.
+
+### The home screen at a glance
+
+- **Top bar:** buddy name and rank, GPS bars with satellite count, and a state pill (WATCHING, REC, NO GPS, NO SD, UPLOAD).
+- **Stage:** the buddy with a feeling tag. Everything it says appears in a speech bubble pointing at it; drive counters for saved Wi-Fi and BLE sit underneath once a drive has started.
+- **Vitals row:** FOOD, LOVE and XP meters that are always visible. A meter turns red and blinks when it is low. Tap the row for the buddy's report card (pets, snacks, drives, best drive).
+- **Full Face** redraws the buddy large from the same shapes, so it stays sharp instead of being a stretched thumbnail.
+
+The buddies themselves were redrawn with outlines, shading and their own details: Mochi's tabby stripes, tail and whiskers; Sprout's wings, horns and claws; Orbit's LED-panel eyes; Wisp's glow rim and hollow eyes; Ember's layered flame.
+
+Love fades slowly when it is awake and alone, never while you are driving together; every snack adds a little. To add or edit lines, open [`include/personality.h`](include/personality.h) — one row per line.
+
 This is a scripted personality engine, not cloud AI. No account, microphone processing, or internet connection is needed on the robot.
 
 ## Make a buddy that looks like yours
 
-Open **[Avatar Studio](https://valleytech-dash-chan.pages.dev/#creator)** and start with Wisp, Ember, Signal Scout, Neon Listener, Petal Patrol, or Mochi Royale. Mix **six eye styles**, **six headwear choices**, **four eyewear choices**, and **four neckwear choices**, including None. Change body, accent, and eye colors. Preview love, alert, discovery cheers, listening, and cruising poses in four arcade worlds; save a portrait or an avatar file. Your draft stays in your browser.
+Open **[Avatar Studio](https://valleytech-dash-chan.pages.dev/#creator)** and start with a **style pack**: Kawaii pastel, Cyberpunk neon, Goth, Vaporwave, or Retro terminal. One tap dresses your current shape and never renames it. Then mix **ten eye styles**, **twelve headwear**, **eight eyewear**, and **eight neckwear** choices (including None), plus face marks, wings and capes, held items, auras, and a persona that decides whose lines your buddy speaks: over 90 million looks before colors. Every option is drawn on your own buddy. Surprise me, Shuffle pack, undo/redo, and a shelf of saved designs make it easy to experiment. Preview love, alert, discovery cheers, listening, and cruising poses in four arcade worlds; save a portrait or an avatar file. Your draft stays in your browser.
 
-**Send to StackChan** applies the design over USB without reflashing. Install 0.4 or newer for all five shapes. Earlier `DCAV1` avatar files still import. On the robot, **MENU → Buddy + Look → Avatar Studio** cycles styles without a computer. [Full studio guide and profile format](docs/AVATAR-STUDIO.md).
+**Send to StackChan** applies the design over USB without reflashing. Install 0.4 or newer for all five shapes; designs that use the newer gear are saved as `DCAV3` and need current firmware, while plain designs are still saved as `DCAV2` for older robots. Earlier `DCAV1` and `DCAV2` avatar files still import. On the robot, **MENU → Buddy + Look → Avatar Studio** shows a live preview and cycles shape, face, outfit, extras, and style packs without a computer. [Full studio guide and profile format](docs/AVATAR-STUDIO.md).
 
 In **Auto** field-kit mode, the pet holds a radar-style antenna and pocket receiver while recording or when fresh GPS speed confirms movement. **Always** keeps the gear visible; **Off** hides it. Cruising adds a subtle bob and travel streaks. These are personality animations: the receiver does not process audio, and the antenna does not indicate signal direction. Alerts, muting, logging, and food rules work independently of the outfit.
 
-![The running firmware with a custom scout outfit and listening kit](site/assets/ui-fieldkit.png)
+![The home screen with a custom scout outfit and listening kit, rendered on a PC from the firmware's drawing code](site/assets/ui-fieldkit.png)
 
 ## Four themes, one familiar face
 
@@ -75,7 +106,7 @@ In **Auto** field-kit mode, the pet holds a radar-style antenna and pocket recei
 | Matrix | BWM |
 | ![Matrix theme](site/assets/ui-matrix.png) | ![BWM theme](site/assets/ui-bwm.png) |
 
-These are captures of the running firmware. The supplied **BWM and VTS logos** appear side by side at boot before the pet wakes up.
+These screens are rendered on a PC by `tools/preview.py` from the same drawing code the firmware runs; the LCD differs slightly in color and edge smoothing. The supplied **BWM and VTS logos** appear side by side at boot before the pet wakes up.
 
 ## Two jobs, always together
 
@@ -89,23 +120,29 @@ The radio now also examines client probes, selected management/action frames, an
 
 ![The pet remains visible during a synthetic Axon reaction](site/assets/ui-panic.png)
 
-Spicy Axon reactions can display or speak **“PIG DETECTED! ACT NATURAL!”**, **“Oh man, the fuzz!”**, or use a siren with a panicked face and quick double-takes. Other families get captions such as “Biscuit nearby! Wait… not a snack?” and “Spicy fruit on the airwaves!” The Axon demo is synthetic and never becomes a real detection or WiGLE observation.
+Spicy Axon reactions can display or speak **“PIG DETECTED! ACT NATURAL!”**, **“Oh man, the fuzz!”**, or use a siren with a panicked face and quick double-takes. Other families get captions such as “Biscuit nearby! Wait… not a snack?” and “Spicy fruit on the airwaves!”, or, with Voice on, a short spoken announcement in a small high voice: “Flock camera spotted!”, “Tracker spotted!”, “Drone overhead!” The Axon demo is synthetic and never becomes a real detection or WiGLE observation.
 
 **Speech defaults OFF.** In **MENU → Sound & Voice**:
 
-- **Voice OFF** disables every spoken clip while keeping configured electronic alert tones available.
+- **Voice: OFF / ALERTS / ALL.** OFF keeps the electronic alert tones and never speaks. ALERTS speaks one short announcement per detection family. ALL also speaks pet and system phrases: “Let's go for a drive!”, “Drive saved!”, “GPS locked!”, “GPS lost!”, “Level up! Nice!”, “I'm hungry!”, “That really tickles!”, “All clear!”, “No SD card!” and greetings.
+- Speech works with every alert tone except **Silent**: a two-note chirp, then the phrase, instead of the long tone. The screen shows the words being spoken.
+- Speech is rate-limited: at least 4 seconds between clips, one pet phrase per 20 seconds, the same pet phrase at most every 5 minutes. A detection interrupts a pet phrase, never the other way round.
+- **TEST VOICE** speaks the next clip each time you press it, so you can hear the whole set.
+- The voice is synthesized offline at build time and stored in the firmware; nothing is sent anywhere. The clips have been checked by speech recognition only. **Nobody has listened to them by ear yet**, so expect some to need rewording.
 - **Master sound OFF** immediately silences all audio. Preferences survive reboot and firmware updates.
 - Alert tones: **Personality, Siren, Arcade, Chime, Silent**; selectable volume through 255.
-- Deliberate screen petting can say **“i Love Your Face”** only when Voice is enabled, at most once per minute.
+- Deliberate screen pets get a short chirp and a line that changes every time. The recorded **“i Love Your Face”** clip is a rare treat at 85%+ Love with Voice ALL.
 - Head-sensor petting gives visual affection without speech. Debounce and release-to-rearm prevent a held/noisy sensor from retriggering continuously.
 
 Choose **Off / Gentle / Lively** head motion and **Spicy / Gentle** banter under Personality. Head movement starts off on a new installation, uses the BSP's factory zero positions, and stays within bounded travel. Looking around is animation, not RF direction finding.
 
 ## Alerts that know when to be quiet
 
-The same continuing encounter is announced once by default. Its recent entry continues updating RSSI, count, and last-seen time. After **five minutes absent**, it can announce again. Stronger evidence may alert again after cooldowns. A separate **60/180/300-second family quiet period** reduces repeated notifications from rotating addresses; it does not claim those addresses belong to the same device. Optional five-minute reminders are off by default.
+Everything Dash-Chan can classify is **listed**, except device types you have switched off (shop beacons start off); only some of it **alerts**. An alert is a tier-coloured card with the name, signal strength and a **DETAILS** button; tapping anywhere else dismisses it. The card appears over whatever page is open. Two alerts are about behaviour rather than brand: a **tracker flood** (dozens of new tag addresses in a minute, probably a spam gadget) and a tag that has **stayed with you** across several places. With head motion on, the flinch is bigger for a closer, more serious device and is held to a small nod while driving.
 
-There are 128 encounter-ledger slots and 32 browsable recent entries. Very dense areas can evict older state. A default medium-or-higher confidence threshold keeps weak name/vendor clues quieter. [Exact methods, limits, and personal watchlists](docs/DETECTIONS.md).
+The same continuing encounter is announced once by default. Its row keeps updating RSSI, count, and last-seen time. After **five minutes absent**, it can announce again. Stronger evidence may alert again after cooldowns. A separate **60/180/300-second family quiet period** reduces repeated notifications from rotating addresses; it does not claim those addresses belong to the same device. Optional five-minute reminders are off by default.
+
+The list holds 256 devices and the last 64 come back from the SD card after a restart. Very dense areas can evict older rows. **MENU → Detection** also has **Quiet road** (tags and Ring cameras are listed but silent while driving), **Auto snooze** (after 5 or 10 alerts a device must come closer to speak again), a **device type** filter (applied when you leave its page; a type that is off is not listed), and the count of devices you have marked as your own with **CLEAR ALL**. A default medium-or-higher confidence threshold keeps weak name/vendor clues quieter. [Exact methods, limits, and personal watchlists](docs/DETECTIONS.md).
 
 ## Hardware and first use
 
@@ -122,17 +159,18 @@ Use the [web flasher](https://valleytech-dash-chan.pages.dev/#install) in deskto
 |---|---|
 | Face: START / STOP & SAVE | Open or close a wardrive |
 | Face tap / top touch sensor | Affection; no food |
-| Alert speech bubble | Dismiss reaction; continue listening |
-| MENU → Buddy + Look | Five original buddies, custom buddy, four themes, Avatar Studio and field-kit preference |
-| MENU → Sound & Voice | Master mute, voice switch, tones, volume, preview/demo |
+| Alert card or bubble | Dismiss reaction; continue listening. **DETAILS** opens the device card |
+| RECON panel / RECON chip | Open the Recon page; a row opens that device's card |
+| MENU → Buddy + Look | Five original buddies, custom buddy, four themes, Avatar Studio (face, outfit, extras, style packs) and field-kit preference |
+| MENU → Sound & Voice | Master mute, voice mode (OFF / ALERTS / ALL), tones, volume, tone preview, TEST VOICE, demo |
 | MENU → Personality | Motion, banter, pet |
-| MENU → Detection | Confidence, family quiet period, optional reminders |
-| MENU → Recent Signals | Paginated evidence and last-seen details |
+| MENU → Detection | Confidence, family quiet period, optional reminders, quiet road, auto snooze, device types, ignored devices |
+| MENU → Recon List | LIVE (in range now), SEEN (everything, including rows restored from the SD ledger), STATS (lifetime counts); tap a row for its card and **IGNORE** |
 | MENU → GPS & SD | GPS quality, rows/drops, error text, module presets, receive pins, baud finder, wiring help, SD retry |
 
 ## Logs and GPS quality
 
-`/wardrives/dash-00000001.csv` uses the standard 11-column WiGLE format. New Start presses create new files without overwriting earlier drives. `/events/detections.csv` records emitted alert events separately. Uploads are disabled until configured; automatic sending requires an explicit opt-in.
+`/wardrives/dash-00000001.csv` uses the standard 11-column WiGLE format. New Start presses create new files without overwriting earlier drives. `/events/recon.csv` is the detection ledger: one line when a classified device is first heard, when it returns after two minutes away, and when it alerts ([format](docs/DEVELOPMENT.md#recon-table-alert-policy-and-ledger)). Uploads are disabled until configured; automatic sending requires an explicit opt-in.
 
 Rows require valid UTC, a fix no older than two seconds, at least four satellites, HDOP ≤ 5, finite in-range coordinates/altitude, and packet queue latency ≤ 250 ms. GPS loss pauses rows; the firmware never fills them with invented or stale positions. `AccuracyMeters` is the documented **HDOP × 5 m estimate**, not measured error. Repeat rows are rate-limited per address/transport to 30 seconds in a bounded contact cache.
 

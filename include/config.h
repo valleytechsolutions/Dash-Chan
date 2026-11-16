@@ -10,5 +10,5 @@ constexpr int SdCs = 4, SdSck = 36, SdMiso = 35, SdMosi = 37;
 constexpr uint8_t LastWifiChannel = 11;
 constexpr uint32_t WifiDwellDriveMs = 140, WifiDwellWatchMs = 180;
 constexpr uint32_t BleDriveMs = 850, BleWatchMs = 1100;
-constexpr size_t ContactCapacity = 256, HistoryCapacity = 32;
+constexpr size_t ContactCapacity = 256;
 } // namespace dash

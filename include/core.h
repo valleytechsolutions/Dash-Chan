@@ -30,8 +30,14 @@ enum class Family : uint8_t {
   Deauth,
   EvilTwin,
   BleSpam,
-  Watchlist
+  Watchlist,
+  SamsungTag,
+  GoogleTag,
+  Tile,
+  Ring
 };
+// Per-family tables are indexed by these values, so new families go at the end.
+constexpr unsigned FamilyCount = unsigned(Family::Ring) + 1;
 enum class Confidence : uint8_t { None, Low, Medium, High };
 struct Match {
   Family family = Family::None;
@@ -39,14 +45,45 @@ struct Match {
   const char *evidence = "No specific signature";
 };
 inline const char *familyName(Family f) {
-  const char *names[] = {
-      "Unclassified",     "Axon / body camera", "Flock camera",    "ALPR vendor",
-      "Camera glasses",   "Find My / tracker",  "Flipper Zero",    "Biscuit family",
-      "WiFi Pineapple",   "Pwnagotchi",         "Nyanbox",         "HaleHound",
-      "Serial / skimmer", "Raven candidate",    "Remote ID drone", "Camera / Ring vendor",
-      "Proximity beacon", "Disconnect burst",   "SSID conflict",   "BLE advert burst",
-      "My watchlist"};
-  return names[static_cast<unsigned>(f)];
+  static const char *const names[] = {"Unclassified",
+                                      "Axon / body camera",
+                                      "Flock camera",
+                                      "ALPR vendor",
+                                      "Camera glasses",
+                                      "Find My / tracker",
+                                      "Flipper Zero",
+                                      "Biscuit family",
+                                      "WiFi Pineapple",
+                                      "Pwnagotchi",
+                                      "Nyanbox",
+                                      "HaleHound",
+                                      "Serial / skimmer",
+                                      "Raven candidate",
+                                      "Remote ID drone",
+                                      "Camera vendor",
+                                      "Proximity beacon",
+                                      "Disconnect burst",
+                                      "SSID conflict",
+                                      "BLE advert burst",
+                                      "My watchlist",
+                                      "Samsung SmartTag",
+                                      "Google / Chipolo tag",
+                                      "Tile tracker",
+                                      "Ring camera"};
+  static_assert(sizeof(names) / sizeof(names[0]) == FamilyCount, "one name per family");
+  return unsigned(f) < FamilyCount ? names[unsigned(f)] : names[0];
+}
+// Names for tight spots such as the home NEARBY rows: at most FamilyShortChars characters each.
+constexpr unsigned FamilyShortChars = 14;
+inline const char *familyShort(Family f) {
+  static const char *const names[] = {
+      "Unknown",   "Body cam",     "Flock cam",     "Plate reader",   "Cam glasses",
+      "Tracker",   "Flipper Zero", "Biscuit",       "Pineapple",      "Pwnagotchi",
+      "Nyanbox",   "HaleHound",    "Skimmer",       "Gunshot sensor", "Drone",
+      "Camera",    "Beacon",       "Deauth attack", "Evil twin",      "BLE spam",
+      "Watchlist", "Samsung tag",  "Google tag",    "Tile",           "Ring cam"};
+  static_assert(sizeof(names) / sizeof(names[0]) == FamilyCount, "one short name per family");
+  return unsigned(f) < FamilyCount ? names[unsigned(f)] : names[0];
 }
 inline const char *confidenceName(Confidence c) {
   const char *n[] = {"none", "low", "medium", "high"};
@@ -84,6 +121,18 @@ inline void promote(Match &a, Match b) {
   if (b.confidence > a.confidence)
     a = b;
 }
+// promote() for a match that carries a label: a replacement match was not what the label named.
+inline void promoteLabelled(Match &a, char *label, Match b) {
+  if (b.confidence > a.confidence) {
+    a = b;
+    if (label)
+      label[0] = 0;
+  }
+}
+// A frame's label says which product inside the family `match` names ("Axon Body 3", "Chipolo",
+// a drone serial, a Pwnagotchi's own name). Printable ASCII, empty when nothing more is known.
+// It describes `match` only: drop it if a traffic hint or watchlist rule later replaces the match.
+constexpr size_t LabelChars = 24;
 struct WifiFrame {
   bool valid = false;
   bool loggable = false;
@@ -91,11 +140,13 @@ struct WifiFrame {
   char name[33]{};
   char auth[64] = "[UNKNOWN][ESS]";
   Match match;
+  char label[LabelChars]{};
 };
 struct BleFrame {
   bool valid = false;
   char name[64]{};
   Match match;
+  char label[LabelChars]{};
 };
 inline bool parseRsn(const uint8_t *p, size_t n, bool &psk, bool &sae, bool &enterprise,
                      bool &owe) {
@@ -219,6 +270,13 @@ struct Cooldown {
     used = true;
   }
 };
+// A contact is forgotten after two minutes of silence. `seen` can be a moment AFTER `now`: the
+// radio tasks stamp packets while the loop is still working with an older millis() sample. The
+// difference is taken signed so that reads as "just seen", not as an age of 49 days.
+constexpr int32_t ContactLifeMs = 120000;
+inline bool contactExpired(uint32_t now, uint32_t seen) {
+  return int32_t(now - seen) > ContactLifeMs;
+}
 struct Session {
   bool armed = false;
   uint32_t generation = 0;

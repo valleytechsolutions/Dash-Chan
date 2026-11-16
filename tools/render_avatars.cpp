@@ -48,7 +48,9 @@ int main() {
     int x = a < 3 ? 160 + 320 * a : 320 + 320 * (a - 3), y = a < 3 ? 164 : 440;
     s.fillRoundRect(x - 142, y - 98, 284, 250, 18, 0x1928);
     f << "<g transform='translate(" << x << " " << y << ") scale(1.4)'>";
-    dash::drawBuddy(s, a, 0, 0, 0, 0, false);
+    dash::Look look;
+    look.base = a;
+    dash::drawBuddy(s, look, 0, 0);
     f << "</g><text x='" << x << "' y='" << y + 104
       << "' text-anchor='middle' font-family='sans-serif' font-size='21' font-weight='bold' "
          "fill='#f7f1e6'>"
